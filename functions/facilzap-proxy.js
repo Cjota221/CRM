@@ -1,5 +1,50 @@
 const fetch = require('node-fetch');
 
+// Função auxiliar para buscar todas as páginas de um determinado endpoint
+async function fetchAllPages(endpoint, token) {
+  let allData = [];
+  let page = 1;
+  let hasMore = true;
+
+  // Define uma data inicial para buscar todos os registros (ex: últimos 10 anos)
+  const tenYearsAgo = new Date();
+  tenYearsAgo.setFullYear(tenYearsAgo.getFullYear() - 10);
+  const dataInicial = tenYearsAgo.toISOString().split('T')[0];
+
+  while (hasMore) {
+    // Adiciona parâmetros para buscar todos os dados históricos e incluir detalhes
+    const url = `${endpoint}?page=${page}&length=100&data_inicial=${dataInicial}&incluir_produtos=1`;
+    console.log(`[INFO] Buscando ${endpoint}, página ${page}...`);
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+        // Se a autenticação falhar, interrompe imediatamente
+        if (response.status === 401) throw new Error("401 - Token de autorização da FacilZap inválido.");
+        // Para outros erros, lança uma exceção que será capturada abaixo
+        const errorBody = await response.text();
+        throw new Error(`Erro da API para ${endpoint} na página ${page}: Status ${response.status} - ${errorBody}`);
+    }
+    
+    const pageData = await response.json();
+    const dataOnPage = pageData.data;
+
+    if (dataOnPage && dataOnPage.length > 0) {
+      allData = allData.concat(dataOnPage);
+      page++;
+    } else {
+      hasMore = false;
+    }
+  }
+  return allData;
+}
+
 exports.handler = async (event) => {
   const headers = {
     'Access-Control-Allow-Origin': '*',
@@ -18,69 +63,33 @@ exports.handler = async (event) => {
     return { statusCode: 500, headers, body: JSON.stringify({ error: "FACILZAP_TOKEN não configurado no servidor." }) };
   }
   
-  const BASE_API_ENDPOINT = 'https://api.facilzap.app.br/pedidos';
-  let allOrders = [];
-  let page = 1;
-  let hasMore = true;
-
-  // Define uma data inicial para buscar todos os pedidos (ex: últimos 5 anos)
-  const fiveYearsAgo = new Date();
-  fiveYearsAgo.setFullYear(fiveYearsAgo.getFullYear() - 5);
-  const dataInicial = fiveYearsAgo.toISOString().split('T')[0];
-
-  console.log(`[INFO] Iniciando busca de todos os pedidos desde ${dataInicial}...`);
-
   try {
-    while (hasMore) {
-      // Adiciona os parâmetros 'data_inicial' e 'incluir_produtos=1' conforme a documentação
-      const API_ENDPOINT_PAGE = `${BASE_API_ENDPOINT}?page=${page}&length=100&data_inicial=${dataInicial}&incluir_produtos=1`;
-      console.log(`[INFO] Buscando página ${page}: ${API_ENDPOINT_PAGE}`);
-      
-      const response = await fetch(API_ENDPOINT_PAGE, {
-          method: 'GET',
-          headers: {
-              'Authorization': `Bearer ${FACILZAP_TOKEN}`,
-              'Content-Type': 'application/json'
-          }
-      });
+    console.log("[INFO] Iniciando busca paralela de clientes e pedidos.");
 
-      if (response.status === 401) {
-        console.error("[ERRO] Autenticação (401). Verifique a FACILZAP_TOKEN.");
-        return { statusCode: 401, headers, body: JSON.stringify({ error: "Token de autorização da FacilZap inválido." }) };
-      }
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(`Erro da API na página ${page}: Status ${response.status} - ${errorBody}`);
-      }
-      
-      const pageData = await response.json();
-      const ordersOnPage = pageData.data;
-
-      if (ordersOnPage && ordersOnPage.length > 0) {
-        allOrders = allOrders.concat(ordersOnPage);
-        page++;
-      } else {
-        hasMore = false;
-      }
-    }
+    // Busca todos os clientes e todos os pedidos em paralelo para otimizar o tempo
+    const [clients, orders] = await Promise.all([
+      fetchAllPages('https://api.facilzap.app.br/clientes', FACILZAP_TOKEN),
+      fetchAllPages('https://api.facilzap.app.br/pedidos', FACILZAP_TOKEN)
+    ]);
     
-    console.log(`[INFO] Busca finalizada. Total de ${allOrders.length} pedidos encontrados.`);
+    console.log(`[INFO] Busca finalizada. ${clients.length} clientes e ${orders.length} pedidos encontrados.`);
     
-    if (allOrders.length > 0) {
-        console.log('[DEBUG] Estrutura do primeiro pedido recebido:', JSON.stringify(allOrders[0], null, 2));
-    }
+    // Log de depuração com a estrutura do primeiro cliente e primeiro pedido
+    if (clients.length > 0) console.log('[DEBUG] Estrutura do primeiro CLIENTE:', JSON.stringify(clients[0], null, 2));
+    if (orders.length > 0) console.log('[DEBUG] Estrutura do primeiro PEDIDO:', JSON.stringify(orders[0], null, 2));
     
+    // Retorna um objeto com as duas listas de dados
     return {
       statusCode: 200,
       headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify(allOrders)
+      body: JSON.stringify({ clients, orders })
     };
 
   } catch (error) {
-    console.error("[ERRO FATAL] Erro inesperado no proxy:", error);
+    console.error("[ERRO FATAL] Erro inesperado no proxy:", error.message);
+    const statusCode = error.message.startsWith('401') ? 401 : 500;
     return {
-      statusCode: 500,
+      statusCode: statusCode,
       headers,
       body: JSON.stringify({ error: `Erro interno no servidor proxy: ${error.message}` })
     };
