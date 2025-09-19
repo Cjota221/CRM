@@ -1,5 +1,9 @@
 {
+  "name": "crm-facilzap-integration",
+  "version": "1.0.0",
+  "description": "Proxy para a integração do CRM com a API da FacilZap",
   "dependencies": {
-    "node-fetch": "^2.6.1"
+    "node-fetch": "^2.7.0"
   }
 }
+
