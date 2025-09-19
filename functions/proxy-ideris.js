@@ -18,8 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 emRisco: 90
             },
             // O token fornecido foi adicionado aqui.
-            iderisApiKey: '18984dHlW0vVsqerYdimTHX1HEqQEKnUsjl5NZATPBlYgqORuLFIXIX1Z0yx2dvrT2g9ORETzWCuEM14pAxqG',
-            proxyUrl: ''
+            iderisApiKey: '18984dHlW0vVsqerYdimTHX1HEqQEKnUsjl5NZATPBlYgqORuLFIXIX1Z0yx2dvrT2g9ORETzWCuEM14pAxqG'
         },
         importHistory: [],
         isInitialImport: true,
@@ -74,7 +73,6 @@ document.addEventListener('DOMContentLoaded', () => {
             ativoDays: document.getElementById('status-ativo-days'),
             riscoDays: document.getElementById('status-risco-days'),
             apiKey: document.getElementById('ideris-api-key'),
-            proxyUrl: document.getElementById('proxy-url'),
             saveBtn: document.getElementById('save-settings-btn'),
             cancelBtn: document.getElementById('cancel-settings-btn')
         },
@@ -333,8 +331,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- LÓGICA DE SINCRONIZAÇÃO COM IDERIS ---
     async function syncFromIderis() {
-        if (!state.config.iderisApiKey || !state.config.proxyUrl) {
-            showToast('API Key da Ideris e URL do Proxy são obrigatórios. Verifique as Configurações.', 'error');
+        if (!state.config.iderisApiKey) {
+            showToast('API Key da Ideris é obrigatória. Verifique as Configurações.', 'error');
             openSettingsModal();
             return;
         }
@@ -360,7 +358,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     async function callApi(endpoint) {
-        const url = `${state.config.proxyUrl}?endpoint=${endpoint}`;
+        // Usa um caminho relativo para o proxy. O Netlify irá redirecionar automaticamente.
+        const url = `/api/proxy-ideris?endpoint=${endpoint}`;
         const response = await fetch(url, {
             method: 'GET',
             headers: {
@@ -860,7 +859,6 @@ document.addEventListener('DOMContentLoaded', () => {
         ui.settingsModal.ativoDays.value = state.config.statusIntervals.ativo;
         ui.settingsModal.riscoDays.value = state.config.statusIntervals.emRisco;
         ui.settingsModal.apiKey.value = state.config.iderisApiKey;
-        ui.settingsModal.proxyUrl.value = state.config.proxyUrl;
         showModal(ui.settingsModal.container);
     }
 
@@ -870,7 +868,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const ativo = parseInt(ui.settingsModal.ativoDays.value, 10);
         const risco = parseInt(ui.settingsModal.riscoDays.value, 10);
         const apiKey = ui.settingsModal.apiKey.value.trim();
-        const proxyUrl = ui.settingsModal.proxyUrl.value.trim();
 
         if (isNaN(ativo) || isNaN(risco) || ativo <= 0 || risco <= ativo) {
             showToast('Valores de status inválidos. "Em Risco" deve ser maior que "Ativo".', 'error');
@@ -884,7 +881,6 @@ document.addEventListener('DOMContentLoaded', () => {
         state.config.statusIntervals.ativo = ativo;
         state.config.statusIntervals.emRisco = risco;
         state.config.iderisApiKey = apiKey;
-        state.config.proxyUrl = proxyUrl;
         
         await saveConfigToDB({ config: state.config, importHistory: state.importHistory });
         
