@@ -24,7 +24,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const settingsModal = document.getElementById('settings-modal');
     const settingsForm = document.getElementById('settings-form');
     const cancelSettingsButton = document.getElementById('cancel-settings-button');
-    const apiKeyInput = document.getElementById('api-key');
     const statusAtivoDaysInput = document.getElementById('status-ativo-days');
     const statusRiscoDaysInput = document.getElementById('status-risco-days');
     
@@ -32,7 +31,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const syncButton = document.getElementById('sync-button');
 
     let currentSettings = {
-        apiKey: '',
         statusAtivoDays: 30,
         statusRiscoDays: 90,
     };
@@ -89,7 +87,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!db) return;
         const transaction = db.transaction('settings', 'readwrite');
         const store = transaction.objectStore('settings');
-        currentSettings.apiKey = apiKeyInput.value.trim();
         currentSettings.statusAtivoDays = parseInt(statusAtivoDaysInput.value, 10) || 30;
         currentSettings.statusRiscoDays = parseInt(statusRiscoDaysInput.value, 10) || 90;
         store.put({ id: 'config', ...currentSettings });
@@ -112,12 +109,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (savedSettings) {
                 currentSettings = { ...currentSettings, ...savedSettings };
             }
-             // Pre-fill with the provided token if settings are empty
-            if (!currentSettings.apiKey) {
-                currentSettings.apiKey = '18984dHlW0vVsqerYdimTHX1HEqQEKnUsjl5NZATPBlYgqORuLFIXIX1Z0yx2dvrT2g9ORETzWCuEM14pAxqG';
-            }
-
-            apiKeyInput.value = currentSettings.apiKey;
             statusAtivoDaysInput.value = currentSettings.statusAtivoDays;
             statusRiscoDaysInput.value = currentSettings.statusRiscoDays;
             
@@ -322,11 +313,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     async function syncData() {
-        if (!currentSettings.apiKey) {
-            showToast('Por favor, configure sua API Key Ideris nas Configurações.', 'error');
-            return;
-        }
-
         showToast('Iniciando sincronização...', 'info');
         syncButton.disabled = true;
         syncButton.innerHTML = '<i class="fas fa-sync-alt w-6 text-center animate-spin"></i><span class="ml-4">Sincronizando...</span>';
