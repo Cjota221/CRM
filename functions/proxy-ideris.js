@@ -4,7 +4,13 @@ exports.handler = async function(event, context) {
     const IDERIS_API_URL = 'https://api.ideris.com.br/v1/Pedido';
     const API_KEY = process.env.IDERIS_API_KEY;
 
+    // Linha de depuração para verificar a chave no Netlify
+    if (API_KEY) {
+        console.log(`Verificando API Key. Início: ${API_KEY.substring(0, 5)}, Final: ${API_KEY.substring(API_KEY.length - 5)}`);
+    }
+
     if (!API_KEY) {
+        console.error("ERRO: A variável de ambiente IDERIS_API_KEY não foi encontrada.");
         return {
             statusCode: 500,
             body: JSON.stringify({ message: "A variável de ambiente IDERIS_API_KEY não está configurada no Netlify." })
@@ -20,19 +26,15 @@ exports.handler = async function(event, context) {
             }
         });
         
-        // Verifica se a resposta não foi bem-sucedida
         if (!response.ok) {
-             // Tenta ler o corpo da resposta como texto, pois pode não ser JSON
             const errorText = await response.text();
-            console.error('Erro da API Ideris:', errorText);
-            // Retorna uma mensagem de erro clara para o frontend
+            console.error('Erro recebido da API Ideris:', errorText);
             return {
                 statusCode: response.status,
                 body: JSON.stringify({ message: `Erro da API Ideris: ${errorText}` })
             };
         }
 
-        // Se a resposta foi bem-sucedida, processa como JSON
         const data = await response.json();
         
         return {
