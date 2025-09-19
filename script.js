@@ -37,7 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     function initDB() {
-        const request = indexedDB.open(dbName, 2); // Versão 2 para garantir a atualização
+        const request = indexedDB.open(dbName, 2);
         request.onerror = (e) => console.error('Erro no DB:', e.target.errorCode);
         request.onsuccess = (e) => {
             db = e.target.result;
@@ -82,6 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     function saveSettings() {
+        if (!db) return;
         const transaction = db.transaction('settings', 'readwrite');
         const store = transaction.objectStore('settings');
         currentSettings.statusAtivoDays = parseInt(statusAtivoDaysInput.value, 10) || 30;
@@ -146,7 +147,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 return matchesStatus && matchesTag && matchesSearch;
             });
             
-            // Atualiza o contador de clientes
             clientCountDisplay.textContent = `Exibindo ${filteredClients.length} de ${clients.length} clientes`;
 
             noClientsMessage.classList.toggle('hidden', filteredClients.length > 0);
@@ -184,7 +184,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function handleFormSubmit(e) {
         e.preventDefault();
-        const id = clientIdInput.value; 
+        const id = clientIdInput.value;
         const clientData = {
             name: document.getElementById('name').value,
             email: document.getElementById('email').value,
@@ -345,10 +345,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 (order.produtos || order.itens)?.forEach(item => {
                     const productMap = client.products;
-                    const itemPrice = parseFloat(item.subtotal || item.valor || 0); // Adicionado 'valor' como fallback
+                    const itemPrice = parseFloat(item.subtotal || item.valor || 0);
                     const itemQuantity = parseInt(item.quantidade || 1, 10);
                     const itemCode = item.codigo || item.sku;
-                    const itemName = item.nome || item.produto_nome; // Adicionado 'produto_nome'
+                    const itemName = item.nome || item.produto_nome;
 
                     if (!itemCode || !itemName) return;
 
@@ -428,7 +428,6 @@ document.addEventListener('DOMContentLoaded', () => {
     cancelButton.addEventListener('click', () => closeModal('client-modal'));
     clientForm.addEventListener('submit', handleFormSubmit);
     
-    // CORREÇÃO: Listener de eventos centralizado para os botões dos cards
     clientCardsContainer.addEventListener('click', (event) => {
         const target = event.target.closest('button');
         if (!target) return;
@@ -458,4 +457,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     initDB();
 });
+" in the most up-to-date Canvas "script.js" document above and am asking a query about/based on this code below.
+Instructions to follow:
+  * Don't output/edit the document if the query is Direct/Simple. For example, if the query asks for a simple explanation, output a direct answer.
+  * Make sure to **edit** the document if the query shows the intent of editing the document, in which case output the entire edited document, **not just that section or the edits**.
+    * Don't output the same document/empty document and say that you have edited it.
+    * Don't change unrelated code in the document.
+  * Don't output  and  in your final response.
+  * Any references like "this" or "selected code" refers to the code between  and  tags.
+  * Just acknowledge my request in the introduction.
+  * Make sure to refer to the document as "Canvas" in your response.
+
+Então, só que não tá aparecendo que aparece aqui. É só por exemplo tem uns que aparece data de última compra mas aqui não tem a maioria não tá aparecendo tá pedindo uma compra não tá aparecendo, por exemplo o total gasto pedir pela quantidade de pedidos, entendeu? Não consigo por exemplo clicar nesse olhinho que você colocou nem. Nesse lapizinho para como por exemplo editar não consigo fazer nada disso. Aqui para mim não aparece.
 
