@@ -31,10 +31,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusAtivoDaysInput = document.getElementById('status-ativo-days');
     const statusRiscoDaysInput = document.getElementById('status-risco-days');
     
+    // NOVO: Elementos do Modal de Confirmação
+    const confirmModal = document.getElementById('confirm-modal');
+    const confirmDeleteButton = document.getElementById('confirm-delete-button');
+    const cancelDeleteButton = document.getElementById('cancel-delete-button');
+
     let currentSettings = {
         statusAtivoDays: 30,
         statusRiscoDays: 90,
     };
+    let clientIdToDelete = null; // Variável para guardar o ID do cliente a ser excluído
 
     function initDB() {
         const request = indexedDB.open(dbName, 2);
@@ -52,16 +58,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 store = e.target.transaction.objectStore('clients');
             }
 
-            if (store.indexNames.contains('email')) {
-                store.deleteIndex('email');
+            if (!store.indexNames.contains('email')) {
+                 store.createIndex('email', 'email', { unique: false });
             }
-            store.createIndex('email', 'email', { unique: false });
-            
-            if (store.indexNames.contains('tag')) {
-                store.deleteIndex('tag');
+            if (!store.indexNames.contains('tag')) {
+                store.createIndex('tag', 'tag', { unique: false });
             }
-            store.createIndex('tag', 'tag', { unique: false });
-            
             if (!db.objectStoreNames.contains('settings')) {
                 db.createObjectStore('settings', { keyPath: 'id' });
             }
@@ -253,7 +255,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     </table>`;
             }
 
-            // Monta o endereço completo a partir dos campos individuais
             const fullAddress = [
                 client.address,
                 client.address_number,
@@ -279,18 +280,31 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    // ATUALIZADO: Abre o modal de confirmação
     function deleteClient(id) {
-        // Usando um modal customizado em vez de `confirm()`
-        // A implementação do modal de confirmação seria necessária no HTML/CSS
-        if (confirm('Tem certeza? Esta ação é irreversível.')) {
-            const tx = db.transaction('clients', 'readwrite');
-            tx.objectStore('clients').delete(id);
-            tx.oncomplete = () => {
-                renderClients();
-                showToast('Cliente excluído.', 'success');
-            };
+        clientIdToDelete = id;
+        openModal('confirm-modal');
+    }
+
+    // NOVO: Função para confirmar e executar a exclusão
+    function confirmDeletion() {
+        if (!clientIdToDelete) return;
+
+        const tx = db.transaction('clients', 'readwrite');
+        tx.objectStore('clients').delete(clientIdToDelete);
+        tx.oncomplete = () => {
+            renderClients();
+            showToast('Cliente excluído.', 'success');
+            closeModal('confirm-modal');
+            clientIdToDelete = null;
+        };
+        tx.onerror = () => {
+            showToast('Erro ao excluir cliente.', 'error');
+            closeModal('confirm-modal');
+            clientIdToDelete = null;
         }
     }
+
 
     function openModal(modalId) {
         if (modalId === 'client-modal') {
@@ -330,7 +344,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.warn("Cliente da API ignorado por não ter um ID:", c);
                     return;
                 }
-                // Captura todos os novos campos da API
                 clientsData.set(c.id, {
                     id: c.id,
                     name: c.nome,
@@ -450,8 +463,9 @@ document.addEventListener('DOMContentLoaded', () => {
     cancelButton.addEventListener('click', () => closeModal('client-modal'));
     clientForm.addEventListener('submit', handleFormSubmit);
     
-    // Listener centralizado para os botões dos cards
+    // CORREÇÃO DEFINITIVA: Listener centralizado para os botões dos cards
     clientCardsContainer.addEventListener('click', (event) => {
+        // Encontra o botão mais próximo que foi clicado, mesmo que o clique seja no ícone
         const target = event.target.closest('button');
         if (!target) return;
 
@@ -472,6 +486,10 @@ document.addEventListener('DOMContentLoaded', () => {
     cancelSettingsButton.addEventListener('click', () => closeModal('settings-modal'));
     settingsForm.addEventListener('submit', (e) => { e.preventDefault(); saveSettings(); });
     
+    // NOVO: Listeners para o modal de confirmação
+    confirmDeleteButton.addEventListener('click', confirmDeletion);
+    cancelDeleteButton.addEventListener('click', () => closeModal('confirm-modal'));
+
     searchInput.addEventListener('input', renderClients);
     filterStatusSelect.addEventListener('change', renderClients);
     filterTagSelect.addEventListener('change', renderClients);
