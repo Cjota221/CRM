@@ -1,3 +1,5 @@
+// Este é o código do SERVIDOR (Node.js)
+// Ele DEVE usar 'require'
 const fetch = require('node-fetch');
 
 exports.handler = async (event) => {
@@ -18,7 +20,6 @@ exports.handler = async (event) => {
     return { statusCode: 500, headers, body: JSON.stringify({ error: "FACILZAP_TOKEN não configurado no servidor." }) };
   }
   
-  // ATENÇÃO: Confirme se este é o endpoint correto para buscar PEDIDOS na sua API.
   const BASE_API_ENDPOINT = 'https://api.facilzap.app.br/pedidos';
   let allOrders = [];
   let page = 1;
@@ -62,7 +63,6 @@ exports.handler = async (event) => {
     
     console.log(`[INFO] Busca finalizada. Total de ${allOrders.length} pedidos encontrados.`);
     
-    // NOVO LOG DE DEPURAÇÃO: Mostra a estrutura do primeiro pedido encontrado.
     if (allOrders.length > 0) {
         console.log('[DEBUG] Estrutura do primeiro pedido recebido:', JSON.stringify(allOrders[0], null, 2));
     }
