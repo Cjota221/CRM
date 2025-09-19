@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const searchInput = document.getElementById('search-input');
     const filterStatusSelect = document.getElementById('filter-status');
     const filterTagSelect = document.getElementById('filter-tag');
+    const clientCountDisplay = document.getElementById('client-count-display');
 
     // Modais
     const clientModal = document.getElementById('client-modal');
@@ -36,8 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     function initDB() {
-        // CORREÇÃO: Aumenta a versão do DB para forçar a atualização da estrutura
-        const request = indexedDB.open(dbName, 2);
+        const request = indexedDB.open(dbName, 2); // Versão 2 para garantir a atualização
         request.onerror = (e) => console.error('Erro no DB:', e.target.errorCode);
         request.onsuccess = (e) => {
             db = e.target.result;
@@ -52,7 +52,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 store = e.target.transaction.objectStore('clients');
             }
 
-            // CORREÇÃO: Remove o índice antigo (que era 'unique') e o recria corretamente
             if (store.indexNames.contains('email')) {
                 store.deleteIndex('email');
             }
@@ -146,6 +145,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 return matchesStatus && matchesTag && matchesSearch;
             });
+            
+            // Atualiza o contador de clientes
+            clientCountDisplay.textContent = `Exibindo ${filteredClients.length} de ${clients.length} clientes`;
 
             noClientsMessage.classList.toggle('hidden', filteredClients.length > 0);
             clientCardsContainer.classList.toggle('hidden', filteredClients.length === 0);
@@ -182,7 +184,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function handleFormSubmit(e) {
         e.preventDefault();
-        const id = clientIdInput.value; // ID da FacilZap é string
+        const id = clientIdInput.value; 
         const clientData = {
             name: document.getElementById('name').value,
             email: document.getElementById('email').value,
@@ -310,13 +312,11 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const clientsData = new Map();
 
-            // 1. Processa a lista de clientes para criar a base de dados
             apiClients.forEach(c => {
                 if (!c || !c.id) {
                     console.warn("Cliente da API ignorado por não ter um ID:", c);
                     return;
                 }
-
                 clientsData.set(c.id, {
                     id: c.id,
                     name: c.nome,
@@ -330,12 +330,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             });
 
-            // 2. Processa a lista de pedidos para enriquecer os dados dos clientes
             apiOrders.forEach(order => {
                 const clientId = order.cliente?.id;
-                if (!clientId || !clientsData.has(clientId)) {
-                    return; 
-                }
+                if (!clientId || !clientsData.has(clientId)) return; 
 
                 const client = clientsData.get(clientId);
                 client.totalSpent += parseFloat(order.total || 0);
@@ -348,10 +345,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 (order.produtos || order.itens)?.forEach(item => {
                     const productMap = client.products;
-                    const itemPrice = parseFloat(item.subtotal || item.valor_venda || 0);
+                    const itemPrice = parseFloat(item.subtotal || item.valor || 0); // Adicionado 'valor' como fallback
                     const itemQuantity = parseInt(item.quantidade || 1, 10);
                     const itemCode = item.codigo || item.sku;
-                    const itemName = item.nome || item.nome_produto;
+                    const itemName = item.nome || item.produto_nome; // Adicionado 'produto_nome'
 
                     if (!itemCode || !itemName) return;
 
@@ -367,7 +364,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             });
 
-            // 3. Salva os dados consolidados no IndexedDB
             const tx = db.transaction('clients', 'readwrite');
             const store = tx.objectStore('clients');
             let updatedCount = 0;
@@ -411,11 +407,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error("Erro na transação final:", error);
                 let userMessage = "Erro ao salvar os dados no banco de dados local.";
                 if (error.name === 'ConstraintError') {
-                    userMessage = "Erro de dados: Foi encontrado um ID de cliente duplicado ou um e-mail repetido.";
+                    userMessage = "Erro: A base de dados local encontrou um problema de chave duplicada. Tente limpar os dados do site no navegador e sincronizar novamente.";
                 } else if (error.name === 'QuotaExceededError') {
                     userMessage = "Erro: Espaço de armazenamento local insuficiente.";
-                } else if (error.name === 'DataError') {
-                    userMessage = "Erro: Um registro de cliente está com dados inválidos (provavelmente sem ID).";
                 }
                 showToast(userMessage, "error");
             }
@@ -434,13 +428,21 @@ document.addEventListener('DOMContentLoaded', () => {
     cancelButton.addEventListener('click', () => closeModal('client-modal'));
     clientForm.addEventListener('submit', handleFormSubmit);
     
+    // CORREÇÃO: Listener de eventos centralizado para os botões dos cards
     clientCardsContainer.addEventListener('click', (event) => {
         const target = event.target.closest('button');
         if (!target) return;
-        const id = target.dataset.id; // ID da FacilZap é string
-        if (target.classList.contains('edit-client-button')) editClient(id);
-        else if (target.classList.contains('delete-client-button')) deleteClient(id);
-        else if (target.classList.contains('view-details-button')) viewClientDetails(id);
+
+        const id = target.dataset.id;
+        if (!id) return;
+
+        if (target.classList.contains('view-details-button')) {
+            viewClientDetails(id);
+        } else if (target.classList.contains('edit-client-button')) {
+            editClient(id);
+        } else if (target.classList.contains('delete-client-button')) {
+            deleteClient(id);
+        }
     });
     
     closeDetailsButton.addEventListener('click', () => closeModal('details-modal'));
