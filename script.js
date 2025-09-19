@@ -45,8 +45,8 @@ document.addEventListener('DOMContentLoaded', () => {
         request.onupgradeneeded = (e) => {
             db = e.target.result;
             if (!db.objectStoreNames.contains('clients')) {
-                const store = db.createObjectStore('clients', { keyPath: 'id', autoIncrement: true });
-                store.createIndex('email', 'email', { unique: true });
+                const store = db.createObjectStore('clients', { keyPath: 'id' });
+                store.createIndex('email', 'email', { unique: false }); // Email pode não ser único
                 store.createIndex('tag', 'tag', { unique: false });
             }
             if (!db.objectStoreNames.contains('settings')) {
@@ -55,7 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    function showToast(message, type = 'info', duration = 3000) {
+    function showToast(message, type = 'info', duration = 4000) {
         const container = document.getElementById('toast-container');
         const toast = document.createElement('div');
         toast.className = `toast-notification ${'toast-' + type}`;
@@ -143,10 +143,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 card.innerHTML = `
                     <div>
                         <div class="flex justify-between items-start mb-2">
-                            <h3 class="font-bold text-gray-800 text-lg">${client.name}</h3>
+                            <h3 class="font-bold text-gray-800 text-lg">${client.name || 'Cliente sem nome'}</h3>
                             <span class="status-badge ${status.class}">${status.text}</span>
                         </div>
-                        <p class="text-sm text-gray-500 mb-4 truncate">${client.email}</p>
+                        <p class="text-sm text-gray-500 mb-4 truncate">${client.email || 'Sem e-mail'}</p>
                         <div class="text-sm space-y-2 mb-4">
                             <p><i class="fas fa-dollar-sign fa-fw text-gray-400 mr-2"></i>Total Gasto: <span class="font-semibold">R$ ${client.totalSpent ? client.totalSpent.toFixed(2) : '0.00'}</span></p>
                             <p><i class="fas fa-shopping-basket fa-fw text-gray-400 mr-2"></i>Pedidos: <span class="font-semibold">${client.orderCount || 0}</span></p>
@@ -167,7 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function handleFormSubmit(e) {
         e.preventDefault();
-        const id = parseInt(clientIdInput.value);
+        const id = clientIdInput.value; // ID da FacilZap é string
         const clientData = {
             name: document.getElementById('name').value,
             email: document.getElementById('email').value,
@@ -184,7 +184,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 store.put({ ...req.result, ...clientData, id: id });
             };
         } else {
-            store.add(clientData);
+             // Adicionar cliente manualmente não é o foco principal, mas mantemos a funcionalidade
+            store.add({ ...clientData, id: `manual_${Date.now()}` });
         }
 
         tx.oncomplete = () => {
@@ -192,7 +193,7 @@ document.addEventListener('DOMContentLoaded', () => {
             closeModal('client-modal');
             showToast(`Cliente ${id ? 'atualizado' : 'adicionado'}!`, 'success');
         };
-        tx.onerror = () => showToast('Erro: E-mail já pode existir.', 'error');
+        tx.onerror = () => showToast('Erro ao salvar cliente.', 'error');
     }
 
     function editClient(id) {
@@ -215,7 +216,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const client = e.target.result;
             detailsModalTitle.textContent = `Detalhes de ${client.name}`;
             
-            let productsHtml = '<p class="text-sm text-gray-500">Nenhum produto registrado.</p>';
+            let productsHtml = '<p class="text-sm text-gray-500">Nenhum produto comprado.</p>';
             if (client.products && client.products.length > 0) {
                  productsHtml = `
                     <table class="min-w-full divide-y divide-gray-200">
@@ -256,7 +257,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!confirm('Tem certeza? Esta ação é irreversível.')) return;
         const tx = db.transaction('clients', 'readwrite');
         tx.objectStore('clients').delete(id);
-        // CORREÇÃO: Removido um "=" extra que quebrava o script
         tx.oncomplete = () => {
             renderClients();
             showToast('Cliente excluído.', 'success');
@@ -277,7 +277,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     async function syncData() {
-        showToast('Iniciando sincronização com FacilZap...', 'info');
+        showToast('Buscando dados na FacilZap... Isso pode levar um momento.', 'info');
         syncButton.disabled = true;
         syncButton.innerHTML = '<i class="fas fa-sync-alt w-6 text-center animate-spin"></i><span class="ml-4">Sincronizando...</span>';
 
@@ -288,32 +288,42 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(errorData.error || `Erro HTTP ${response.status}`);
             }
 
-            const allOrders = await response.json(); 
+            const { clients: apiClients, orders: apiOrders } = await response.json(); 
             
-            if (!allOrders || !Array.isArray(allOrders)) {
-                 throw new Error("Resposta da API inválida ou sem dados.");
+            if (!apiClients || !apiOrders) {
+                 throw new Error("Resposta da API inválida. Faltam clientes ou pedidos.");
             }
             
-            const clientsData = {};
+            const clientsData = new Map();
 
-            allOrders.forEach(order => {
-                const clientIdentifier = order.cliente?.email || `id-${order.cliente?.id}@facilzap.com`;
-                
-                if (!clientsData[clientIdentifier]) {
-                    clientsData[clientIdentifier] = {
-                        name: order.cliente?.nome,
-                        email: order.cliente?.email,
-                        phone: order.cliente?.telefone,
-                        totalSpent: 0,
-                        orderCount: 0,
-                        lastPurchaseDate: null,
-                        products: new Map()
-                    };
+            // 1. Processa a lista de clientes para criar a base de dados
+            apiClients.forEach(c => {
+                clientsData.set(c.id, {
+                    id: c.id,
+                    name: c.nome,
+                    email: c.email,
+                    phone: c.whatsapp, // Assumindo que 'whatsapp' é o campo do telefone
+                    birthday: c.data_nascimento,
+                    lastPurchaseDate: c.ultima_compra ? new Date(c.ultima_compra) : null,
+                    totalSpent: 0,
+                    orderCount: 0,
+                    products: new Map()
+                });
+            });
+
+            // 2. Processa a lista de pedidos para enriquecer os dados dos clientes
+            apiOrders.forEach(order => {
+                const clientId = order.cliente?.id;
+                if (!clientId || !clientsData.has(clientId)) {
+                    return; // Pula pedidos sem cliente correspondente
                 }
 
-                const client = clientsData[clientIdentifier];
+                const client = clientsData.get(clientId);
                 client.totalSpent += parseFloat(order.total || 0);
                 client.orderCount++;
+                
+                // A data da última compra já vem do endpoint /clientes, que é mais confiável.
+                // Mas podemos atualizar se um pedido for mais recente.
                 const orderDate = order.data ? new Date(order.data) : null;
                 if (orderDate && (!client.lastPurchaseDate || client.lastPurchaseDate < orderDate)) {
                     client.lastPurchaseDate = orderDate;
@@ -325,6 +335,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     const itemQuantity = parseInt(item.quantidade || 1, 10);
                     const itemCode = item.codigo || item.sku;
                     const itemName = item.nome || item.nome_produto;
+
+                    if (!itemCode || !itemName) return;
 
                     if (productMap.has(itemCode)) {
                         productMap.get(itemCode).quantity += itemQuantity;
@@ -338,45 +350,49 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             });
 
+            // 3. Salva os dados consolidados no IndexedDB
             const tx = db.transaction('clients', 'readwrite');
             const store = tx.objectStore('clients');
-            const emailIndex = store.index('email');
             let updatedCount = 0;
             let newCount = 0;
             
-            const promises = Object.values(clientsData).map(processedClient => {
+            const promises = Array.from(clientsData.values()).map(processedClient => {
                  return new Promise((resolve) => {
-                    const lookupKey = processedClient.email || `id-${processedClient.id}@facilzap.com`;
-                    const request = emailIndex.get(lookupKey);
-                    
+                    const request = store.get(processedClient.id);
                     request.onsuccess = () => {
-                        const existingClient = request.result || {};
+                        const existingClient = request.result;
                         
                         const validDate = processedClient.lastPurchaseDate && !isNaN(processedClient.lastPurchaseDate);
-                        const lastPurchaseDateISO = validDate ? processedClient.lastPurchaseDate.toISOString().split('T')[0] : existingClient.lastPurchaseDate || null;
+                        const lastPurchaseDateISO = validDate ? processedClient.lastPurchaseDate.toISOString().split('T')[0] : null;
 
                         const finalClientData = {
-                            ...existingClient,
+                            ...existingClient, // Mantém dados manuais se existirem
                             ...processedClient,
-                            email: processedClient.email || existingClient.email,
                             products: Array.from(processedClient.products.values()),
                             lastPurchaseDate: lastPurchaseDateISO
                         };
                         
                         store.put(finalClientData);
-                        existingClient.id ? updatedCount++ : newCount++;
+                        existingClient ? updatedCount++ : newCount++;
                         resolve();
                     };
-                    request.onerror = resolve;
+                    request.onerror = (e) => {
+                        console.error("Erro ao buscar cliente no DB:", e);
+                        resolve();
+                    };
                 });
             });
 
             await Promise.all(promises);
             
             tx.oncomplete = () => {
-                showToast(`Sincronização concluída! ${newCount} novos, ${updatedCount} atualizados.`, 'success');
+                showToast(`Sincronização concluída! ${newCount} clientes novos, ${updatedCount} atualizados.`, 'success');
                 renderClients();
             };
+            tx.onerror = (e) => {
+                console.error("Erro na transação final:", e);
+                showToast("Erro ao salvar os dados no banco de dados local.", "error");
+            }
 
         } catch (error) {
             console.error('Erro na sincronização:', error);
@@ -395,7 +411,7 @@ document.addEventListener('DOMContentLoaded', () => {
     clientCardsContainer.addEventListener('click', (event) => {
         const target = event.target.closest('button');
         if (!target) return;
-        const id = parseInt(target.dataset.id);
+        const id = target.dataset.id; // ID da FacilZap é string
         if (target.classList.contains('edit-client-button')) editClient(id);
         else if (target.classList.contains('delete-client-button')) deleteClient(id);
         else if (target.classList.contains('view-details-button')) viewClientDetails(id);
