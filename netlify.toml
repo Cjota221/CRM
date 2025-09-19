@@ -1,1 +1,23 @@
+Configurações globais de build
+[build]
 
+Diretório onde as funções serverless (como a proxy-ideris.js) estão.
+functions = "functions"
+
+Regra de Redirecionamento (Proxy)
+Isso diz ao Netlify para interceptar chamadas para "/api/proxy-ideris"
+e, em vez de procurar um arquivo, executar a função serverless.
+[[redirects]]
+
+O caminho que seu script.js vai chamar.
+from = "/api/proxy-ideris"
+
+A função serverless que deve ser executada.
+to = "/.netlify/functions/proxy-ideris"
+
+O código de status HTTP 200 significa que a chamada foi bem-sucedida
+e a resposta da função é o que deve ser retornado.
+status = 200
+
+Garante que essa regra seja aplicada mesmo que exista uma pasta /api/ no projeto.
+force = true
