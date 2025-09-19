@@ -1,79 +1,82 @@
 const fetch = require('node-fetch');
 
 exports.handler = async (event) => {
-  // Headers CORS para permitir que seu CRM (rodando no navegador) acesse esta função
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Methods': 'GET, OPTIONS'
   };
 
-  // Responde a requisições OPTIONS (preflight) que o navegador envia antes do GET
   if (event.httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 200,
-      headers,
-      body: ''
-    };
+    return { statusCode: 200, headers, body: '' };
   }
 
-  // Pega a chave de API secreta das variáveis de ambiente do Netlify
   const FACILZAP_TOKEN = process.env.FACILZAP_TOKEN;
   
-  // Se a chave não estiver configurada no Netlify, retorna um erro claro
   if (!FACILZAP_TOKEN) {
     console.error("[ERRO] Variável de ambiente FACILZAP_TOKEN não configurada.");
-    return {
-      statusCode: 500,
-      headers,
-      body: JSON.stringify({ error: "Variável de ambiente FACILZAP_TOKEN não configurada no servidor." })
-    };
+    return { statusCode: 500, headers, body: JSON.stringify({ error: "FACILZAP_TOKEN não configurado no servidor." }) };
   }
+  
+  // ATENÇÃO: Adapte este endpoint para o correto da API FacilZap que retorna os PEDIDOS.
+  // A API de /produtos não contém dados de clientes. Usaremos um endpoint hipotético /pedidos.
+  const BASE_API_ENDPOINT = 'https://api.facilzap.app.br/pedidos';
+  let allOrders = [];
+  let page = 1;
+  let hasMore = true;
 
-  // Endpoint da API da FacilZap para buscar os pedidos
-  // ATENÇÃO: A FacilZap não tem um endpoint /Pedido. Usaremos /produtos como exemplo.
-  // Você precisará adaptar para o endpoint correto que retorna os dados de clientes/pedidos.
-  const API_ENDPOINT = 'https://api.facilzap.app.br/produtos';
-
-  console.log(`[INFO] Fazendo requisição para: ${API_ENDPOINT}`);
+  console.log(`[INFO] Iniciando busca de todos os pedidos da FacilZap...`);
 
   try {
-    const response = await fetch(API_ENDPOINT, {
-        method: 'GET',
-        headers: {
-            // A API da FacilZap espera a chave com o prefixo "Bearer"
-            'Authorization': `Bearer ${FACILZAP_TOKEN}`,
-            'Content-Type': 'application/json'
-        }
-    });
+    // Loop para buscar todas as páginas de pedidos
+    while (hasMore) {
+      const API_ENDPOINT_PAGE = `${BASE_API_ENDPOINT}?page=${page}&length=100`;
+      console.log(`[INFO] Buscando página ${page}...`);
+      
+      const response = await fetch(API_ENDPOINT_PAGE, {
+          method: 'GET',
+          headers: {
+              'Authorization': `Bearer ${FACILZAP_TOKEN}`,
+              'Content-Type': 'application/json'
+          }
+      });
 
-    const responseBody = await response.text();
+      if (response.status === 401) {
+        console.error("[ERRO] Autenticação (401). Verifique a FACILZAP_TOKEN.");
+        // Retorna o erro imediatamente para o frontend
+        return { statusCode: 401, headers, body: JSON.stringify({ error: "Token de autorização da FacilZap inválido." }) };
+      }
 
-    // Se o token for inválido, a FacilZap retorna 401
-    if (response.status === 401) {
-      console.error("[ERRO] Erro de autenticação (401). Verifique a FACILZAP_TOKEN no Netlify.");
-      return {
-        statusCode: 401,
-        headers,
-        body: JSON.stringify({ error: "Token de autorização da FacilZap é inválido ou expirou." })
-      };
+      if (!response.ok) {
+        const errorBody = await response.text();
+        console.error(`[ERRO] API da FacilZap retornou status ${response.status} na página ${page}. Body: ${errorBody}`);
+        // Para a busca se uma página der erro
+        hasMore = false; 
+        // Retorna o erro, mas podemos decidir continuar ou parar
+        throw new Error(`Erro da API na página ${page}: ${errorBody}`);
+      }
+      
+      const pageData = await response.json();
+      
+      // A API da FacilZap retorna um objeto com uma chave "data" que contém o array
+      const ordersOnPage = pageData.data;
+
+      if (ordersOnPage && ordersOnPage.length > 0) {
+        allOrders = allOrders.concat(ordersOnPage);
+        page++;
+      } else {
+        // Se não houver mais pedidos na página, para o loop
+        hasMore = false;
+      }
     }
     
-    // Se ocorrer outro erro na API, retorna a mensagem de erro
-    if (!response.ok) {
-      console.error(`[ERRO] Erro da API FacilZap. Status: ${response.status}, Body: ${responseBody}`);
-      return {
-        statusCode: response.status,
-        headers,
-        body: JSON.stringify({ error: `Erro retornado pela API da FacilZap: ${responseBody}` })
-      };
-    }
+    console.log(`[INFO] Busca finalizada. Total de ${allOrders.length} pedidos encontrados.`);
     
-    // Se tudo der certo, retorna os dados
+    // Retorna a lista completa de todos os pedidos de todas as páginas
     return {
       statusCode: 200,
       headers: { ...headers, 'Content-Type': 'application/json' },
-      body: responseBody
+      body: JSON.stringify(allOrders) // Retorna o array diretamente
     };
 
   } catch (error) {
@@ -85,3 +88,4 @@ exports.handler = async (event) => {
     };
   }
 };
+
