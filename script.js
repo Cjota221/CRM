@@ -1,60 +1,53 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const dbName = 'CRMDatabase_FacilZap'; // Novo nome para evitar conflitos
+    const dbName = 'CRMDatabase_FacilZap_v2';
     let db;
 
+    // Elementos da UI
+    const syncButton = document.getElementById('sync-button');
+    const openSettingsButton = document.getElementById('open-settings-button');
     const addClientButton = document.getElementById('add-client-button');
+    const clientCardsContainer = document.getElementById('client-cards-container');
+    const noClientsMessage = document.getElementById('no-clients-message');
+    const searchInput = document.getElementById('search-input');
+    const filterStatusSelect = document.getElementById('filter-status');
+    const filterTagSelect = document.getElementById('filter-tag');
+
+    // Modais
     const clientModal = document.getElementById('client-modal');
     const clientForm = document.getElementById('client-form');
     const cancelButton = document.getElementById('cancel-button');
-    const clientTableBody = document.getElementById('client-table-body');
     const modalTitle = document.getElementById('modal-title');
     const clientIdInput = document.getElementById('client-id');
-    const searchInput = document.getElementById('search-input');
-    const filterSelect = document.getElementById('filter-select');
-    const noClientsMessage = document.getElementById('no-clients-message');
     
-    // Details Modal
     const detailsModal = document.getElementById('details-modal');
     const closeDetailsButton = document.getElementById('close-details-button');
     const detailsModalTitle = document.getElementById('details-modal-title');
     const detailsModalContent = document.getElementById('details-modal-content');
 
-    // Settings Modal
-    const openSettingsButton = document.getElementById('open-settings-button');
     const settingsModal = document.getElementById('settings-modal');
     const settingsForm = document.getElementById('settings-form');
     const cancelSettingsButton = document.getElementById('cancel-settings-button');
     const statusAtivoDaysInput = document.getElementById('status-ativo-days');
     const statusRiscoDaysInput = document.getElementById('status-risco-days');
     
-    // Sync Button
-    const syncButton = document.getElementById('sync-button');
-
     let currentSettings = {
         statusAtivoDays: 30,
         statusRiscoDays: 90,
     };
 
-    // --- Database Initialization ---
     function initDB() {
         const request = indexedDB.open(dbName, 1);
-
-        request.onerror = (event) => {
-            console.error('Erro ao abrir o IndexedDB:', event.target.errorCode);
-            showToast('Erro crítico ao carregar o banco de dados.', 'error');
-        };
-
-        request.onsuccess = (event) => {
-            db = event.target.result;
+        request.onerror = (e) => console.error('Erro no DB:', e.target.errorCode);
+        request.onsuccess = (e) => {
+            db = e.target.result;
             loadSettingsAndRender();
         };
-
-        request.onupgradeneeded = (event) => {
-            db = event.target.result;
+        request.onupgradeneeded = (e) => {
+            db = e.target.result;
             if (!db.objectStoreNames.contains('clients')) {
-                const clientStore = db.createObjectStore('clients', { keyPath: 'id', autoIncrement: true });
-                clientStore.createIndex('name', 'name', { unique: false });
-                clientStore.createIndex('email', 'email', { unique: true });
+                const store = db.createObjectStore('clients', { keyPath: 'id', autoIncrement: true });
+                store.createIndex('email', 'email', { unique: true });
+                store.createIndex('tag', 'tag', { unique: false });
             }
             if (!db.objectStoreNames.contains('settings')) {
                 db.createObjectStore('settings', { keyPath: 'id' });
@@ -62,139 +55,118 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    // --- Toast Notifications ---
     function showToast(message, type = 'info', duration = 3000) {
         const container = document.getElementById('toast-container');
         const toast = document.createElement('div');
         toast.className = `toast-notification ${'toast-' + type}`;
         toast.textContent = message;
         container.appendChild(toast);
-
-        setTimeout(() => {
-            toast.classList.add('show');
-        }, 10);
-
+        setTimeout(() => toast.classList.add('show'), 10);
         setTimeout(() => {
             toast.classList.remove('show');
-            setTimeout(() => {
-                container.removeChild(toast);
-            }, 300);
+            setTimeout(() => container.removeChild(toast), 300);
         }, duration);
     }
     
-    // --- Settings Management ---
     function saveSettings() {
-        if (!db) return;
         const transaction = db.transaction('settings', 'readwrite');
         const store = transaction.objectStore('settings');
         currentSettings.statusAtivoDays = parseInt(statusAtivoDaysInput.value, 10) || 30;
         currentSettings.statusRiscoDays = parseInt(statusRiscoDaysInput.value, 10) || 90;
         store.put({ id: 'config', ...currentSettings });
-        
         transaction.oncomplete = () => {
-            showToast('Configurações salvas com sucesso!', 'success');
+            showToast('Configurações salvas!', 'success');
             settingsModal.classList.add('hidden');
             renderClients();
         };
     }
 
     function loadSettingsAndRender() {
-        if (!db) return;
         const transaction = db.transaction('settings', 'readonly');
-        const store = transaction.objectStore('settings');
-        const request = store.get('config');
-
+        const request = transaction.objectStore('settings').get('config');
         request.onsuccess = (event) => {
             const savedSettings = event.target.result;
-            if (savedSettings) {
-                currentSettings = { ...currentSettings, ...savedSettings };
-            }
+            if (savedSettings) currentSettings = { ...currentSettings, ...savedSettings };
             statusAtivoDaysInput.value = currentSettings.statusAtivoDays;
             statusRiscoDaysInput.value = currentSettings.statusRiscoDays;
-            
             renderClients();
         };
     }
 
-    // --- Client Data Management ---
     function getClientStatus(client) {
-        if (!client.lastPurchaseDate) {
-            return { text: 'Sem Histórico', class: 'status-sem-historico' };
-        }
-        const lastPurchase = new Date(client.lastPurchaseDate);
-        const today = new Date();
-        const diffTime = Math.abs(today - lastPurchase);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        if (!client.lastPurchaseDate) return { text: 'Sem Histórico', class: 'status-sem-historico' };
+        const diffDays = Math.ceil((new Date() - new Date(client.lastPurchaseDate)) / (1000 * 60 * 60 * 24));
+        if (diffDays <= currentSettings.statusAtivoDays) return { text: 'Ativo', class: 'status-ativo' };
+        if (diffDays <= currentSettings.statusRiscoDays) return { text: 'Em Risco', class: 'status-risco' };
+        return { text: 'Inativo', class: 'status-inativo' };
+    }
 
-        if (diffDays <= currentSettings.statusAtivoDays) {
-            return { text: 'Ativo', class: 'status-ativo' };
-        } else if (diffDays <= currentSettings.statusRiscoDays) {
-            return { text: 'Em Risco', class: 'status-risco' };
-        } else {
-            return { text: 'Inativo', class: 'status-inativo' };
-        }
+    function getClientTag(client) {
+        if (client.orderCount >= 7) return { text: 'Cliente Fiel', class: 'tag-fiel' };
+        return null;
     }
 
     function renderClients() {
         if (!db) return;
         const transaction = db.transaction('clients', 'readonly');
-        const store = transaction.objectStore('clients');
-        const request = store.getAll();
+        const request = transaction.objectStore('clients').getAll();
 
         request.onsuccess = (event) => {
             const clients = event.target.result;
-            clientTableBody.innerHTML = '';
-
+            clientCardsContainer.innerHTML = '';
+            
             const searchTerm = searchInput.value.toLowerCase();
-            const filterValue = filterSelect.value;
+            const statusFilter = filterStatusSelect.value;
+            const tagFilter = filterTagSelect.value;
 
             const filteredClients = clients.filter(client => {
                 const status = getClientStatus(client).text.toLowerCase().replace(' ', '-');
-                const matchesFilter = filterValue === 'todos' || status === filterValue;
+                const tag = getClientTag(client)?.text.toLowerCase().replace(' ', '-') || 'sem-tag';
+                
+                const matchesStatus = statusFilter === 'todos' || status === statusFilter;
+                const matchesTag = tagFilter === 'todos' || tag === tagFilter;
                 const matchesSearch = !searchTerm ||
                     (client.name && client.name.toLowerCase().includes(searchTerm)) ||
-                    (client.email && client.email.toLowerCase().includes(searchTerm)) ||
-                    (client.phone && client.phone.toLowerCase().includes(searchTerm));
-                return matchesFilter && matchesSearch;
+                    (client.email && client.email.toLowerCase().includes(searchTerm));
+                
+                return matchesStatus && matchesTag && matchesSearch;
             });
 
-            if (filteredClients.length > 0) {
-                 noClientsMessage.classList.add('hidden');
-                filteredClients.forEach(client => {
-                    const status = getClientStatus(client);
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td class="px-6 py-4 whitespace-nowrap">
-                            <div class="flex items-center">
-                                <div class="text-sm font-medium text-gray-900">${client.name}</div>
-                            </div>
-                            <div class="text-sm text-gray-500">${client.email || 'N/A'}</div>
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap">
+            noClientsMessage.classList.toggle('hidden', filteredClients.length > 0);
+            clientCardsContainer.classList.toggle('hidden', filteredClients.length === 0);
+
+            filteredClients.forEach(client => {
+                const status = getClientStatus(client);
+                const tag = getClientTag(client);
+                const card = document.createElement('div');
+                card.className = 'bg-white rounded-lg shadow-md p-5 flex flex-col justify-between';
+                card.innerHTML = `
+                    <div>
+                        <div class="flex justify-between items-start mb-2">
+                            <h3 class="font-bold text-gray-800 text-lg">${client.name}</h3>
                             <span class="status-badge ${status.class}">${status.text}</span>
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            ${client.lastPurchaseDate ? new Date(client.lastPurchaseDate).toLocaleDateString() : 'N/A'}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
-                            ${client.totalSpent ? `R$ ${client.totalSpent.toFixed(2)}` : 'R$ 0,00'}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
-                            <button class="text-indigo-600 hover:text-indigo-900 mr-3 view-details-button" data-id="${client.id}"><i class="fas fa-eye"></i></button>
-                            <button class="text-blue-600 hover:text-blue-900 mr-3 edit-client-button" data-id="${client.id}"><i class="fas fa-edit"></i></button>
-                            <button class="text-red-600 hover:text-red-900 delete-client-button" data-id="${client.id}"><i class="fas fa-trash"></i></button>
-                        </td>
-                    `;
-                    clientTableBody.appendChild(row);
-                });
-            } else {
-                 noClientsMessage.classList.remove('hidden');
-            }
+                        </div>
+                        <p class="text-sm text-gray-500 mb-4 truncate">${client.email}</p>
+                        <div class="text-sm space-y-2 mb-4">
+                            <p><i class="fas fa-dollar-sign fa-fw text-gray-400 mr-2"></i>Total Gasto: <span class="font-semibold">R$ ${client.totalSpent ? client.totalSpent.toFixed(2) : '0.00'}</span></p>
+                            <p><i class="fas fa-shopping-basket fa-fw text-gray-400 mr-2"></i>Pedidos: <span class="font-semibold">${client.orderCount || 0}</span></p>
+                            <p><i class="fas fa-calendar-alt fa-fw text-gray-400 mr-2"></i>Última Compra: <span class="font-semibold">${client.lastPurchaseDate ? new Date(client.lastPurchaseDate).toLocaleDateString() : 'N/A'}</span></p>
+                        </div>
+                        ${tag ? `<div class="mb-4"><span class="tag-badge ${tag.class}">${tag.text}</span></div>` : ''}
+                    </div>
+                    <div class="border-t pt-4 flex justify-end space-x-2">
+                        <button class="text-gray-500 hover:text-indigo-600 view-details-button" data-id="${client.id}" title="Ver Detalhes"><i class="fas fa-eye"></i></button>
+                        <button class="text-gray-500 hover:text-blue-600 edit-client-button" data-id="${client.id}" title="Editar"><i class="fas fa-edit"></i></button>
+                        <button class="text-gray-500 hover:text-red-600 delete-client-button" data-id="${client.id}" title="Excluir"><i class="fas fa-trash"></i></button>
+                    </div>
+                `;
+                clientCardsContainer.appendChild(card);
+            });
         };
     }
 
-    function handleFormSubmit(event) {
-        event.preventDefault();
+    function handleFormSubmit(e) {
+        e.preventDefault();
         const id = parseInt(clientIdInput.value);
         const clientData = {
             name: document.getElementById('name').value,
@@ -203,196 +175,197 @@ document.addEventListener('DOMContentLoaded', () => {
             birthday: document.getElementById('birthday').value,
         };
 
-        const transaction = db.transaction('clients', 'readwrite');
-        const store = transaction.objectStore('clients');
-
+        const tx = db.transaction('clients', 'readwrite');
+        const store = tx.objectStore('clients');
+        
         if (id) {
-            const request = store.get(id);
-            request.onsuccess = () => {
-                const existingClient = request.result;
-                const updatedClient = { ...existingClient, ...clientData, id: id };
-                store.put(updatedClient);
+            const req = store.get(id);
+            req.onsuccess = () => {
+                store.put({ ...req.result, ...clientData, id: id });
             };
         } else {
             store.add(clientData);
         }
 
-        transaction.oncomplete = () => {
+        tx.oncomplete = () => {
             renderClients();
-            closeModal();
-            showToast(`Cliente ${id ? 'atualizado' : 'adicionado'} com sucesso!`, 'success');
+            closeModal('client-modal');
+            showToast(`Cliente ${id ? 'atualizado' : 'adicionado'}!`, 'success');
         };
-
-        transaction.onerror = (event) => {
-            console.error('Erro na transação:', event.target.error);
-             showToast('Erro ao salvar cliente. O e-mail já pode existir.', 'error');
-        };
+        tx.onerror = () => showToast('Erro: E-mail já pode existir.', 'error');
     }
 
     function editClient(id) {
-        const transaction = db.transaction('clients', 'readonly');
-        const store = transaction.objectStore('clients');
-        const request = store.get(id);
-
-        request.onsuccess = (event) => {
-            const client = event.target.result;
+        const req = db.transaction('clients', 'readonly').objectStore('clients').get(id);
+        req.onsuccess = (e) => {
+            const client = e.target.result;
             modalTitle.textContent = 'Editar Cliente';
             clientIdInput.value = client.id;
             document.getElementById('name').value = client.name;
             document.getElementById('email').value = client.email;
             document.getElementById('phone').value = client.phone;
             document.getElementById('birthday').value = client.birthday;
-            openModal();
+            openModal('client-modal');
         };
     }
     
     function viewClientDetails(id) {
-        const transaction = db.transaction('clients', 'readonly');
-        const store = transaction.objectStore('clients');
-        const request = store.get(id);
-
-        request.onsuccess = (event) => {
-            const client = event.target.result;
+        const req = db.transaction('clients', 'readonly').objectStore('clients').get(id);
+        req.onsuccess = (e) => {
+            const client = e.target.result;
             detailsModalTitle.textContent = `Detalhes de ${client.name}`;
             
             let productsHtml = '<p class="text-sm text-gray-500">Nenhum produto registrado.</p>';
             if (client.products && client.products.length > 0) {
                  productsHtml = `
-                    <ul class="divide-y divide-gray-200">
+                    <table class="min-w-full divide-y divide-gray-200">
+                      <thead class="bg-gray-50"><tr>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Produto</th>
+                        <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Qtd</th>
+                        <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
+                      </tr></thead>
+                      <tbody class="bg-white divide-y divide-gray-200">
                         ${client.products.map(p => `
-                            <li class="py-2 flex justify-between items-center">
-                                <span>${p.name} (Qtd: ${p.quantity})</span>
-                                <span class="font-semibold">R$ ${(p.price * p.quantity).toFixed(2)}</span>
-                            </li>
+                            <tr>
+                                <td class="px-4 py-2 whitespace-nowrap">${p.name}</td>
+                                <td class="px-4 py-2 text-center">${p.quantity}</td>
+                                <td class="px-4 py-2 text-right font-medium">R$ ${(p.price * p.quantity).toFixed(2)}</td>
+                            </tr>
                         `).join('')}
-                    </ul>
-                `;
+                      </tbody>
+                    </table>`;
             }
 
             detailsModalContent.innerHTML = `
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div><strong class="text-gray-600">E-mail:</strong> ${client.email || 'N/A'}</div>
-                    <div><strong class="text-gray-600">Telefone:</strong> ${client.phone || 'N/A'}</div>
-                    <div><strong class="text-gray-600">Aniversário:</strong> ${client.birthday ? new Date(client.birthday).toLocaleDateString() : 'N/A'}</div>
-                    <div><strong class="text-gray-600">Total Gasto:</strong> R$ ${client.totalSpent ? client.totalSpent.toFixed(2) : '0,00'}</div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div><strong class="text-gray-600 block">E-mail:</strong> ${client.email || 'N/A'}</div>
+                    <div><strong class="text-gray-600 block">Telefone:</strong> ${client.phone || 'N/A'}</div>
+                    <div><strong class="text-gray-600 block">Aniversário:</strong> ${client.birthday ? new Date(client.birthday).toLocaleDateString() : 'N/A'}</div>
+                    <div><strong class="text-gray-600 block">Pedidos:</strong> ${client.orderCount || 0}</div>
                 </div>
                  <div class="mt-6">
-                    <h3 class="text-lg font-semibold mb-2 border-t pt-4">Produtos Comprados</h3>
+                    <h3 class="text-lg font-semibold mb-2 border-t pt-4">Histórico de Compras</h3>
                     ${productsHtml}
                 </div>
             `;
-            detailsModal.classList.remove('hidden');
+            openModal('details-modal');
         };
     }
 
-
     function deleteClient(id) {
-        if (confirm('Tem certeza que deseja excluir este cliente?')) {
-            const transaction = db.transaction('clients', 'readwrite');
-            const store = transaction.objectStore('clients');
-            store.delete(id);
+        if (!confirm('Tem certeza? Esta ação é irreversível.')) return;
+        const tx = db.transaction('clients', 'readwrite');
+        tx.objectStore('clients').delete(id);
+        tx.oncomplete = () => {
+            renderClients();
+            showToast('Cliente excluído.', 'success');
+        };
+    }
 
-            transaction.oncomplete = () => {
-                renderClients();
-                showToast('Cliente excluído com sucesso!', 'success');
-            };
+    function openModal(modalId) {
+        if (modalId === 'client-modal') {
+            clientForm.reset();
+            clientIdInput.value = '';
+            modalTitle.textContent = 'Adicionar Novo Cliente';
         }
+        document.getElementById(modalId).classList.remove('hidden');
     }
 
-    function openModal() {
-        clientForm.reset();
-        clientIdInput.value = '';
-        modalTitle.textContent = 'Adicionar Novo Cliente';
-        clientModal.classList.remove('hidden');
-    }
-
-    function closeModal() {
-        clientModal.classList.add('hidden');
+    function closeModal(modalId) {
+        document.getElementById(modalId).classList.add('hidden');
     }
     
-    // --- Data Synchronization (FACILZAP) ---
     async function syncData() {
         showToast('Iniciando sincronização com FacilZap...', 'info');
         syncButton.disabled = true;
         syncButton.innerHTML = '<i class="fas fa-sync-alt w-6 text-center animate-spin"></i><span class="ml-4">Sincronizando...</span>';
 
         try {
-            // A chamada agora aponta para o novo proxy da FacilZap
             const response = await fetch('/api/facilzap-proxy');
-            
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.error || `Erro HTTP ${response.status}`);
             }
 
-            const apiResponse = await response.json();
-            const orders = apiResponse.data; // Ajustado para a estrutura da FacilZap
+            // Supondo que o proxy agora retorna um array de todos os pedidos
+            const allOrders = await response.json(); 
             
-            if (!orders) {
-                 throw new Error("Resposta da API da FacilZap inválida ou sem dados.");
+            if (!allOrders || !Array.isArray(allOrders)) {
+                 throw new Error("Resposta da API inválida ou sem dados.");
             }
+            
+            const clientsData = {};
 
-            const transaction = db.transaction('clients', 'readwrite');
-            const store = transaction.objectStore('clients');
+            // Processa todos os pedidos e agrupa por cliente
+            allOrders.forEach(order => {
+                // Adapte os nomes dos campos para a estrutura real da sua API de Pedidos
+                const clientEmail = order.cliente?.email || 'sem-email@facilzap.com';
+                
+                if (!clientsData[clientEmail]) {
+                    clientsData[clientEmail] = {
+                        name: order.cliente?.nome,
+                        email: clientEmail,
+                        phone: order.cliente?.telefone,
+                        totalSpent: 0,
+                        orderCount: 0,
+                        lastPurchaseDate: null,
+                        products: new Map()
+                    };
+                }
+
+                const client = clientsData[clientEmail];
+                client.totalSpent += parseFloat(order.total_pedido || 0);
+                client.orderCount++;
+                const orderDate = new Date(order.criado_em);
+                if (!client.lastPurchaseDate || client.lastPurchaseDate < orderDate) {
+                    client.lastPurchaseDate = orderDate;
+                }
+
+                order.itens?.forEach(item => {
+                    const productMap = client.products;
+                    if (productMap.has(item.codigo)) {
+                        productMap.get(item.codigo).quantity += parseInt(item.quantidade, 10);
+                    } else {
+                        productMap.set(item.codigo, {
+                            name: item.nome,
+                            quantity: parseInt(item.quantidade, 10),
+                            price: parseFloat(item.valor_venda)
+                        });
+                    }
+                });
+            });
+
+            // Salva os dados processados no IndexedDB
+            const tx = db.transaction('clients', 'readwrite');
+            const store = tx.objectStore('clients');
             const emailIndex = store.index('email');
             let updatedCount = 0;
             let newCount = 0;
-
-            const promises = orders.map(order => {
-                // Adaptação para a estrutura de dados da FacilZap (hipotética)
-                const clientEmail = order.cliente_email;
-                if (!clientEmail) return Promise.resolve();
-
-                return new Promise((resolve) => {
-                    const request = emailIndex.get(clientEmail);
+            
+            const promises = Object.values(clientsData).map(processedClient => {
+                 return new Promise((resolve) => {
+                    const request = emailIndex.get(processedClient.email);
                     request.onsuccess = () => {
-                        let client = request.result || {};
-
-                        client.name = client.name || order.cliente_nome;
-                        client.email = clientEmail;
-                        client.phone = client.phone || order.cliente_telefone;
+                        const existingClient = request.result || {};
                         
-                        const orderDate = new Date(order.data_pedido);
-                        if (!client.lastPurchaseDate || new Date(client.lastPurchaseDate) < orderDate) {
-                            client.lastPurchaseDate = orderDate.toISOString().split('T')[0];
-                        }
+                        const finalClientData = {
+                            ...existingClient,
+                            ...processedClient,
+                            products: Array.from(processedClient.products.values()),
+                            lastPurchaseDate: processedClient.lastPurchaseDate?.toISOString().split('T')[0]
+                        };
                         
-                        client.totalSpent = (client.totalSpent || 0) + parseFloat(order.valor_total);
-                        
-                        client.products = client.products || [];
-                        order.itens.forEach(item => {
-                            const existingProduct = client.products.find(p => p.sku === item.sku);
-                            if (existingProduct) {
-                                existingProduct.quantity += parseInt(item.quantidade, 10);
-                            } else {
-                                client.products.push({
-                                    sku: item.sku,
-                                    name: item.nome_produto,
-                                    quantity: parseInt(item.quantidade, 10),
-                                    price: parseFloat(item.valor_unitario)
-                                });
-                            }
-                        });
-
-                        if (client.id) {
-                            updatedCount++;
-                        } else {
-                            newCount++;
-                        }
-                        
-                        store.put(client);
+                        store.put(finalClientData);
+                        existingClient.id ? updatedCount++ : newCount++;
                         resolve();
                     };
-                     request.onerror = (e) => {
-                        console.error("Erro ao buscar cliente por e-mail:", e);
-                        resolve();
-                    };
+                    request.onerror = resolve; // Continue on error
                 });
             });
 
             await Promise.all(promises);
             
-            transaction.oncomplete = () => {
+            tx.oncomplete = () => {
                 showToast(`Sincronização concluída! ${newCount} novos, ${updatedCount} atualizados.`, 'success');
                 renderClients();
             };
@@ -406,41 +379,31 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-
     // --- Event Listeners ---
-    addClientButton.addEventListener('click', openModal);
-    cancelButton.addEventListener('click', closeModal);
+    addClientButton.addEventListener('click', () => openModal('client-modal'));
+    cancelButton.addEventListener('click', () => closeModal('client-modal'));
     clientForm.addEventListener('submit', handleFormSubmit);
     
-    clientTableBody.addEventListener('click', (event) => {
+    clientCardsContainer.addEventListener('click', (event) => {
         const target = event.target.closest('button');
         if (!target) return;
-        
         const id = parseInt(target.dataset.id);
-        if (target.classList.contains('edit-client-button')) {
-            editClient(id);
-        } else if (target.classList.contains('delete-client-button')) {
-            deleteClient(id);
-        } else if (target.classList.contains('view-details-button')) {
-            viewClientDetails(id);
-        }
+        if (target.classList.contains('edit-client-button')) editClient(id);
+        else if (target.classList.contains('delete-client-button')) deleteClient(id);
+        else if (target.classList.contains('view-details-button')) viewClientDetails(id);
     });
     
-    closeDetailsButton.addEventListener('click', () => detailsModal.classList.add('hidden'));
-
+    closeDetailsButton.addEventListener('click', () => closeModal('details-modal'));
+    openSettingsButton.addEventListener('click', () => openModal('settings-modal'));
+    cancelSettingsButton.addEventListener('click', () => closeModal('settings-modal'));
+    settingsForm.addEventListener('submit', (e) => { e.preventDefault(); saveSettings(); });
+    
     searchInput.addEventListener('input', renderClients);
-    filterSelect.addEventListener('change', renderClients);
-    
-    openSettingsButton.addEventListener('click', () => settingsModal.classList.remove('hidden'));
-    cancelSettingsButton.addEventListener('click', () => settingsModal.classList.add('hidden'));
-    settingsForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        saveSettings();
-    });
+    filterStatusSelect.addEventListener('change', renderClients);
+    filterTagSelect.addEventListener('change', renderClients);
     
     syncButton.addEventListener('click', syncData);
 
-    // --- Initial Load ---
     initDB();
 });
 
