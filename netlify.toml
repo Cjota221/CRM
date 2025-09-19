@@ -5,3 +5,7 @@ from = "/api/facilzap-proxy"
 to = "/.netlify/functions/facilzap-proxy"
 status = 200
 force = true
+[functions]
+node_bundler = "esbuild"
+[functions."*"]
+timeout = 26
