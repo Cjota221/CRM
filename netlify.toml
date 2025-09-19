@@ -1,11 +1,5 @@
-Configurações globais de build.
-Isto informa ao Netlify onde encontrar as funções serverless.
 [build]
 functions = "functions"
-
-Regra de Redirecionamento que atua como nosso proxy.
-Todas as chamadas do frontend para "/api/proxy-ideris" serão
-redirecionadas para a função serverless, que executará no backend.
 [[redirects]]
 from = "/api/proxy-ideris"
 to = "/.netlify/functions/proxy-ideris"
