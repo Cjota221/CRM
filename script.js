@@ -298,6 +298,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // 1. Processa a lista de clientes para criar a base de dados
             apiClients.forEach(c => {
+                // CORREÇÃO: Pula clientes da API que não possuem um ID.
+                if (!c || !c.id) {
+                    console.warn("Cliente da API ignorado por não ter um ID:", c);
+                    return;
+                }
+
                 clientsData.set(c.id, {
                     id: c.id,
                     name: c.nome,
@@ -322,8 +328,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 client.totalSpent += parseFloat(order.total || 0);
                 client.orderCount++;
                 
-                // A data da última compra já vem do endpoint /clientes, que é mais confiável.
-                // Mas podemos atualizar se um pedido for mais recente.
                 const orderDate = order.data ? new Date(order.data) : null;
                 if (orderDate && (!client.lastPurchaseDate || client.lastPurchaseDate < orderDate)) {
                     client.lastPurchaseDate = orderDate;
@@ -366,7 +370,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const lastPurchaseDateISO = validDate ? processedClient.lastPurchaseDate.toISOString().split('T')[0] : null;
 
                         const finalClientData = {
-                            ...existingClient, // Mantém dados manuais se existirem
+                            ...existingClient,
                             ...processedClient,
                             products: Array.from(processedClient.products.values()),
                             lastPurchaseDate: lastPurchaseDateISO
@@ -390,8 +394,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderClients();
             };
             tx.onerror = (e) => {
-                console.error("Erro na transação final:", e);
-                showToast("Erro ao salvar os dados no banco de dados local.", "error");
+                const error = e.target.error;
+                console.error("Erro na transação final:", error);
+                let userMessage = "Erro ao salvar os dados no banco de dados local.";
+                if (error.name === 'ConstraintError') {
+                    userMessage = "Erro de dados: Foi encontrado um ID de cliente duplicado.";
+                } else if (error.name === 'QuotaExceededError') {
+                    userMessage = "Erro: Espaço de armazenamento local insuficiente.";
+                } else if (error.name === 'DataError') {
+                    userMessage = "Erro: Um registro de cliente está com dados inválidos (provavelmente sem ID).";
+                }
+                showToast(userMessage, "error");
             }
 
         } catch (error) {
