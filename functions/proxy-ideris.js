@@ -1,68 +1,86 @@
 const fetch = require('node-fetch');
 
-// Esta função serverless atua como nosso backend seguro.
-exports.handler = async function(event, context) {
-    const IDERIS_API_URL = 'https://api.ideris.com.br/v1/Pedido';
-    
-    // PONTO-CHAVE: A chave de API é lida DIRETAMENTE do ambiente seguro do Netlify.
-    // Ela nunca vem do navegador, garantindo que o token permaneça secreto.
-    const API_KEY = process.env.IDERIS_API_KEY;
+exports.handler = async (event) => {
+  // Headers CORS para permitir que seu CRM (rodando no navegador) acesse esta função
+  const headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Methods': 'GET, OPTIONS'
+  };
 
-    // Linha de depuração para verificar a chave nos logs do Netlify
-    if (API_KEY) {
-        console.log(`Verificando API Key. Início: ${API_KEY.substring(0, 5)}, Final: ${API_KEY.substring(API_KEY.length - 5)}`);
-    }
+  // Responde a requisições OPTIONS (preflight) que o navegador envia antes do GET
+  if (event.httpMethod === 'OPTIONS') {
+    return {
+      statusCode: 200,
+      headers,
+      body: ''
+    };
+  }
 
-    // Validação #1: O token está ausente no servidor?
-    if (!API_KEY) {
-        console.error("ERRO: A variável de ambiente IDERIS_API_KEY não foi encontrada.");
-        return {
-            statusCode: 500,
-            body: JSON.stringify({ message: "A variável de ambiente IDERIS_API_KEY não está configurada no Netlify." })
-        };
-    }
+  // Pega a chave de API secreta das variáveis de ambiente do Netlify
+  const IDERIS_API_KEY = process.env.IDERIS_API_KEY;
+  
+  // Se a chave não estiver configurada no Netlify, retorna um erro claro
+  if (!IDERIS_API_KEY) {
+    console.error("[ERRO] Variável de ambiente IDERIS_API_KEY não configurada.");
+    return {
+      statusCode: 500,
+      headers,
+      body: JSON.stringify({ error: "Variável de ambiente IDERIS_API_KEY não configurada no servidor." })
+    };
+  }
 
-    try {
-        // Validação #2: O proxy está repassando a autenticação corretamente?
-        // Sim, esta função É o proxy. Sua principal responsabilidade é criar o cabeçalho
-        // de autenticação e adicioná-lo à chamada para a API da Ideris.
-        const response = await fetch(IDERIS_API_URL, {
-            method: 'GET',
-            headers: {
-                // Validação #3: O cabeçalho está bem formado?
-                // Sim. A API da Ideris espera a chave diretamente no cabeçalho 'Authorization',
-                // sem o prefixo "Bearer ". A formatação está correta para esta API.
-                'Authorization': API_KEY,
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        // Validação #4: O token é inválido ou expirado?
-        // Se a resposta da Ideris não for bem-sucedida (ex: erro 401),
-        // significa que o TOKEN em si (o valor em IDERIS_API_KEY) está incorreto.
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('Erro recebido da API Ideris:', errorText);
-            return {
-                statusCode: response.status,
-                body: JSON.stringify({ message: `Erro da API Ideris: ${errorText}` })
-            };
+  // Endpoint da API da Ideris para buscar os pedidos
+  const API_ENDPOINT = 'https://api.ideris.com.br/v1/Pedido';
+
+  console.log(`[INFO] Fazendo requisição para: ${API_ENDPOINT}`);
+
+  try {
+    const response = await fetch(API_ENDPOINT, {
+        method: 'GET',
+        headers: {
+            // A API da Ideris espera a chave diretamente, sem o prefixo "Bearer"
+            'Authorization': IDERIS_API_KEY,
+            'Content-Type': 'application/json'
         }
+    });
 
-        // Se a autenticação for bem-sucedida, a resposta é enviada para o CRM
-        const data = await response.json();
-        
-        return {
-            statusCode: 200,
-            body: JSON.stringify(data)
-        };
+    const responseBody = await response.text();
 
-    } catch (error) {
-        console.error("Erro interno no proxy: ", error);
-        return {
-            statusCode: 500,
-            body: JSON.stringify({ message: "Ocorreu um erro interno no servidor proxy.", error: error.message })
-        };
+    // Se o token for inválido, a Ideris retorna 401
+    if (response.status === 401) {
+      console.error("[ERRO] Erro de autenticação (401). Verifique a IDERIS_API_KEY no Netlify.");
+      return {
+        statusCode: 401,
+        headers,
+        body: JSON.stringify({ error: "Token de autorização da Ideris é inválido ou expirou." })
+      };
     }
+    
+    // Se ocorrer outro erro na API, retorna a mensagem de erro
+    if (!response.ok) {
+      console.error(`[ERRO] Erro da API Ideris. Status: ${response.status}, Body: ${responseBody}`);
+      return {
+        statusCode: response.status,
+        headers,
+        body: JSON.stringify({ error: `Erro retornado pela API da Ideris: ${responseBody}` })
+      };
+    }
+    
+    // Se tudo der certo, retorna os dados dos pedidos
+    return {
+      statusCode: 200,
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: responseBody
+    };
+
+  } catch (error) {
+    console.error("[ERRO FATAL] Erro inesperado no proxy:", error);
+    return {
+      statusCode: 500,
+      headers,
+      body: JSON.stringify({ error: `Erro interno no servidor proxy: ${error.message}` })
+    };
+  }
 };
 
