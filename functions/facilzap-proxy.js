@@ -74,9 +74,13 @@ exports.handler = async (event) => {
     
     console.log(`[INFO] Busca finalizada. ${clients.length} clientes e ${orders.length} pedidos encontrados.`);
     
-    // Log de depuração com a estrutura do primeiro cliente e primeiro pedido
-    if (clients.length > 0) console.log('[DEBUG] Estrutura do primeiro CLIENTE:', JSON.stringify(clients[0], null, 2));
-    if (orders.length > 0) console.log('[DEBUG] Estrutura do primeiro PEDIDO:', JSON.stringify(orders[0], null, 2));
+    // **NOVA LINHA DE DEBUG:** Encontra o primeiro pedido que tenha algum campo de itens/produtos e o imprime no log
+    const firstOrderWithProducts = orders.find(o => o.produtos || o.itens || o.products || o.items);
+    if (firstOrderWithProducts) {
+        console.log('[DEBUG] Estrutura do primeiro PEDIDO COM PRODUTOS:', JSON.stringify(firstOrderWithProducts, null, 2));
+    } else {
+        console.log('[DEBUG] Nenhum pedido retornado pela API continha um campo de produtos/itens visível.');
+    }
     
     // Retorna um objeto com as duas listas de dados
     return {
@@ -95,4 +99,3 @@ exports.handler = async (event) => {
     };
   }
 };
-
