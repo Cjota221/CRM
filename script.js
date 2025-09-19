@@ -36,7 +36,8 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     function initDB() {
-        const request = indexedDB.open(dbName, 1);
+        // CORREÇÃO: Aumenta a versão do DB para forçar a atualização da estrutura
+        const request = indexedDB.open(dbName, 2);
         request.onerror = (e) => console.error('Erro no DB:', e.target.errorCode);
         request.onsuccess = (e) => {
             db = e.target.result;
@@ -44,11 +45,24 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         request.onupgradeneeded = (e) => {
             db = e.target.result;
+            let store;
             if (!db.objectStoreNames.contains('clients')) {
-                const store = db.createObjectStore('clients', { keyPath: 'id' });
-                store.createIndex('email', 'email', { unique: false }); // Email pode não ser único
-                store.createIndex('tag', 'tag', { unique: false });
+                store = db.createObjectStore('clients', { keyPath: 'id' });
+            } else {
+                store = e.target.transaction.objectStore('clients');
             }
+
+            // CORREÇÃO: Remove o índice antigo (que era 'unique') e o recria corretamente
+            if (store.indexNames.contains('email')) {
+                store.deleteIndex('email');
+            }
+            store.createIndex('email', 'email', { unique: false });
+            
+            if (store.indexNames.contains('tag')) {
+                store.deleteIndex('tag');
+            }
+            store.createIndex('tag', 'tag', { unique: false });
+            
             if (!db.objectStoreNames.contains('settings')) {
                 db.createObjectStore('settings', { keyPath: 'id' });
             }
@@ -82,6 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function loadSettingsAndRender() {
+        if (!db) return;
         const transaction = db.transaction('settings', 'readonly');
         const request = transaction.objectStore('settings').get('config');
         request.onsuccess = (event) => {
@@ -184,7 +199,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 store.put({ ...req.result, ...clientData, id: id });
             };
         } else {
-             // Adicionar cliente manualmente não é o foco principal, mas mantemos a funcionalidade
             store.add({ ...clientData, id: `manual_${Date.now()}` });
         }
 
@@ -298,7 +312,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // 1. Processa a lista de clientes para criar a base de dados
             apiClients.forEach(c => {
-                // CORREÇÃO: Pula clientes da API que não possuem um ID.
                 if (!c || !c.id) {
                     console.warn("Cliente da API ignorado por não ter um ID:", c);
                     return;
@@ -308,7 +321,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     id: c.id,
                     name: c.nome,
                     email: c.email,
-                    phone: c.whatsapp, // Assumindo que 'whatsapp' é o campo do telefone
+                    phone: c.whatsapp,
                     birthday: c.data_nascimento,
                     lastPurchaseDate: c.ultima_compra ? new Date(c.ultima_compra) : null,
                     totalSpent: 0,
@@ -321,7 +334,7 @@ document.addEventListener('DOMContentLoaded', () => {
             apiOrders.forEach(order => {
                 const clientId = order.cliente?.id;
                 if (!clientId || !clientsData.has(clientId)) {
-                    return; // Pula pedidos sem cliente correspondente
+                    return; 
                 }
 
                 const client = clientsData.get(clientId);
@@ -398,7 +411,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error("Erro na transação final:", error);
                 let userMessage = "Erro ao salvar os dados no banco de dados local.";
                 if (error.name === 'ConstraintError') {
-                    userMessage = "Erro de dados: Foi encontrado um ID de cliente duplicado.";
+                    userMessage = "Erro de dados: Foi encontrado um ID de cliente duplicado ou um e-mail repetido.";
                 } else if (error.name === 'QuotaExceededError') {
                     userMessage = "Erro: Espaço de armazenamento local insuficiente.";
                 } else if (error.name === 'DataError') {
