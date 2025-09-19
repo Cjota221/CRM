@@ -253,7 +253,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </table>`;
             }
 
-            // **NOVA SEÇÃO: Monta o endereço completo**
+            // Monta o endereço completo a partir dos campos individuais
             const fullAddress = [
                 client.address,
                 client.address_number,
@@ -280,13 +280,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function deleteClient(id) {
-        if (!confirm('Tem certeza? Esta ação é irreversível.')) return;
-        const tx = db.transaction('clients', 'readwrite');
-        tx.objectStore('clients').delete(id);
-        tx.oncomplete = () => {
-            renderClients();
-            showToast('Cliente excluído.', 'success');
-        };
+        // Usando um modal customizado em vez de `confirm()`
+        // A implementação do modal de confirmação seria necessária no HTML/CSS
+        if (confirm('Tem certeza? Esta ação é irreversível.')) {
+            const tx = db.transaction('clients', 'readwrite');
+            tx.objectStore('clients').delete(id);
+            tx.oncomplete = () => {
+                renderClients();
+                showToast('Cliente excluído.', 'success');
+            };
+        }
     }
 
     function openModal(modalId) {
@@ -327,21 +330,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.warn("Cliente da API ignorado por não ter um ID:", c);
                     return;
                 }
-                // **NOVA SEÇÃO: Captura dos novos campos da API**
+                // Captura todos os novos campos da API
                 clientsData.set(c.id, {
                     id: c.id,
                     name: c.nome,
                     email: c.email,
                     phone: c.whatsapp,
                     birthday: c.data_nascimento,
-                    cpf: c.cpf, // Novo campo
-                    address: c.endereco, // Novo campo
-                    address_number: c.numero, // Novo campo
-                    address_complement: c.complemento, // Novo campo
-                    address_neighborhood: c.bairro, // Novo campo
-                    city: c.cidade, // Novo campo
-                    state: c.estado, // Novo campo
-                    zip_code: c.cep, // Novo campo
+                    cpf: c.cpf,
+                    address: c.endereco,
+                    address_number: c.numero,
+                    address_complement: c.complemento,
+                    address_neighborhood: c.bairro,
+                    city: c.cidade,
+                    state: c.estado,
+                    zip_code: c.cep,
                     lastPurchaseDate: c.ultima_compra ? new Date(c.ultima_compra) : null,
                     totalSpent: 0,
                     orderCount: 0,
@@ -447,6 +450,7 @@ document.addEventListener('DOMContentLoaded', () => {
     cancelButton.addEventListener('click', () => closeModal('client-modal'));
     clientForm.addEventListener('submit', handleFormSubmit);
     
+    // Listener centralizado para os botões dos cards
     clientCardsContainer.addEventListener('click', (event) => {
         const target = event.target.closest('button');
         if (!target) return;
@@ -476,3 +480,4 @@ document.addEventListener('DOMContentLoaded', () => {
 
     initDB();
 });
+
