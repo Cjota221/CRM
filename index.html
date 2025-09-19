@@ -69,7 +69,11 @@
 
             <!-- Botões de Ação -->
             <div class="space-y-2">
-                <button id="import-initial-btn" class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center">
+                <button id="ideris-sync-btn" class="w-full bg-purple-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-purple-700 transition-colors flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"> <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5"/> <path stroke-linecap="round" stroke-linejoin="round" d="M4 9a9 9 0 0114.13-6.364M20 15a9 9 0 01-14.13 6.364"/> </svg>
+                    Sincronizar com Ideris
+                </button>
+                 <button id="import-initial-btn" class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
                     Importar Base Inicial
                 </button>
@@ -120,7 +124,7 @@
              <div id="initial-view" class="flex flex-col items-center justify-center h-full text-center bg-white rounded-lg p-8">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-24 w-24 text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
                 <h2 class="text-2xl font-bold text-gray-800">Bem-vindo ao seu CRM</h2>
-                <p class="text-gray-500 mt-2">Para começar, importe sua planilha de clientes no botão "Importar Base Inicial".</p>
+                <p class="text-gray-500 mt-2">Para começar, sincronize com a Ideris ou importe uma planilha de clientes.</p>
                 <p class="text-gray-500 mt-1">Você também pode arrastar e soltar um arquivo aqui.</p>
             </div>
 
@@ -213,20 +217,34 @@
     <!-- Modal de Configurações -->
     <div id="settings-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop hidden">
         <div class="bg-white rounded-lg shadow-xl w-full max-w-lg">
-            <div class="p-6">
-                <h3 class="text-lg font-medium text-gray-900">Configurações de Status</h3>
-                <p class="mt-1 text-sm text-gray-500">Defina os intervalos em dias para cada status de cliente.</p>
+            <div class="p-6 border-b">
+                <h3 class="text-lg font-medium text-gray-900">Configurações</h3>
             </div>
-            <div class="p-6 space-y-4">
-                <div>
-                    <label for="status-ativo-days" class="block text-sm font-medium text-gray-700">Cliente Ativo (até X dias)</label>
-                    <input type="number" id="status-ativo-days" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+            <div class="p-6 space-y-6">
+                <div class="space-y-4">
+                    <h4 class="font-semibold text-gray-800">Integração Ideris</h4>
+                    <div>
+                        <label for="ideris-api-key" class="block text-sm font-medium text-gray-700">API Key Ideris</label>
+                        <input type="text" id="ideris-api-key" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label for="proxy-url" class="block text-sm font-medium text-gray-700">URL do Proxy (Netlify)</label>
+                        <input type="text" id="proxy-url" placeholder="https://seu-site.netlify.app/api/proxy-ideris" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                        <p class="mt-1 text-xs text-gray-500">Necessário para a comunicação segura com a API. A URL deve terminar com /api/proxy-ideris</p>
+                    </div>
                 </div>
-                 <div>
-                    <label for="status-risco-days" class="block text-sm font-medium text-gray-700">Cliente em Risco (até X dias)</label>
-                    <input type="number" id="status-risco-days" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                 <div class="space-y-4 pt-4 border-t">
+                    <h4 class="font-semibold text-gray-800">Status dos Clientes</h4>
+                    <p class="text-sm text-gray-500">Defina os intervalos em dias para cada status.</p>
+                    <div>
+                        <label for="status-ativo-days" class="block text-sm font-medium text-gray-700">Cliente Ativo (até X dias da última compra)</label>
+                        <input type="number" id="status-ativo-days" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                     <div>
+                        <label for="status-risco-days" class="block text-sm font-medium text-gray-700">Cliente em Risco (até X dias da última compra)</label>
+                        <input type="number" id="status-risco-days" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    </div>
                 </div>
-                <p class="text-xs text-gray-500">Clientes com última compra acima do período de "Em Risco" serão considerados "Inativos".</p>
             </div>
             <div class="px-6 py-4 bg-gray-100 flex justify-end space-x-3">
                 <button id="cancel-settings-btn" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50">Cancelar</button>
@@ -267,7 +285,10 @@
                 statusIntervals: {
                     ativo: 30,
                     emRisco: 90
-                }
+                },
+                // O token fornecido foi adicionado aqui.
+                iderisApiKey: '18984dHlW0vVsqerYdimTHX1HEqQEKnUsjl5NZATPBlYgqORuLFIXIX1Z0yx2dvrT2g9ORETzWCuEM14pAxqG',
+                proxyUrl: ''
             },
             importHistory: [],
             isInitialImport: true,
@@ -284,6 +305,7 @@
             loadingMessage: document.getElementById('loading-message'),
             importInitialBtn: document.getElementById('import-initial-btn'),
             addDataBtn: document.getElementById('add-data-btn'),
+            iderisSyncBtn: document.getElementById('ideris-sync-btn'),
             clearDbBtn: document.getElementById('clear-db-btn'),
             dashboard: {
                 totalClients: document.getElementById('total-clients'),
@@ -320,6 +342,8 @@
                 container: document.getElementById('settings-modal'),
                 ativoDays: document.getElementById('status-ativo-days'),
                 riscoDays: document.getElementById('status-risco-days'),
+                apiKey: document.getElementById('ideris-api-key'),
+                proxyUrl: document.getElementById('proxy-url'),
                 saveBtn: document.getElementById('save-settings-btn'),
                 cancelBtn: document.getElementById('cancel-settings-btn')
             },
@@ -364,7 +388,7 @@
             cep: ['cep', 'zip'],
             endereco: ['endereco', 'address', 'rua'],
             observacoes: ['observacoes', 'obs', 'notes'],
-            origem: ['origem', 'source', 'lead']
+            origem: ['origem', 'source', 'source', 'lead']
         };
 
         // --- INICIALIZAÇÃO ---
@@ -407,7 +431,8 @@
             try {
                 const configData = await getConfigFromDB();
                 if (configData) {
-                    state.config = configData.config || state.config;
+                    // Mescla a configuração salva com a padrão para garantir que novas chaves sejam adicionadas
+                    state.config = { ...state.config, ...configData.config };
                     state.importHistory = configData.importHistory || [];
                 }
 
@@ -441,6 +466,7 @@
         function attachEventListeners() {
             ui.importInitialBtn.addEventListener('click', () => triggerFileInput(true));
             ui.addDataBtn.addEventListener('click', () => triggerFileInput(false));
+            ui.iderisSyncBtn.addEventListener('click', syncFromIderis);
             ui.clearDbBtn.addEventListener('click', confirmClearDB);
             ui.settingsBtn.addEventListener('click', openSettingsModal);
 
@@ -476,7 +502,7 @@
             ui.copyPhonesBtn.addEventListener('click', copySelectedPhones);
         }
 
-        // --- LÓGICA DE IMPORTAÇÃO ---
+        // --- LÓGICA DE IMPORTAÇÃO DE ARQUIVO ---
         
         function triggerFileInput(isInitial) {
             const input = document.createElement('input');
@@ -525,7 +551,8 @@
                     fileToImport = {
                         name: file.name,
                         headers,
-                        records
+                        records,
+                        sourceType: 'file'
                     };
 
                     importMapping = autoMapColumns(headers);
@@ -536,7 +563,7 @@
                         return;
                     }
 
-                    processImport();
+                    processData(records, 'file');
                 };
                 reader.readAsArrayBuffer(file);
             } catch (error) {
@@ -573,70 +600,112 @@
             return mapping;
         }
 
-        async function processImport() {
-            setLoading(true, 'Processando importação...');
-            
-            if (Object.keys(importMapping).length === 0) {
-                showToast('Nenhuma coluna foi mapeada para importação.', 'warning');
-                setLoading(false);
+        // --- LÓGICA DE SINCRONIZAÇÃO COM IDERIS ---
+        async function syncFromIderis() {
+            if (!state.config.iderisApiKey || !state.config.proxyUrl) {
+                showToast('API Key da Ideris e URL do Proxy são obrigatórios. Verifique as Configurações.', 'error');
+                openSettingsModal();
                 return;
             }
 
-            const newRecords = fileToImport.records.map(row => {
-                const record = {};
-                for (const key in importMapping) {
-                    record[key] = row[importMapping[key]];
+            setLoading(true, 'Sincronizando com Ideris...');
+            try {
+                // A Ideris usa o endpoint "Pedido" para buscar as vendas.
+                const response = await callApi('Pedido');
+                if (!response || !Array.isArray(response.result)) {
+                    throw new Error('Resposta da API inválida. Esperado um array em `result`.');
                 }
-                return record;
+                
+                const orders = response.result;
+                showToast(`${orders.length} pedidos encontrados. Processando...`, 'info');
+
+                fileToImport = { name: `Ideris Sync - ${new Date().toLocaleDateString()}` };
+                await processData(orders, 'api');
+
+            } catch(error) {
+                showToast(`Erro na sincronização: ${error.message}`, 'error');
+                setLoading(false);
+            }
+        }
+        
+        async function callApi(endpoint) {
+            const url = `${state.config.proxyUrl}?endpoint=${endpoint}`;
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    // A API Key será adicionada pelo proxy, não aqui.
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.Message || `Erro HTTP ${response.status}`);
+            }
+
+            return response.json();
+        }
+
+        // --- PROCESSAMENTO DE DADOS UNIFICADO (ARQUIVO E API) ---
+        async function processData(records, source) {
+            setLoading(true, 'Processando dados...');
+            
+            const normalizedRecords = records.map(record => {
+                if (source === 'api') {
+                    return normalizeIderisOrder(record);
+                }
+                // Mapeamento para arquivo
+                const fileRecord = {};
+                for (const key in importMapping) {
+                    fileRecord[key] = record[importMapping[key]];
+                }
+                return normalizeRecord(fileRecord);
             });
 
             conflictsQueue = [];
             const recordsToAdd = [];
-            const recordsToUpdate = [];
 
             const existingClients = await getAllClientsFromDB();
             const existingPhones = new Map(existingClients.map(c => [c.telefone, c]));
 
-            for (let i = 0; i < newRecords.length; i++) {
-                setLoading(true, `Analisando registro ${i + 1} de ${newRecords.length}...`);
-                const newRecord = normalizeRecord(newRecords[i]);
+            for (let i = 0; i < normalizedRecords.length; i++) {
+                setLoading(true, `Analisando registro ${i + 1} de ${normalizedRecords.length}...`);
+                const newRecord = normalizedRecords[i];
                 
-                if (!newRecord.telefone) continue; // Pula registros sem telefone
+                if (!newRecord || !newRecord.telefone) continue;
 
                 const existingClient = existingPhones.get(newRecord.telefone);
 
                 if (existingClient) {
-                    const similarity = calculateSimilarity(existingClient, newRecord);
-                    if (similarity > 60) { // Limiar de similaridade
-                        conflictsQueue.push({ existing: existingClient, new: newRecord, similarity });
-                    } else {
-                        recordsToAdd.push(createNewClient(newRecord, fileToImport.name));
-                    }
+                    conflictsQueue.push({ existing: existingClient, new: newRecord, similarity: 100 });
                 } else {
-                    let bestMatch = null;
-                    let highestSimilarity = 0;
-                    for (const client of existingClients) {
-                        const sim = calculateSimilarity(client, newRecord);
-                        if (sim > highestSimilarity) {
-                            highestSimilarity = sim;
-                            bestMatch = client;
-                        }
-                    }
-
-                    if (highestSimilarity > 75) {
-                        conflictsQueue.push({ existing: bestMatch, new: newRecord, similarity: highestSimilarity });
-                    } else {
-                        recordsToAdd.push(createNewClient(newRecord, fileToImport.name));
-                    }
+                    recordsToAdd.push(createNewClient(newRecord, fileToImport.name));
                 }
             }
+            
+            // Remove duplicatas dos novos registros antes de adicionar
+            const uniqueRecordsToAdd = recordsToAdd.reduce((acc, current) => {
+                if (!acc.some(item => item.telefone === current.telefone)) {
+                    acc.push(current);
+                }
+                return acc;
+            }, []);
 
-            if (recordsToAdd.length > 0) {
-                await addClientsToDB(recordsToAdd);
+            if (uniqueRecordsToAdd.length > 0) {
+                await addClientsToDB(uniqueRecordsToAdd);
             }
 
             if (conflictsQueue.length > 0) {
-                processNextConflict();
+                // Para a API, vamos assumir a mesclagem automática
+                if(source === 'api') {
+                    setLoading(true, `Atualizando ${conflictsQueue.length} clientes...`);
+                    const updates = conflictsQueue.map(c => smartMerge(c.existing, c.new));
+                    for(const client of updates) await updateClientInDB(client);
+                    conflictsQueue = [];
+                    finishImport();
+                } else {
+                    processNextConflict();
+                }
             } else {
                 finishImport();
             }
@@ -655,7 +724,7 @@
             let detailsHtml = `<div class="overflow-x-auto"><table class="w-full min-w-max"><thead><tr>
                 <th class="p-2 text-left text-xs font-medium text-gray-500">Campo</th>
                 <th class="p-2 text-left text-xs font-medium text-gray-500">Base Atual</th>
-                <th class="p-2 text-left text-xs font-medium text-gray-500">Novo Arquivo</th>
+                <th class="p-2 text-left text-xs font-medium text-gray-500">Novo Registro</th>
             </tr></thead><tbody>`;
 
             const allKeys = new Set([...Object.keys(conflict.existing), ...Object.keys(conflict.new)]);
@@ -667,7 +736,7 @@
                 const newValue = conflict.new[key] || '(vazio)';
                 const fieldName = CRM_FIELDS[key] || key;
                 
-                if (existingValue !== newValue) {
+                if (String(existingValue) !== String(newValue)) {
                      detailsHtml += `<tr>
                         <td class="p-2 border-t border-gray-200 font-medium">${fieldName}</td>
                         <td class="p-2 border-t border-gray-200">${existingValue}</td>
@@ -727,20 +796,38 @@
         async function finishImport() {
             state.importHistory.push({
                 name: fileToImport.name,
-                date: new Date().toISOString(),
-                recordsAdded: 0, // Precisa de lógica para calcular isso
-                duplicatesResolved: 0 // Precisa de lógica
+                date: new Date().toISOString()
             });
             await saveConfigToDB({ config: state.config, importHistory: state.importHistory });
             
             fileToImport = null;
             importMapping = {};
             
-            showToast('Importação concluída com sucesso!', 'success');
-            await loadInitialData(); // Recarrega tudo do DB
+            showToast('Sincronização/Importação concluída!', 'success');
+            await loadInitialData();
         }
 
         // --- LÓGICA DE DADOS (NORMALIZAÇÃO, MERGE, ETC) ---
+
+        function normalizeIderisOrder(order) {
+            if (!order || !order.comprador) return null;
+
+            const comprador = order.comprador;
+            const telefone = comprador.celular || comprador.telefone;
+
+            return normalizeRecord({
+                nome: comprador.nome,
+                telefone: telefone,
+                email: comprador.email,
+                data_ultima_compra: order.data_pedido,
+                valor_total: order.valor_total_pedido,
+                produtos: order.item ? order.item.map(i => `${i.quantidade}x ${i.nome_produto}`).join('; ') : '',
+                cidade: comprador.cidade,
+                estado: comprador.estado,
+                cep: comprador.cep,
+                endereco: `${comprador.endereco}, ${comprador.numero} - ${comprador.bairro}`,
+            });
+        }
 
         function normalizeRecord(record) {
             const normalized = {};
@@ -759,7 +846,7 @@
                     processedValue = value.trim();
                 }
                 
-                if (processedValue) {
+                if (processedValue !== '' && processedValue !== null) {
                     normalized[key] = processedValue;
                 }
             }
@@ -785,28 +872,16 @@
                 if (date instanceof Date) {
                     return date.toISOString().split('T')[0];
                 }
-                const s = String(date);
-                const parts = s.match(/(\d+)/g);
-                if (!parts || parts.length < 3) return null;
-
-                let day, month, year;
-                if (s.includes('-') && parts[0].length === 4) { // YYYY-MM-DD
-                    [year, month, day] = parts;
-                } else { 
-                    if (parseInt(parts[1]) > 12) { // DD/MM/YYYY
-                        [day, month, year] = parts;
-                    } else { // Ambíguo, assume DD/MM
-                        [day, month, year] = parts;
-                    }
-                }
-                year = year.length === 2 ? `20${year}` : year;
-                return new Date(`${year}-${month}-${day}`).toISOString().split('T')[0];
+                const d = new Date(date);
+                if (isNaN(d.getTime())) return null;
+                return d.toISOString().split('T')[0];
             } catch (e) {
                 return null;
             }
         }
         
         function normalizeValue(value) {
+            if (typeof value === 'number') return value;
             if (!value) return 0;
             const s = String(value).replace('R$', '').trim().replace('.', '').replace(',', '.');
             return parseFloat(s) || 0;
@@ -850,17 +925,13 @@
 
         function calculateSimilarity(clientA, clientB) {
             let score = 0;
-            
-            if (clientA.telefone && clientB.telefone && clientA.telefone === clientB.telefone) {
-                score += 60;
-            }
+            if (clientA.telefone && clientB.telefone && clientA.telefone === clientB.telefone) return 100;
             
             if (clientA.nome && clientB.nome) {
-                // Defensive coding: ensure names are strings before using string methods.
                 const nameA = String(clientA.nome);
                 const nameB = String(clientB.nome);
                 const nameSimilarity = 1 - (levenshtein(nameA.toLowerCase(), nameB.toLowerCase()) / Math.max(nameA.length, nameB.length));
-                score += nameSimilarity * 30;
+                score += nameSimilarity * 80;
             }
             
             if (clientA.email && clientB.email && String(clientA.email).toLowerCase() === String(clientB.email).toLowerCase()) {
@@ -890,21 +961,32 @@
             const merged = { ...existing };
             
             for (const key in newData) {
+                if(key === 'id') continue;
                 if (key === 'valor_total') {
                     merged[key] = (merged[key] || 0) + (newData[key] || 0);
                 } else if (key === 'data_ultima_compra') {
                     if (!merged[key] || new Date(newData[key]) > new Date(merged[key])) {
                         merged[key] = newData[key];
                     }
+                } else if (key === 'produtos') {
+                    const existingProducts = new Set((merged.produtos || '').split('; ').filter(Boolean));
+                    const newProducts = (newData.produtos || '').split('; ').filter(Boolean);
+                    newProducts.forEach(p => existingProducts.add(p));
+                    merged.produtos = Array.from(existingProducts).join('; ');
                 } else if (typeof newData[key] === 'string' && newData[key].length > (merged[key] || '').length) {
-                    merged[key] = newData[key];
-                } else if (!merged[key]) {
-                    merged[key] = newData[key];
+                    merged[key] = newData[key]; // Prioriza dados mais completos
+                } else if (!merged[key] && newData[key]) {
+                    merged[key] = newData[key]; // Adiciona dados novos
                 }
             }
             
             merged.updated_at = new Date().toISOString();
-            merged.sources.push({ name: fileToImport.name, date: new Date().toISOString() });
+            
+            // Adiciona a nova fonte apenas se for diferente da última
+            const lastSource = merged.sources[merged.sources.length - 1];
+            if (!lastSource || !lastSource.name.startsWith('Ideris Sync')) {
+                merged.sources.push({ name: fileToImport.name, date: new Date().toISOString() });
+            }
             
             return calculateClientStatus(merged);
         }
@@ -985,7 +1067,7 @@
             ui.dashboard.totalClients.textContent = state.clients.length;
             if(state.importHistory.length > 0) {
                 const lastImport = state.importHistory[state.importHistory.length - 1];
-                ui.dashboard.lastImport.textContent = `${lastImport.name} (${formatDate(lastImport.date)})`;
+                ui.dashboard.lastImport.textContent = `${lastImport.name} (${new Date(lastImport.date).toLocaleDateString()})`;
             } else {
                 ui.dashboard.lastImport.textContent = 'N/A';
             }
@@ -1011,15 +1093,26 @@
                     <div><strong>Email:</strong> ${client.email || 'N/A'}</div>
                     <div><strong>Valor Total Gasto:</strong> ${formatCurrency(client.valor_total)}</div>
                     <div><strong>Última Compra:</strong> ${formatDate(client.data_ultima_compra)}</div>
-                    <div><strong>Cidade:</strong> ${client.cidade || 'N/A'}</div>
+                    <div><strong>Endereço:</strong> ${client.endereco || 'N/A'}, ${client.cidade || ''} - ${client.estado || ''}</div>
                     <div><strong>Observações:</strong> ${client.observacoes || 'N/A'}</div>
-                </div>
-                <hr class="my-6">
+                </div>`;
+
+            if (client.produtos) {
+                bodyHtml += `<hr class="my-6">
+                <h4 class="text-md font-semibold text-gray-800 mb-4">Produtos Comprados</h4>
+                <ul class="space-y-2 text-sm list-disc list-inside">`;
+                client.produtos.split('; ').forEach(p => {
+                    bodyHtml += `<li>${p}</li>`;
+                });
+                bodyHtml += `</ul>`;
+            }
+
+            bodyHtml += `<hr class="my-6">
                 <h4 class="text-md font-semibold text-gray-800 mb-4">Histórico de Fontes (${client.sources.length})</h4>
                 <ul class="space-y-3">
             `;
             
-            client.sources.forEach(source => {
+            client.sources.slice().reverse().forEach(source => {
                 bodyHtml += `<li class="text-sm">
                     <span class="font-semibold text-gray-700">${source.name}</span>
                     <span class="text-gray-500"> - ${new Date(source.date).toLocaleString('pt-BR')}</span>
@@ -1035,6 +1128,8 @@
         function openSettingsModal() {
             ui.settingsModal.ativoDays.value = state.config.statusIntervals.ativo;
             ui.settingsModal.riscoDays.value = state.config.statusIntervals.emRisco;
+            ui.settingsModal.apiKey.value = state.config.iderisApiKey;
+            ui.settingsModal.proxyUrl.value = state.config.proxyUrl;
             showModal(ui.settingsModal.container);
         }
 
@@ -1043,14 +1138,22 @@
         async function saveSettings() {
             const ativo = parseInt(ui.settingsModal.ativoDays.value, 10);
             const risco = parseInt(ui.settingsModal.riscoDays.value, 10);
+            const apiKey = ui.settingsModal.apiKey.value.trim();
+            const proxyUrl = ui.settingsModal.proxyUrl.value.trim();
 
             if (isNaN(ativo) || isNaN(risco) || ativo <= 0 || risco <= ativo) {
-                showToast('Valores inválidos. "Em Risco" deve ser maior que "Ativo".', 'error');
+                showToast('Valores de status inválidos. "Em Risco" deve ser maior que "Ativo".', 'error');
+                return;
+            }
+            if (!apiKey) {
+                showToast('A API Key da Ideris é obrigatória.', 'error');
                 return;
             }
             
             state.config.statusIntervals.ativo = ativo;
             state.config.statusIntervals.emRisco = risco;
+            state.config.iderisApiKey = apiKey;
+            state.config.proxyUrl = proxyUrl;
             
             await saveConfigToDB({ config: state.config, importHistory: state.importHistory });
             
@@ -1159,7 +1262,12 @@
                 Email: c.email,
                 Status: c.status,
                 'Última Compra': c.data_ultima_compra,
-                'Valor Total': c.valor_total
+                'Valor Total': c.valor_total,
+                Produtos: c.produtos,
+                Endereço: c.endereco,
+                Cidade: c.cidade,
+                Estado: c.estado,
+                CEP: c.cep
             }));
 
             const worksheet = XLSX.utils.json_to_sheet(dataToExport);
@@ -1218,7 +1326,7 @@
             
             setTimeout(() => {
                 toast.remove();
-            }, 3000);
+            }, 4000);
         }
 
         function debounce(func, delay) {
@@ -1251,7 +1359,7 @@
         function formatDate(dateString) {
             if (!dateString) return 'N/A';
             try {
-                return new Date(dateString + 'T00:00:00').toLocaleDateString('pt-BR');
+                return new Date(dateString + 'T00:00:00Z').toLocaleDateString('pt-BR');
             } catch (e) {
                 return dateString;
             }
@@ -1274,7 +1382,7 @@
             return new Promise((resolve, reject) => {
                 const store = getObjectStore(CLIENTS_STORE, 'readonly');
                 const request = store.getAll();
-                request.onsuccess = e => resolve(e.target.result);
+                request.onsuccess = e => resolve(e.target.result.sort((a,b) => new Date(b.updated_at) - new Date(a.updated_at)));
                 request.onerror = e => reject(e.target.error);
             });
         }
@@ -1322,5 +1430,4 @@
     </script>
 </body>
 </html>
-
 
