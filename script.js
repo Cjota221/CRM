@@ -253,15 +253,25 @@ document.addEventListener('DOMContentLoaded', () => {
                     </table>`;
             }
 
+            // **NOVA SEÇÃO: Monta o endereço completo**
+            const fullAddress = [
+                client.address,
+                client.address_number,
+                client.address_complement
+            ].filter(Boolean).join(', ') + (client.address_neighborhood ? ` - ${client.address_neighborhood}` : '') +
+            (client.city ? `<br>${client.city}` : '') + (client.state ? `/${client.state}` : '') + 
+            (client.zip_code ? ` - CEP: ${client.zip_code}` : '');
+
             detailsModalContent.innerHTML = `
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                    <div><strong class="text-gray-600 block">E-mail:</strong> ${client.email || 'N/A'}</div>
-                    <div><strong class="text-gray-600 block">Telefone:</strong> ${client.phone || 'N/A'}</div>
-                    <div><strong class="text-gray-600 block">Aniversário:</strong> ${client.birthday ? new Date(client.birthday).toLocaleDateString() : 'N/A'}</div>
-                    <div><strong class="text-gray-600 block">Pedidos:</strong> ${client.orderCount || 0}</div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 text-sm mb-6 pb-4 border-b">
+                    <div><strong class="text-gray-600 block"><i class="fas fa-envelope fa-fw mr-2 text-gray-400"></i>E-mail:</strong> ${client.email || 'N/A'}</div>
+                    <div><strong class="text-gray-600 block"><i class="fas fa-phone fa-fw mr-2 text-gray-400"></i>Telefone:</strong> ${client.phone || 'N/A'}</div>
+                    <div><strong class="text-gray-600 block"><i class="fas fa-id-card fa-fw mr-2 text-gray-400"></i>CPF:</strong> ${client.cpf || 'N/A'}</div>
+                    <div><strong class="text-gray-600 block"><i class="fas fa-gift fa-fw mr-2 text-gray-400"></i>Aniversário:</strong> ${client.birthday ? new Date(client.birthday).toLocaleDateString() : 'N/A'}</div>
+                    <div class="md:col-span-2"><strong class="text-gray-600 block"><i class="fas fa-map-marker-alt fa-fw mr-2 text-gray-400"></i>Endereço:</strong> ${fullAddress || 'N/A'}</div>
                 </div>
-                 <div class="mt-6">
-                    <h3 class="text-lg font-semibold mb-2 border-t pt-4">Histórico de Compras</h3>
+                 <div class="mt-4">
+                    <h3 class="text-lg font-semibold mb-2">Histórico de Compras</h3>
                     ${productsHtml}
                 </div>
             `;
@@ -317,12 +327,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.warn("Cliente da API ignorado por não ter um ID:", c);
                     return;
                 }
+                // **NOVA SEÇÃO: Captura dos novos campos da API**
                 clientsData.set(c.id, {
                     id: c.id,
                     name: c.nome,
                     email: c.email,
                     phone: c.whatsapp,
                     birthday: c.data_nascimento,
+                    cpf: c.cpf, // Novo campo
+                    address: c.endereco, // Novo campo
+                    address_number: c.numero, // Novo campo
+                    address_complement: c.complemento, // Novo campo
+                    address_neighborhood: c.bairro, // Novo campo
+                    city: c.cidade, // Novo campo
+                    state: c.estado, // Novo campo
+                    zip_code: c.cep, // Novo campo
                     lastPurchaseDate: c.ultima_compra ? new Date(c.ultima_compra) : null,
                     totalSpent: 0,
                     orderCount: 0,
@@ -345,10 +364,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 (order.produtos || order.itens)?.forEach(item => {
                     const productMap = client.products;
-                    const itemPrice = parseFloat(item.subtotal || item.valor || 0); // Adicionado 'valor' como fallback
+                    const itemPrice = parseFloat(item.subtotal || item.valor || 0);
                     const itemQuantity = parseInt(item.quantidade || 1, 10);
                     const itemCode = item.codigo || item.sku;
-                    const itemName = item.nome || item.produto_nome; // Adicionado 'produto_nome'
+                    const itemName = item.nome || item.produto_nome;
 
                     if (!itemCode || !itemName) return;
 
@@ -428,7 +447,6 @@ document.addEventListener('DOMContentLoaded', () => {
     cancelButton.addEventListener('click', () => closeModal('client-modal'));
     clientForm.addEventListener('submit', handleFormSubmit);
     
-    // CORREÇÃO: Listener de eventos centralizado para os botões dos cards
     clientCardsContainer.addEventListener('click', (event) => {
         const target = event.target.closest('button');
         if (!target) return;
@@ -458,4 +476,3 @@ document.addEventListener('DOMContentLoaded', () => {
 
     initDB();
 });
-
