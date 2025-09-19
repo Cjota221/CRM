@@ -1,5 +1,3 @@
-// Este é o código do SERVIDOR (Node.js)
-// Ele DEVE usar 'require'
 const fetch = require('node-fetch');
 
 exports.handler = async (event) => {
@@ -25,12 +23,18 @@ exports.handler = async (event) => {
   let page = 1;
   let hasMore = true;
 
-  console.log(`[INFO] Iniciando busca de todos os pedidos da FacilZap...`);
+  // Define uma data inicial para buscar todos os pedidos (ex: últimos 5 anos)
+  const fiveYearsAgo = new Date();
+  fiveYearsAgo.setFullYear(fiveYearsAgo.getFullYear() - 5);
+  const dataInicial = fiveYearsAgo.toISOString().split('T')[0];
+
+  console.log(`[INFO] Iniciando busca de todos os pedidos desde ${dataInicial}...`);
 
   try {
     while (hasMore) {
-      const API_ENDPOINT_PAGE = `${BASE_API_ENDPOINT}?page=${page}&length=100`;
-      console.log(`[INFO] Buscando página ${page}...`);
+      // Adiciona os parâmetros 'data_inicial' e 'incluir_produtos=1' conforme a documentação
+      const API_ENDPOINT_PAGE = `${BASE_API_ENDPOINT}?page=${page}&length=100&data_inicial=${dataInicial}&incluir_produtos=1`;
+      console.log(`[INFO] Buscando página ${page}: ${API_ENDPOINT_PAGE}`);
       
       const response = await fetch(API_ENDPOINT_PAGE, {
           method: 'GET',
