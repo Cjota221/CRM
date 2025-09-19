@@ -296,7 +296,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const clientsData = {};
 
             allOrders.forEach(order => {
-                const clientEmail = order.cliente?.email || 'sem-email@facilzap.com';
+                const clientEmail = order.cliente?.email || `sem-email-${order.id_pedido}@facilzap.com`;
                 
                 if (!clientsData[clientEmail]) {
                     clientsData[clientEmail] = {
@@ -313,8 +313,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const client = clientsData[clientEmail];
                 client.totalSpent += parseFloat(order.total_pedido || 0);
                 client.orderCount++;
-                const orderDate = new Date(order.criado_em);
-                if (!client.lastPurchaseDate || client.lastPurchaseDate < orderDate) {
+                const orderDate = order.criado_em ? new Date(order.criado_em) : null;
+                if (orderDate && (!client.lastPurchaseDate || client.lastPurchaseDate < orderDate)) {
                     client.lastPurchaseDate = orderDate;
                 }
 
@@ -344,11 +344,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     request.onsuccess = () => {
                         const existingClient = request.result || {};
                         
+                        // CORREÇÃO APLICADA AQUI
+                        const validDate = processedClient.lastPurchaseDate && !isNaN(processedClient.lastPurchaseDate);
+                        const lastPurchaseDateISO = validDate ? processedClient.lastPurchaseDate.toISOString().split('T')[0] : null;
+
                         const finalClientData = {
                             ...existingClient,
                             ...processedClient,
                             products: Array.from(processedClient.products.values()),
-                            lastPurchaseDate: processedClient.lastPurchaseDate?.toISOString().split('T')[0]
+                            lastPurchaseDate: lastPurchaseDateISO
                         };
                         
                         store.put(finalClientData);
