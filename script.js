@@ -256,7 +256,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!confirm('Tem certeza? Esta ação é irreversível.')) return;
         const tx = db.transaction('clients', 'readwrite');
         tx.objectStore('clients').delete(id);
-        tx.oncomplete = = () => {
+        // CORREÇÃO: Removido um "=" extra que quebrava o script
+        tx.oncomplete = () => {
             renderClients();
             showToast('Cliente excluído.', 'success');
         };
@@ -296,13 +297,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const clientsData = {};
 
             allOrders.forEach(order => {
-                // CORREÇÃO: Usa o campo "id" do cliente como chave primária se o email não existir
                 const clientIdentifier = order.cliente?.email || `id-${order.cliente?.id}@facilzap.com`;
                 
                 if (!clientsData[clientIdentifier]) {
                     clientsData[clientIdentifier] = {
                         name: order.cliente?.nome,
-                        email: order.cliente?.email, // Pode ser nulo
+                        email: order.cliente?.email,
                         phone: order.cliente?.telefone,
                         totalSpent: 0,
                         orderCount: 0,
@@ -312,30 +312,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 const client = clientsData[clientIdentifier];
-                // CORREÇÃO: Usa o campo "total" do pedido
                 client.totalSpent += parseFloat(order.total || 0);
                 client.orderCount++;
-                // CORREÇÃO: Usa o campo "data" do pedido
                 const orderDate = order.data ? new Date(order.data) : null;
                 if (orderDate && (!client.lastPurchaseDate || client.lastPurchaseDate < orderDate)) {
                     client.lastPurchaseDate = orderDate;
                 }
-
-                // A documentação não mostra os itens do pedido no endpoint /pedidos
-                // Esta parte pode precisar de ajuste se a API for atualizada para incluir produtos
-                order.produtos?.forEach(item => {
+                
+                (order.produtos || order.itens)?.forEach(item => {
                     const productMap = client.products;
-                    // CORREÇÃO: Usa "subtotal" e "nome" do item
-                    const itemPrice = parseFloat(item.subtotal || 0);
+                    const itemPrice = parseFloat(item.subtotal || item.valor_venda || 0);
                     const itemQuantity = parseInt(item.quantidade || 1, 10);
+                    const itemCode = item.codigo || item.sku;
+                    const itemName = item.nome || item.nome_produto;
 
-                    if (productMap.has(item.codigo)) {
-                        productMap.get(item.codigo).quantity += itemQuantity;
+                    if (productMap.has(itemCode)) {
+                        productMap.get(itemCode).quantity += itemQuantity;
                     } else {
-                        productMap.set(item.codigo, {
-                            name: item.nome,
+                        productMap.set(itemCode, {
+                            name: itemName,
                             quantity: itemQuantity,
-                            price: itemPrice / itemQuantity // Calcula o preço unitário
+                            price: itemQuantity > 0 ? itemPrice / itemQuantity : 0
                         });
                     }
                 });
@@ -349,7 +346,6 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const promises = Object.values(clientsData).map(processedClient => {
                  return new Promise((resolve) => {
-                    // Usa o email para buscar clientes existentes, se disponível
                     const lookupKey = processedClient.email || `id-${processedClient.id}@facilzap.com`;
                     const request = emailIndex.get(lookupKey);
                     
@@ -362,7 +358,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const finalClientData = {
                             ...existingClient,
                             ...processedClient,
-                            email: processedClient.email || existingClient.email, // Mantém o email antigo se o novo for nulo
+                            email: processedClient.email || existingClient.email,
                             products: Array.from(processedClient.products.values()),
                             lastPurchaseDate: lastPurchaseDateISO
                         };
