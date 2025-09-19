@@ -1,5 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const dbName = 'CRMDatabase';
+    const dbName = 'CRMDatabase_FacilZap'; // Novo nome para evitar conflitos
     let db;
 
     const addClientButton = document.getElementById('add-client-button');
@@ -94,7 +94,7 @@ document.addEventListener('DOMContentLoaded', () => {
         transaction.oncomplete = () => {
             showToast('Configurações salvas com sucesso!', 'success');
             settingsModal.classList.add('hidden');
-            renderClients(); // Re-render to apply new status rules
+            renderClients();
         };
     }
 
@@ -207,7 +207,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const store = transaction.objectStore('clients');
 
         if (id) {
-            // Update existing client
             const request = store.get(id);
             request.onsuccess = () => {
                 const existingClient = request.result;
@@ -215,7 +214,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 store.put(updatedClient);
             };
         } else {
-            // Add new client
             store.add(clientData);
         }
 
@@ -312,25 +310,26 @@ document.addEventListener('DOMContentLoaded', () => {
         clientModal.classList.add('hidden');
     }
     
+    // --- Data Synchronization (FACILZAP) ---
     async function syncData() {
-        showToast('Iniciando sincronização...', 'info');
+        showToast('Iniciando sincronização com FacilZap...', 'info');
         syncButton.disabled = true;
         syncButton.innerHTML = '<i class="fas fa-sync-alt w-6 text-center animate-spin"></i><span class="ml-4">Sincronizando...</span>';
 
         try {
-            // A chamada agora usa o caminho relativo, que o Netlify irá redirecionar
-            const response = await fetch('/api/proxy-ideris');
+            // A chamada agora aponta para o novo proxy da FacilZap
+            const response = await fetch('/api/facilzap-proxy');
             
             if (!response.ok) {
-                // Tenta ler a mensagem de erro específica do proxy
                 const errorData = await response.json();
-                throw new Error(errorData.message || `Erro HTTP ${response.status}`);
+                throw new Error(errorData.error || `Erro HTTP ${response.status}`);
             }
 
-            const orders = await response.json();
+            const apiResponse = await response.json();
+            const orders = apiResponse.data; // Ajustado para a estrutura da FacilZap
             
-            if (!orders || !orders.data) {
-                 throw new Error("Resposta da API inválida ou sem dados.");
+            if (!orders) {
+                 throw new Error("Resposta da API da FacilZap inválida ou sem dados.");
             }
 
             const transaction = db.transaction('clients', 'readwrite');
@@ -339,40 +338,38 @@ document.addEventListener('DOMContentLoaded', () => {
             let updatedCount = 0;
             let newCount = 0;
 
-            const promises = orders.data.map(order => {
-                const clientEmail = order.cliente.email;
+            const promises = orders.map(order => {
+                // Adaptação para a estrutura de dados da FacilZap (hipotética)
+                const clientEmail = order.cliente_email;
                 if (!clientEmail) return Promise.resolve();
 
                 return new Promise((resolve) => {
                     const request = emailIndex.get(clientEmail);
                     request.onsuccess = () => {
-                        let client = request.result || {}; // Use existing or create new
+                        let client = request.result || {};
 
-                        // Update client info
-                        client.name = client.name || order.cliente.nome;
+                        client.name = client.name || order.cliente_nome;
                         client.email = clientEmail;
-                        client.phone = client.phone || order.cliente.celular || order.cliente.telefone;
+                        client.phone = client.phone || order.cliente_telefone;
                         
-                        // Update purchase history
-                        const orderDate = new Date(order.data);
+                        const orderDate = new Date(order.data_pedido);
                         if (!client.lastPurchaseDate || new Date(client.lastPurchaseDate) < orderDate) {
                             client.lastPurchaseDate = orderDate.toISOString().split('T')[0];
                         }
                         
-                        client.totalSpent = (client.totalSpent || 0) + parseFloat(order.valorTotal);
+                        client.totalSpent = (client.totalSpent || 0) + parseFloat(order.valor_total);
                         
-                        // Update product list
                         client.products = client.products || [];
-                        order.item.forEach(item => {
+                        order.itens.forEach(item => {
                             const existingProduct = client.products.find(p => p.sku === item.sku);
                             if (existingProduct) {
                                 existingProduct.quantity += parseInt(item.quantidade, 10);
                             } else {
                                 client.products.push({
                                     sku: item.sku,
-                                    name: item.nome,
+                                    name: item.nome_produto,
                                     quantity: parseInt(item.quantidade, 10),
-                                    price: parseFloat(item.valor)
+                                    price: parseFloat(item.valor_unitario)
                                 });
                             }
                         });
@@ -434,7 +431,6 @@ document.addEventListener('DOMContentLoaded', () => {
     searchInput.addEventListener('input', renderClients);
     filterSelect.addEventListener('change', renderClients);
     
-    // Settings listeners
     openSettingsButton.addEventListener('click', () => settingsModal.classList.remove('hidden'));
     cancelSettingsButton.addEventListener('click', () => settingsModal.classList.add('hidden'));
     settingsForm.addEventListener('submit', (e) => {
@@ -442,7 +438,6 @@ document.addEventListener('DOMContentLoaded', () => {
         saveSettings();
     });
     
-    // Sync listener
     syncButton.addEventListener('click', syncData);
 
     // --- Initial Load ---
