@@ -4,264 +4,222 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CRM Monolítico Inteligente</title>
-    
-    <!-- Tailwind CSS via CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Libraries via CDN -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
-    
-    <!-- Custom CSS -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
-        /* Estilos para customização e componentes que o Tailwind não cobre por padrão */
-        :root {
-            --primary-color: #2563eb;
-            --secondary-color: #64748b;
-            --success-color: #10b981;
-            --warning-color: #f59e0b;
-            --danger-color: #ef4444;
-        }
-
+        :root { --sidebar-width: 280px; }
+        body { font-family: 'Inter', sans-serif; }
+        #main-content { margin-left: var(--sidebar-width); transition: margin-left 0.3s; }
+        #sidebar { width: var(--sidebar-width); transition: width 0.3s; }
         .modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
             background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 50;
         }
-
-        .drag-over {
-            border-style: solid;
-            border-color: var(--primary-color);
-            background-color: rgba(37, 99, 235, 0.1);
+        .modal-content {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            width: 90%;
+            max-width: 500px;
         }
-
-        /* Animação de Spinner */
-        .spinner {
-            border: 4px solid rgba(0, 0, 0, 0.1);
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            border-left-color: var(--primary-color);
-            animation: spin 1s ease infinite;
+        .status-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
         }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        .status-ativo { background-color: #dcfce7; color: #166534; }
+        .status-risco { background-color: #fef9c3; color: #854d0e; }
+        .status-inativo { background-color: #fee2e2; color: #991b1b; }
+        .status-sem-historico { background-color: #e5e7eb; color: #4b5563; }
+        .toast-notification {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 1rem 1.5rem;
+            border-radius: 0.5rem;
+            color: white;
+            z-index: 100;
+            opacity: 0;
+            transition: opacity 0.3s, transform 0.3s;
+            transform: translateY(20px);
         }
-
-        /* Estilo da barra de rolagem */
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: #f1f1f1; }
-        ::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #555; }
+        .toast-notification.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .toast-success { background-color: #22c55e; }
+        .toast-error { background-color: #ef4444; }
+        .toast-info { background-color: #3b82f6; }
     </style>
 </head>
-<body class="bg-gray-100 font-sans antialiased text-gray-800">
+<body class="bg-gray-100">
 
-    <!-- Container Principal -->
-    <div id="app" class="flex flex-col md:flex-row h-screen">
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed top-0 left-0 h-full bg-gray-800 text-white flex flex-col z-40">
+        <div class="p-6 text-2xl font-bold border-b border-gray-700">
+            <i class="fas fa-chart-line mr-2"></i> CRM Pro
+        </div>
+        <nav class="flex-1 p-4">
+            <ul>
+                <li class="mb-2">
+                    <a href="#" id="sync-button" class="flex items-center p-3 rounded-lg hover:bg-gray-700 transition-colors">
+                        <i class="fas fa-sync-alt w-6 text-center"></i>
+                        <span class="ml-4">Sincronizar Dados</span>
+                    </a>
+                </li>
+                 <li class="mb-2">
+                    <button id="open-settings-button" class="w-full flex items-center p-3 rounded-lg hover:bg-gray-700 transition-colors text-left">
+                        <i class="fas fa-cog w-6 text-center"></i>
+                        <span class="ml-4">Configurações</span>
+                    </button>
+                </li>
+            </ul>
+        </nav>
+        <div class="p-4 border-t border-gray-700">
+            <p class="text-xs text-gray-400">&copy; 2025 CRM Pro. Todos os direitos reservados.</p>
+        </div>
+    </aside>
 
-        <!-- Sidebar -->
-        <aside class="w-full md:w-72 bg-white border-r border-gray-200 p-4 space-y-6 flex-shrink-0">
-            <div class="flex items-center space-x-2">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M15 21v-1a6 6 0 00-5.197-5.975M15 21V10a4 4 0 00-4-4H7a4 4 0 00-4 4v11"/></svg>
-                <h1 class="text-xl font-bold text-gray-900">CRM Consolidado</h1>
-            </div>
+    <!-- Main Content -->
+    <main id="main-content" class="p-8">
+        <header class="flex justify-between items-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-800">Painel de Clientes</h1>
+            <button id="add-client-button" class="bg-blue-600 text-white px-6 py-2 rounded-lg shadow hover:bg-blue-700 transition-colors flex items-center">
+                <i class="fas fa-plus mr-2"></i> Adicionar Cliente
+            </button>
+        </header>
 
-            <!-- Botões de Ação -->
-            <div class="space-y-2">
-                <button id="ideris-sync-btn" class="w-full bg-purple-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-purple-700 transition-colors flex items-center justify-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"> <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5"/> <path stroke-linecap="round" stroke-linejoin="round" d="M4 9a9 9 0 0114.13-6.364M20 15a9 9 0 01-14.13 6.364"/> </svg>
-                    Sincronizar com Ideris
-                </button>
-                 <button id="import-initial-btn" class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                    Importar Base Inicial
-                </button>
-                <button id="add-data-btn" class="w-full bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center" disabled>
-                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
-                    Adicionar Novos Dados
-                </button>
-            </div>
-
-            <!-- Filtros -->
-            <div class="space-y-4">
-                <h2 class="font-bold text-gray-700">Filtros</h2>
-                <div>
-                    <label for="search" class="text-sm font-medium text-gray-600">Busca Rápida</label>
-                    <input type="text" id="search" placeholder="Nome, telefone, email..." class="w-full mt-1 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
-                </div>
-                <div>
-                    <label for="status-filter" class="text-sm font-medium text-gray-600">Status do Cliente</label>
-                    <select id="status-filter" class="w-full mt-1 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
-                        <option value="all">Todos</option>
-                        <option value="ativo">Ativo</option>
-                        <option value="em_risco">Em Risco</option>
-                        <option value="inativo">Inativo</option>
-                        <option value="sem_historico">Sem Histórico</option>
-                    </select>
-                </div>
-            </div>
-
-            <!-- Dashboard -->
-            <div id="dashboard" class="space-y-3 pt-4 border-t border-gray-200">
-                 <h2 class="font-bold text-gray-700">Dashboard</h2>
-                 <div class="text-sm space-y-2 text-gray-600">
-                    <p>Total de Clientes: <span id="total-clients" class="font-bold text-gray-800">0</span></p>
-                    <p>Última Importação: <span id="last-import" class="font-bold text-gray-800">N/A</span></p>
-                    <p>Duplicatas Resolvidas: <span id="duplicates-resolved" class="font-bold text-gray-800">0</span></p>
-                 </div>
-            </div>
-
-             <!-- Ações e Configurações -->
-            <div class="space-y-2 pt-4 border-t border-gray-200">
-                <button id="settings-btn" class="w-full text-sm text-gray-600 hover:text-blue-600 flex items-center justify-center">Configurações</button>
-                <button id="clear-db-btn" class="w-full text-sm text-red-500 hover:text-red-700 flex items-center justify-center">Limpar Base de Dados</button>
-            </div>
-        </aside>
-
-        <!-- Conteúdo Principal -->
-        <main class="flex-1 p-6 overflow-y-auto">
-             <div id="initial-view" class="flex flex-col items-center justify-center h-full text-center bg-white rounded-lg p-8">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-24 w-24 text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
-                <h2 class="text-2xl font-bold text-gray-800">Bem-vindo ao seu CRM</h2>
-                <p class="text-gray-500 mt-2">Para começar, sincronize com a Ideris ou importe uma planilha de clientes.</p>
-                <p class="text-gray-500 mt-1">Você também pode arrastar e soltar um arquivo aqui.</p>
-            </div>
-
-            <div id="data-view" class="hidden">
-                 <!-- Ações em Lote -->
-                <div class="flex flex-wrap items-center justify-between mb-4 gap-4">
-                    <div class="flex items-center space-x-2">
-                        <input type="checkbox" id="select-all-page" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
-                        <label for="select-all-page" class="text-sm font-medium">Selecionar todos</label>
-                        <span id="selection-count" class="text-sm text-gray-500"></span>
-                    </div>
-                    <div class="flex items-center space-x-2">
-                        <button id="export-btn" class="bg-gray-700 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-800 transition-colors text-sm disabled:opacity-50" disabled>Exportar</button>
-                        <button id="copy-phones-btn" class="bg-gray-700 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-800 transition-colors text-sm disabled:opacity-50" disabled>Copiar Telefones</button>
-                    </div>
-                </div>
-
-                <!-- Tabela de Clientes -->
-                <div class="bg-white rounded-lg shadow overflow-x-auto">
-                    <table class="w-full min-w-max">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th class="p-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"></th>
-                                <th class="p-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nome</th>
-                                <th class="p-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Telefone</th>
-                                <th class="p-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                <th class="p-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Última Compra</th>
-                                <th class="p-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Valor Total</th>
-                                <th class="p-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fontes</th>
-                            </tr>
-                        </thead>
-                        <tbody id="clients-table-body" class="divide-y divide-gray-200">
-                            <!-- Linhas da tabela serão injetadas aqui -->
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- Paginação -->
-                <div id="pagination" class="flex items-center justify-between mt-4">
-                    <span id="page-info" class="text-sm text-gray-600"></span>
-                    <div class="space-x-2">
-                        <button id="prev-page-btn" class="bg-white border border-gray-300 text-gray-700 font-bold py-1 px-3 rounded-lg hover:bg-gray-100 disabled:opacity-50">Anterior</button>
-                        <button id="next-page-btn" class="bg-white border border-gray-300 text-gray-700 font-bold py-1 px-3 rounded-lg hover:bg-gray-100 disabled:opacity-50">Próximo</button>
-                    </div>
-                </div>
-            </div>
-        </main>
-    </div>
-
-    <!-- Modais -->
-    <!-- Modal de Resolução de Conflitos -->
-    <div id="conflict-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop hidden">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl transform transition-all max-h-[90vh] flex flex-col">
-            <div class="p-6">
-                 <h3 class="text-lg font-medium leading-6 text-gray-900">Duplicata Detectada (<span id="conflict-similarity"></span>% de similaridade)</h3>
-                 <p class="mt-1 text-sm text-gray-500">Encontramos um registro similar na base de dados. Escolha como proceder.</p>
-            </div>
-            <div id="conflict-details" class="p-6 bg-gray-50 overflow-y-auto">
-                <!-- Detalhes do conflito serão gerados aqui -->
-            </div>
-             <div class="px-6 py-4 bg-gray-100 flex justify-between items-center flex-wrap gap-2">
-                <div>
-                     <input type="checkbox" id="apply-all-conflicts" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
-                     <label for="apply-all-conflicts" class="text-sm font-medium">Aplicar para todos os <span id="conflict-count"></span> conflitos similares</label>
-                </div>
-                <div class="flex space-x-3">
-                    <button id="skip-conflict-btn" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50">Pular</button>
-                    <button id="keep-both-btn" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50">Manter Ambos</button>
-                    <button id="merge-smart-btn" class="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md shadow-sm hover:bg-blue-700">Mesclar Inteligente</button>
-                </div>
+        <!-- Search and Filter -->
+        <div class="mb-6 p-4 bg-white rounded-lg shadow">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <input type="text" id="search-input" placeholder="Buscar por nome, e-mail ou telefone..." class="p-2 border rounded-md col-span-1 md:col-span-2">
+                <select id="filter-select" class="p-2 border rounded-md">
+                    <option value="todos">Todos os Status</option>
+                    <option value="ativo">Ativo</option>
+                    <option value="risco">Em Risco</option>
+                    <option value="inativo">Inativo</option>
+                    <option value="sem-historico">Sem Histórico</option>
+                </select>
             </div>
         </div>
-    </div>
+        
+        <!-- Client Table -->
+        <div class="bg-white rounded-lg shadow overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Última Compra</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Gasto</th>
+                        <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
+                    </tr>
+                </thead>
+                <tbody id="client-table-body" class="bg-white divide-y divide-gray-200">
+                    <!-- Rows will be inserted here by JavaScript -->
+                </tbody>
+            </table>
+             <div id="no-clients-message" class="text-center p-8 text-gray-500 hidden">
+                <i class="fas fa-user-slash fa-3x mb-4"></i>
+                <p>Nenhum cliente encontrado. Adicione um novo cliente para começar.</p>
+            </div>
+        </div>
+    </main>
 
-    <!-- Modal de Detalhes do Cliente -->
-    <div id="client-details-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop hidden">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl transform transition-all max-h-[90vh] flex flex-col">
-            <div id="client-modal-header" class="p-6 border-b border-gray-200">
-                <!-- Header do modal será gerado aqui -->
+    <!-- Client Modal (Add/Edit) -->
+    <div id="client-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <h2 id="modal-title" class="text-2xl font-bold mb-6">Adicionar Novo Cliente</h2>
+            <form id="client-form">
+                <input type="hidden" id="client-id">
+                <div class="mb-4">
+                    <label for="name" class="block text-sm font-medium text-gray-700 mb-1">Nome Completo</label>
+                    <input type="text" id="name" required class="w-full p-2 border rounded-md">
+                </div>
+                <div class="mb-4">
+                    <label for="email" class="block text-sm font-medium text-gray-700 mb-1">E-mail</label>
+                    <input type="email" id="email" class="w-full p-2 border rounded-md">
+                </div>
+                <div class="mb-4">
+                    <label for="phone" class="block text-sm font-medium text-gray-700 mb-1">Telefone</label>
+                    <input type="tel" id="phone" class="w-full p-2 border rounded-md">
+                </div>
+                <div class="mb-6">
+                    <label for="birthday" class="block text-sm font-medium text-gray-700 mb-1">Data de Nascimento</label>
+                    <input type="date" id="birthday" class="w-full p-2 border rounded-md">
+                </div>
+                <div class="flex justify-end gap-4">
+                    <button type="button" id="cancel-button" class="bg-gray-300 text-gray-800 px-6 py-2 rounded-lg hover:bg-gray-400">Cancelar</button>
+                    <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Client Details Modal -->
+    <div id="details-modal" class="modal-backdrop hidden">
+        <div class="modal-content max-w-2xl">
+            <div class="flex justify-between items-start">
+                 <h2 id="details-modal-title" class="text-2xl font-bold mb-4">Detalhes do Cliente</h2>
+                 <button id="close-details-button" class="text-gray-500 hover:text-gray-800">&times;</button>
             </div>
-            <div id="client-modal-body" class="p-6 bg-gray-50 overflow-y-auto">
-                <!-- Corpo do modal será gerado aqui -->
-            </div>
-            <div class="px-6 py-4 bg-gray-100 flex justify-end">
-                <button id="close-client-modal-btn" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50">Fechar</button>
+            <div id="details-modal-content" class="mt-4 space-y-4">
+                <!-- Details will be loaded here -->
             </div>
         </div>
     </div>
     
-    <!-- Modal de Configurações -->
-    <div id="settings-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop hidden">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-lg">
-            <div class="p-6 border-b">
-                <h3 class="text-lg font-medium text-gray-900">Configurações</h3>
-            </div>
-            <div class="p-6 space-y-6">
-                <div class="space-y-4">
-                    <h4 class="font-semibold text-gray-800">Integração Ideris</h4>
-                    <div>
-                        <label for="ideris-api-key" class="block text-sm font-medium text-gray-700">API Key Ideris</label>
-                        <input type="text" id="ideris-api-key" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <h2 class="text-2xl font-bold mb-6">Configurações</h2>
+            <form id="settings-form">
+                <div class="mb-6 border-b pb-6">
+                    <h3 class="text-lg font-semibold mb-2 text-gray-800">Integração Ideris</h3>
+                    <div class="mb-4">
+                        <label for="api-key" class="block text-sm font-medium text-gray-700 mb-1">API Key Ideris</label>
+                        <input type="password" id="api-key" class="w-full p-2 border rounded-md" placeholder="Sua chave de API secreta">
+                        <p class="text-xs text-gray-500 mt-1">Sua chave é armazenada com segurança no seu navegador.</p>
                     </div>
                 </div>
-                 <div class="space-y-4 pt-4 border-t">
-                    <h4 class="font-semibold text-gray-800">Status dos Clientes</h4>
-                    <p class="text-sm text-gray-500">Defina os intervalos em dias para cada status.</p>
-                    <div>
-                        <label for="status-ativo-days" class="block text-sm font-medium text-gray-700">Cliente Ativo (até X dias da última compra)</label>
-                        <input type="number" id="status-ativo-days" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+
+                <div class="mb-6">
+                    <h3 class="text-lg font-semibold mb-2 text-gray-800">Status dos Clientes</h3>
+                    <p class="text-sm text-gray-600 mb-4">Defina os intervalos em dias para cada status, com base na data da última compra.</p>
+                    <div class="mb-4">
+                        <label for="status-ativo-days" class="block text-sm font-medium text-gray-700 mb-1">Cliente Ativo (até X dias da última compra)</label>
+                        <input type="number" id="status-ativo-days" class="w-full p-2 border rounded-md">
                     </div>
-                     <div>
-                        <label for="status-risco-days" class="block text-sm font-medium text-gray-700">Cliente em Risco (até X dias da última compra)</label>
-                        <input type="number" id="status-risco-days" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    <div class="mb-4">
+                        <label for="status-risco-days" class="block text-sm font-medium text-gray-700 mb-1">Cliente em Risco (até X dias da última compra)</label>
+                        <input type="number" id="status-risco-days" class="w-full p-2 border rounded-md">
                     </div>
+                     <p class="text-xs text-gray-500 mt-1">Qualquer cliente com a última compra há mais tempo que o valor "Em Risco" será considerado "Inativo".</p>
                 </div>
-            </div>
-            <div class="px-6 py-4 bg-gray-100 flex justify-end space-x-3">
-                <button id="cancel-settings-btn" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50">Cancelar</button>
-                <button id="save-settings-btn" class="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md shadow-sm hover:bg-blue-700">Salvar</button>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Overlay de Loading -->
-    <div id="loading-overlay" class="fixed inset-0 z-[100] flex items-center justify-center modal-backdrop hidden">
-        <div class="bg-white p-6 rounded-lg shadow-xl flex items-center space-x-4">
-            <div class="spinner"></div>
-            <span id="loading-message" class="text-gray-700">Processando...</span>
+
+                <div class="flex justify-end gap-4">
+                    <button type="button" id="cancel-settings-button" class="bg-gray-300 text-gray-800 px-6 py-2 rounded-lg hover:bg-gray-400">Cancelar</button>
+                    <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">Salvar Configurações</button>
+                </div>
+            </form>
         </div>
     </div>
 
-    <!-- Elemento para Toast Notifications -->
-    <div id="toast-container" class="fixed bottom-5 right-5 z-[101] space-y-2"></div>
 
+    <!-- Toast Notification Container -->
+    <div id="toast-container"></div>
 
-    <!-- JavaScript -->
-    <script src="script.js" defer></script>
+    <script src="script.js"></script>
 </body>
 </html>
 
