@@ -13,6 +13,7 @@ exports.handler = async function(event, context) {
         console.log(`Verificando API Key. Início: ${API_KEY.substring(0, 5)}, Final: ${API_KEY.substring(API_KEY.length - 5)}`);
     }
 
+    // Validação #1: O token está ausente no servidor?
     if (!API_KEY) {
         console.error("ERRO: A variável de ambiente IDERIS_API_KEY não foi encontrada.");
         return {
@@ -22,24 +23,26 @@ exports.handler = async function(event, context) {
     }
 
     try {
+        // Validação #2: O proxy está repassando a autenticação corretamente?
+        // Sim, esta função É o proxy. Sua principal responsabilidade é criar o cabeçalho
+        // de autenticação e adicioná-lo à chamada para a API da Ideris.
         const response = await fetch(IDERIS_API_URL, {
             method: 'GET',
             headers: {
-                // CORREÇÃO BASEADA NA SUA ANÁLISE:
-                // O cabeçalho 'Authorization' é criado aqui, no servidor.
-                // A API da Ideris espera a chave diretamente, sem o prefixo "Bearer ".
-                // Portanto, a formatação atual está correta para esta API específica.
+                // Validação #3: O cabeçalho está bem formado?
+                // Sim. A API da Ideris espera a chave diretamente no cabeçalho 'Authorization',
+                // sem o prefixo "Bearer ". A formatação está correta para esta API.
                 'Authorization': API_KEY,
                 'Content-Type': 'application/json'
             }
         });
         
-        // Se a resposta não for 'ok' (como o erro 401 que estamos recebendo)
+        // Validação #4: O token é inválido ou expirado?
+        // Se a resposta da Ideris não for bem-sucedida (ex: erro 401),
+        // significa que o TOKEN em si (o valor em IDERIS_API_KEY) está incorreto.
         if (!response.ok) {
-            // Lemos a mensagem de erro da Ideris ("Invalid authorization token")
             const errorText = await response.text();
             console.error('Erro recebido da API Ideris:', errorText);
-            // E a enviamos de volta para o navegador para ser exibida
             return {
                 statusCode: response.status,
                 body: JSON.stringify({ message: `Erro da API Ideris: ${errorText}` })
