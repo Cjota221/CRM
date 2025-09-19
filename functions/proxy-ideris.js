@@ -1,14 +1,14 @@
 const fetch = require('node-fetch');
 
 exports.handler = async (event) => {
-  // Headers CORS para permitir que seu CRM (rodando no navegador) acesse esta função
+  // Adiciona headers CORS para desenvolvimento
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'Access-Control-Allow-Methods': 'GET, OPTIONS'
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS'
   };
 
-  // Responde a requisições OPTIONS (preflight) que o navegador envia antes do GET
+  // Responde a requisições OPTIONS (preflight)
   if (event.httpMethod === 'OPTIONS') {
     return {
       statusCode: 200,
@@ -17,57 +17,63 @@ exports.handler = async (event) => {
     };
   }
 
-  // Pega a chave de API secreta das variáveis de ambiente do Netlify
-  const IDERIS_API_KEY = process.env.IDERIS_API_KEY;
+  const FACILZAP_TOKEN = process.env.FACILZAP_TOKEN;
   
-  // Se a chave não estiver configurada no Netlify, retorna um erro claro
-  if (!IDERIS_API_KEY) {
-    console.error("[ERRO] Variável de ambiente IDERIS_API_KEY não configurada.");
+  if (!FACILZAP_TOKEN) {
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({ error: "Variável de ambiente IDERIS_API_KEY não configurada no servidor." })
+      body: JSON.stringify({ error: "Token FACILZAP_TOKEN não configurado nas variáveis de ambiente." })
     };
   }
 
-  // Endpoint da API da Ideris para buscar os pedidos
-  const API_ENDPOINT = 'https://api.ideris.com.br/v1/Pedido';
+  const { page, length, id } = event.queryStringParameters || {};
+
+  const fetchOptions = {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${FACILZAP_TOKEN}`,
+      'Accept': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    }
+  };
+
+  let API_ENDPOINT;
+
+  if (id) {
+    API_ENDPOINT = `https://api.facilzap.app.br/produtos/${id}`;
+  } else {
+    const pageNum = page || '1';
+    const pageLength = length || '100';
+    API_ENDPOINT = `https://api.facilzap.app.br/produtos?page=${pageNum}&length=${pageLength}`;
+  }
 
   console.log(`[INFO] Fazendo requisição para: ${API_ENDPOINT}`);
 
   try {
-    const response = await fetch(API_ENDPOINT, {
-        method: 'GET',
-        headers: {
-            // A API da Ideris espera a chave diretamente, sem o prefixo "Bearer"
-            'Authorization': IDERIS_API_KEY,
-            'Content-Type': 'application/json'
-        }
-    });
+    const response = await fetch(API_ENDPOINT, fetchOptions);
 
-    const responseBody = await response.text();
-
-    // Se o token for inválido, a Ideris retorna 401
     if (response.status === 401) {
-      console.error("[ERRO] Erro de autenticação (401). Verifique a IDERIS_API_KEY no Netlify.");
+      console.error("Erro de autenticação (401). Verifique o FACILZAP_TOKEN.");
       return {
         statusCode: 401,
         headers,
-        body: JSON.stringify({ error: "Token de autorização da Ideris é inválido ou expirou." })
+        body: JSON.stringify({ error: "Token de autenticação inválido ou expirado." })
       };
     }
-    
-    // Se ocorrer outro erro na API, retorna a mensagem de erro
+
+    const responseBody = await response.text();
+    console.log(`[INFO] Status da resposta: ${response.status}`);
+
     if (!response.ok) {
-      console.error(`[ERRO] Erro da API Ideris. Status: ${response.status}, Body: ${responseBody}`);
+      console.error(`Erro da API para ${API_ENDPOINT}. Status: ${response.status}, Body: ${responseBody}`);
       return {
         statusCode: response.status,
-        headers,
-        body: JSON.stringify({ error: `Erro retornado pela API da Ideris: ${responseBody}` })
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ error: `Erro da API: ${response.status} - ${responseBody}` })
       };
     }
     
-    // Se tudo der certo, retorna os dados dos pedidos
     return {
       statusCode: 200,
       headers: { ...headers, 'Content-Type': 'application/json' },
@@ -75,12 +81,11 @@ exports.handler = async (event) => {
     };
 
   } catch (error) {
-    console.error("[ERRO FATAL] Erro inesperado no proxy:", error);
+    console.error("Erro fatal no Proxy:", error);
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({ error: `Erro interno no servidor proxy: ${error.message}` })
+      body: JSON.stringify({ error: `Erro interno: ${error.message}` })
     };
   }
 };
-
