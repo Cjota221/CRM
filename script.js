@@ -256,7 +256,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!confirm('Tem certeza? Esta ação é irreversível.')) return;
         const tx = db.transaction('clients', 'readwrite');
         tx.objectStore('clients').delete(id);
-        tx.oncomplete = () => {
+        tx.oncomplete = = () => {
             renderClients();
             showToast('Cliente excluído.', 'success');
         };
@@ -296,12 +296,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const clientsData = {};
 
             allOrders.forEach(order => {
-                const clientEmail = order.cliente?.email || `sem-email-${order.id_pedido}@facilzap.com`;
+                // CORREÇÃO: Usa o campo "id" do cliente como chave primária se o email não existir
+                const clientIdentifier = order.cliente?.email || `id-${order.cliente?.id}@facilzap.com`;
                 
-                if (!clientsData[clientEmail]) {
-                    clientsData[clientEmail] = {
+                if (!clientsData[clientIdentifier]) {
+                    clientsData[clientIdentifier] = {
                         name: order.cliente?.nome,
-                        email: clientEmail,
+                        email: order.cliente?.email, // Pode ser nulo
                         phone: order.cliente?.telefone,
                         totalSpent: 0,
                         orderCount: 0,
@@ -310,23 +311,31 @@ document.addEventListener('DOMContentLoaded', () => {
                     };
                 }
 
-                const client = clientsData[clientEmail];
-                client.totalSpent += parseFloat(order.total_pedido || 0);
+                const client = clientsData[clientIdentifier];
+                // CORREÇÃO: Usa o campo "total" do pedido
+                client.totalSpent += parseFloat(order.total || 0);
                 client.orderCount++;
-                const orderDate = order.criado_em ? new Date(order.criado_em) : null;
+                // CORREÇÃO: Usa o campo "data" do pedido
+                const orderDate = order.data ? new Date(order.data) : null;
                 if (orderDate && (!client.lastPurchaseDate || client.lastPurchaseDate < orderDate)) {
                     client.lastPurchaseDate = orderDate;
                 }
 
-                order.itens?.forEach(item => {
+                // A documentação não mostra os itens do pedido no endpoint /pedidos
+                // Esta parte pode precisar de ajuste se a API for atualizada para incluir produtos
+                order.produtos?.forEach(item => {
                     const productMap = client.products;
+                    // CORREÇÃO: Usa "subtotal" e "nome" do item
+                    const itemPrice = parseFloat(item.subtotal || 0);
+                    const itemQuantity = parseInt(item.quantidade || 1, 10);
+
                     if (productMap.has(item.codigo)) {
-                        productMap.get(item.codigo).quantity += parseInt(item.quantidade, 10);
+                        productMap.get(item.codigo).quantity += itemQuantity;
                     } else {
                         productMap.set(item.codigo, {
                             name: item.nome,
-                            quantity: parseInt(item.quantidade, 10),
-                            price: parseFloat(item.valor_venda)
+                            quantity: itemQuantity,
+                            price: itemPrice / itemQuantity // Calcula o preço unitário
                         });
                     }
                 });
@@ -340,17 +349,20 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const promises = Object.values(clientsData).map(processedClient => {
                  return new Promise((resolve) => {
-                    const request = emailIndex.get(processedClient.email);
+                    // Usa o email para buscar clientes existentes, se disponível
+                    const lookupKey = processedClient.email || `id-${processedClient.id}@facilzap.com`;
+                    const request = emailIndex.get(lookupKey);
+                    
                     request.onsuccess = () => {
                         const existingClient = request.result || {};
                         
-                        // CORREÇÃO APLICADA AQUI
                         const validDate = processedClient.lastPurchaseDate && !isNaN(processedClient.lastPurchaseDate);
-                        const lastPurchaseDateISO = validDate ? processedClient.lastPurchaseDate.toISOString().split('T')[0] : null;
+                        const lastPurchaseDateISO = validDate ? processedClient.lastPurchaseDate.toISOString().split('T')[0] : existingClient.lastPurchaseDate || null;
 
                         const finalClientData = {
                             ...existingClient,
                             ...processedClient,
+                            email: processedClient.email || existingClient.email, // Mantém o email antigo se o novo for nulo
                             products: Array.from(processedClient.products.values()),
                             lastPurchaseDate: lastPurchaseDateISO
                         };
