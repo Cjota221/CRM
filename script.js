@@ -31,7 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusAtivoDaysInput = document.getElementById('status-ativo-days');
     const statusRiscoDaysInput = document.getElementById('status-risco-days');
     
-    // NOVO: Elementos do Modal de Confirmação
+    // Elementos do Modal de Confirmação
     const confirmModal = document.getElementById('confirm-modal');
     const confirmDeleteButton = document.getElementById('confirm-delete-button');
     const cancelDeleteButton = document.getElementById('cancel-delete-button');
@@ -40,7 +40,7 @@ document.addEventListener('DOMContentLoaded', () => {
         statusAtivoDays: 30,
         statusRiscoDays: 90,
     };
-    let clientIdToDelete = null; // Variável para guardar o ID do cliente a ser excluído
+    let clientIdToDelete = null; // Guarda o ID do cliente a ser excluído
 
     function initDB() {
         const request = indexedDB.open(dbName, 2);
@@ -280,13 +280,11 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    // ATUALIZADO: Abre o modal de confirmação
     function deleteClient(id) {
         clientIdToDelete = id;
         openModal('confirm-modal');
     }
 
-    // NOVO: Função para confirmar e executar a exclusão
     function confirmDeletion() {
         if (!clientIdToDelete) return;
 
@@ -304,7 +302,6 @@ document.addEventListener('DOMContentLoaded', () => {
             clientIdToDelete = null;
         }
     }
-
 
     function openModal(modalId) {
         if (modalId === 'client-modal') {
@@ -463,9 +460,9 @@ document.addEventListener('DOMContentLoaded', () => {
     cancelButton.addEventListener('click', () => closeModal('client-modal'));
     clientForm.addEventListener('submit', handleFormSubmit);
     
-    // CORREÇÃO DEFINITIVA: Listener centralizado para os botões dos cards
+    // **A PONTE CONSERTADA**
+    // Este listener único no container pai garante que o clique funcione para qualquer botão.
     clientCardsContainer.addEventListener('click', (event) => {
-        // Encontra o botão mais próximo que foi clicado, mesmo que o clique seja no ícone
         const target = event.target.closest('button');
         if (!target) return;
 
@@ -486,7 +483,7 @@ document.addEventListener('DOMContentLoaded', () => {
     cancelSettingsButton.addEventListener('click', () => closeModal('settings-modal'));
     settingsForm.addEventListener('submit', (e) => { e.preventDefault(); saveSettings(); });
     
-    // NOVO: Listeners para o modal de confirmação
+    // Listeners para o modal de confirmação
     confirmDeleteButton.addEventListener('click', confirmDeletion);
     cancelDeleteButton.addEventListener('click', () => closeModal('confirm-modal'));
 
