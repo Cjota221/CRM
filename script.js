@@ -9,12 +9,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Navegação ---
     const navClients = document.getElementById('nav-clients');
     const navProducts = document.getElementById('nav-products');
-    const navOrders = document.getElementById('nav-orders'); // Novo
+    const navOrders = document.getElementById('nav-orders');
 
     // --- Páginas ---
     const clientsPage = document.getElementById('clients-page');
     const productsPage = document.getElementById('products-page');
-    const ordersPage = document.getElementById('orders-page'); // Novo
+    const ordersPage = document.getElementById('orders-page');
 
     // --- Elementos da Página de Clientes ---
     const addClientButton = document.getElementById('add-client-button');
@@ -23,7 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const searchInput = document.getElementById('search-input');
     const filterStatusSelect = document.getElementById('filter-status');
     const filterTagSelect = document.getElementById('filter-tag');
-    const sortClientsSelect = document.getElementById('sort-clients'); // Novo
+    const sortClientsSelect = document.getElementById('sort-clients');
     const clientCountDisplay = document.getElementById('client-count-display');
 
     // --- Elementos da Página de Produtos ---
@@ -34,7 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const filterActiveSelect = document.getElementById('filter-active');
     const productCountDisplay = document.getElementById('product-count-display');
 
-    // --- Elementos da Página de Pedidos (Novos) ---
+    // --- Elementos da Página de Pedidos ---
     const orderListContainer = document.getElementById('order-list-container');
     const noOrdersMessage = document.getElementById('no-orders-message');
     const orderSearchInput = document.getElementById('order-search-input');
@@ -63,7 +63,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let clientIdToDelete = null;
 
     function initDB() {
-        const request = indexedDB.open(dbName, 4); // Versão incrementada
+        const request = indexedDB.open(dbName, 4);
         request.onerror = (e) => console.error('Erro no DB:', e.target.errorCode);
         request.onsuccess = (e) => {
             db = e.target.result;
@@ -82,7 +82,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 productStore.createIndex('name', 'name', { unique: false });
                 productStore.createIndex('sku', 'sku', { unique: false });
             }
-            // Novo Object Store para Pedidos
             if (!db.objectStoreNames.contains('orders')) {
                 const orderStore = db.createObjectStore('orders', { keyPath: 'id' });
                 orderStore.createIndex('codigo', 'codigo', { unique: false });
@@ -114,7 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
             statusRiscoDaysInput.value = currentSettings.statusRiscoDays;
             renderClients();
             renderProducts();
-            renderOrders(); // Renderiza a nova página
+            renderOrders();
         };
         request.onerror = () => {
             renderClients();
@@ -164,7 +163,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 return matchesStatus && matchesTag && matchesSearch;
             });
             
-            // --- NOVA LÓGICA DE ORDENAÇÃO ---
             switch (sortOption) {
                 case 'most-orders':
                     filteredClients.sort((a, b) => (b.orderCount || 0) - (a.orderCount || 0));
@@ -272,7 +270,6 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    // --- NOVA FUNÇÃO PARA RENDERIZAR PEDIDOS ---
     function renderOrders() {
         if (!db) return;
         const request = db.transaction('orders', 'readonly').objectStore('orders').getAll();
@@ -326,7 +323,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const clientsData = new Map();
             apiClients.forEach(c => {
                 if (!c || !c.id) return;
-                clientsData.set(String(c.id), { // Garante que a chave é string
+                clientsData.set(String(c.id), {
                     id: String(c.id), name: c.nome, email: c.email, phone: c.whatsapp,
                     birthday: c.data_nascimento, cpf: c.cpf, address: c.endereco,
                     address_number: c.numero, address_complement: c.complemento,
@@ -340,13 +337,15 @@ document.addEventListener('DOMContentLoaded', () => {
             apiOrders.forEach(order => {
                 const clientId = order.cliente?.id ? String(order.cliente.id) : null;
                 
-                // Atualiza os dados do cliente se ele existir
+                // --- LÓGICA CORRIGIDA E FOCADA EM CLIENTES ---
                 if (clientId && clientsData.has(clientId)) {
                     const client = clientsData.get(clientId);
                     client.totalSpent += parseFloat(order.total || 0);
                     client.orderCount++;
                     const orderDate = order.data ? new Date(order.data) : null;
-                    if (orderDate && (!client.lastPurchaseDate || client.lastPurchaseDate < orderDate)) client.lastPurchaseDate = orderDate;
+                    if (orderDate && (!client.lastPurchaseDate || client.lastPurchaseDate < orderDate)) {
+                        client.lastPurchaseDate = orderDate;
+                    }
                     
                     const productList = order.produtos || order.itens || order.products || order.items || [];
                     productList.forEach(item => {
@@ -361,17 +360,17 @@ document.addEventListener('DOMContentLoaded', () => {
                             productMap.set(item.codigo, { name: item.nome, quantity: quantity, price: price });
                         }
                     });
-                }
 
-                // Salva o pedido SEMPRE, mesmo que não tenha um cliente correspondente
-                ordersToSave.push({
-                    id: order.id,
-                    codigo: order.codigo,
-                    data: order.data,
-                    total: parseFloat(order.total || 0),
-                    clientId: clientId,
-                    clientName: order.cliente?.nome || 'Cliente não identificado'
-                });
+                    // Adiciona o pedido à lista para ser salvo, pois pertence a um cliente válido
+                    ordersToSave.push({
+                        id: order.id,
+                        codigo: order.codigo,
+                        data: order.data,
+                        total: parseFloat(order.total || 0),
+                        clientId: clientId,
+                        clientName: order.cliente?.nome
+                    });
+                }
             });
 
             // Transações
@@ -411,7 +410,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
-    // --- Funções de Modal e Formulário (sem alterações significativas) ---
     function openModal(modalId) { if (modalId === 'client-modal') { clientForm.reset(); clientIdInput.value = ''; modalTitle.textContent = 'Adicionar Novo Cliente'; } document.getElementById(modalId).classList.remove('hidden'); }
     function closeModal(modalId) { document.getElementById(modalId).classList.add('hidden'); }
     function saveSettings() { if (!db) return; const tx = db.transaction('settings', 'readwrite'); tx.objectStore('settings').put({ id: 'config', statusAtivoDays: parseInt(statusAtivoDaysInput.value, 10) || 30, statusRiscoDays: parseInt(statusRiscoDaysInput.value, 10) || 90 }); tx.oncomplete = () => { showToast('Configurações salvas!', 'success'); closeModal('settings-modal'); loadSettingsAndRenderAll(); }; }
@@ -420,7 +418,6 @@ document.addEventListener('DOMContentLoaded', () => {
     function viewClientDetails(id) { const req = db.transaction('clients', 'readonly').objectStore('clients').get(id); req.onerror = () => showToast('Erro ao buscar detalhes do cliente.', 'error'); req.onsuccess = (e) => { const c = e.target.result; if (!c) { showToast('Não foi possível carregar os detalhes. Sincronize os dados.', 'error'); return; } detailsModalTitle.textContent = `Detalhes de ${c.name}`; let phtml = '<p class="text-sm text-gray-500">Nenhum produto comprado.</p>'; if (c.products && c.products.length > 0) { phtml = `<table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Produto</th><th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Qtd</th><th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Preço Un.</th></tr></thead><tbody class="bg-white divide-y divide-gray-200">${c.products.map(p=>`<tr><td class="px-4 py-2 whitespace-nowrap">${p.name}</td><td class="px-4 py-2 text-center">${p.quantity}</td><td class="px-4 py-2 text-right font-medium">R$ ${p.price.toFixed(2)}</td></tr>`).join('')}</tbody></table>`; } const addr = [c.address, c.address_number, c.address_complement].filter(Boolean).join(', ') + (c.address_neighborhood ? ` - ${c.address_neighborhood}` : '') + (c.city ? `<br>${c.city}` : '') + (c.state ? `/${c.state}` : '') + (c.zip_code ? ` - CEP: ${c.zip_code}` : ''); detailsModalContent.innerHTML = `<div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 text-sm mb-6 pb-4 border-b"><div><strong class="text-gray-600 block"><i class="fas fa-envelope fa-fw mr-2 text-gray-400"></i>E-mail:</strong> ${c.email||'N/A'}</div><div><strong class="text-gray-600 block"><i class="fas fa-phone fa-fw mr-2 text-gray-400"></i>Telefone:</strong> ${c.phone||'N/A'}</div><div><strong class="text-gray-600 block"><i class="fas fa-id-card fa-fw mr-2 text-gray-400"></i>CPF:</strong> ${c.cpf||'N/A'}</div><div><strong class="text-gray-600 block"><i class="fas fa-gift fa-fw mr-2 text-gray-400"></i>Aniversário:</strong> ${c.birthday?new Date(c.birthday).toLocaleDateString():'N/A'}</div><div class="md:col-span-2"><strong class="text-gray-600 block"><i class="fas fa-map-marker-alt fa-fw mr-2 text-gray-400"></i>Endereço:</strong> ${addr||'N/A'}</div></div><div class="mt-4"><h3 class="text-lg font-semibold mb-2">Histórico de Compras</h3>${phtml}</div>`; openModal('details-modal'); }; }
     function confirmDeletion() { if (!clientIdToDelete) return; const tx = db.transaction('clients', 'readwrite'); tx.objectStore('clients').delete(clientIdToDelete).onsuccess = () => { renderClients(); showToast('Cliente excluído.', 'success'); }; closeModal('confirm-modal'); clientIdToDelete = null; }
     
-    // --- Configuração dos Event Listeners ---
     function setupEventListeners() {
         navClients.addEventListener('click', (e) => { e.preventDefault(); showPage('clients-page'); });
         navProducts.addEventListener('click', (e) => { e.preventDefault(); showPage('products-page'); });
@@ -454,7 +451,6 @@ document.addEventListener('DOMContentLoaded', () => {
         confirmDeleteButton.addEventListener('click', confirmDeletion);
         cancelDeleteButton.addEventListener('click', () => closeModal('confirm-modal'));
         
-        // Filtros e Buscas
         searchInput.addEventListener('input', renderClients);
         filterStatusSelect.addEventListener('change', renderClients);
         filterTagSelect.addEventListener('change', renderClients);
@@ -467,9 +463,8 @@ document.addEventListener('DOMContentLoaded', () => {
         syncButton.addEventListener('click', syncData);
     }
 
-    // --- Inicialização ---
     initDB();
     setupEventListeners();
-    showPage('clients-page'); // Garante que a página de clientes é a inicial
+    showPage('clients-page');
 });
 
