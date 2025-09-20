@@ -66,7 +66,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!db.objectStoreNames.contains('settings')) {
                 db.createObjectStore('settings', { keyPath: 'id' });
             }
-            // Adiciona o novo ObjectStore para produtos
             if (!db.objectStoreNames.contains('products')) {
                 const productStore = db.createObjectStore('products', { keyPath: 'id' });
                 productStore.createIndex('name', 'name', { unique: false });
@@ -98,7 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
             statusAtivoDaysInput.value = currentSettings.statusAtivoDays;
             statusRiscoDaysInput.value = currentSettings.statusRiscoDays;
             renderClients();
-            renderProducts(); // Renderiza produtos ao carregar
+            renderProducts();
         };
         request.onerror = () => {
             renderClients();
@@ -106,7 +105,6 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    // --- LÓGICA DE NAVEGAÇÃO ---
     function showPage(pageId) {
         document.querySelectorAll('.page-content').forEach(p => p.classList.add('hidden'));
         document.getElementById(pageId).classList.remove('hidden');
@@ -119,7 +117,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- LÓGICA DE CLIENTES ---
     function getClientStatus(client) {
         if (!client.lastPurchaseDate) return { text: 'Sem Histórico', class: 'status-sem-historico' };
         const diffDays = Math.ceil((new Date() - new Date(client.lastPurchaseDate)) / (1000 * 60 * 60 * 24));
@@ -184,7 +181,6 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    // --- LÓGICA DE PRODUTOS (NOVA) ---
     function renderProducts() {
         if (!db) return;
         const tx = db.transaction('products', 'readonly');
@@ -204,13 +200,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const matchesSearch = !searchTerm || 
                     (p.name && p.name.toLowerCase().includes(searchTerm)) ||
                     (p.sku && p.sku.toLowerCase().includes(searchTerm));
-                
                 const stockStatus = p.managesStock ? 'gerenciado' : 'nao-gerenciado';
                 const matchesStock = stockFilter === 'todos' || stockFilter === stockStatus;
-
                 const activeStatus = p.isActive ? 'ativado' : 'desativado';
                 const matchesActive = activeFilter === 'todos' || activeFilter === activeStatus;
-
                 return matchesSearch && matchesStock && matchesActive;
             });
 
@@ -221,17 +214,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 const stock = product.managesStock 
                     ? { text: 'Gerenciado', class: 'stock-in' } 
                     : { text: 'Não Gerenciado', class: 'stock-unmanaged' };
-                
                 const active = product.isActive
                     ? { text: 'Ativado', class: 'status-ativo' }
                     : { text: 'Desativado', class: 'status-inativo' };
+                
+                // Lógica para usar o proxy de imagem
+                const imageUrl = product.image 
+                    ? `/api/image-proxy?url=${encodeURIComponent(product.image)}`
+                    : 'https://placehold.co/400x400/f3f4f6/cbd5e0?text=Sem+Imagem';
 
                 const card = document.createElement('div');
                 card.className = 'bg-white rounded-lg shadow-md p-5 flex flex-col justify-between';
                 card.innerHTML = `
                     <div class="flex-1">
                         <div class="relative mb-4" style="padding-bottom: 100%;">
-                            <img src="${product.image || 'https://placehold.co/400x400/f3f4f6/cbd5e0?text=Sem+Imagem'}" class="absolute h-full w-full object-cover rounded-md">
+                            <img src="${imageUrl}" class="absolute h-full w-full object-cover rounded-md" onerror="this.onerror=null;this.src='https://placehold.co/400x400/f3f4f6/cbd5e0?text=Erro';">
                         </div>
                         <div class="flex justify-between items-start mb-2">
                             <h3 class="font-bold text-gray-800 text-md leading-tight">${product.name || 'Produto sem nome'}</h3>
@@ -248,7 +245,6 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    // --- SINCRONIZAÇÃO DE DADOS ---
     async function syncData() {
         showToast('Buscando dados na FacilZap... Isso pode levar um momento.', 'info');
         syncButton.disabled = true;
@@ -261,7 +257,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const { clients: apiClients, orders: apiOrders, products: apiProducts } = await response.json(); 
             if (!apiClients || !apiOrders || !apiProducts) throw new Error("Resposta da API inválida.");
             
-            // Processamento de Clientes e Pedidos
             const clientsData = new Map();
             apiClients.forEach(c => {
                 if (!c || !c.id) return;
@@ -290,32 +285,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             });
 
-            // Transação para Clientes
             const clientTx = db.transaction('clients', 'readwrite');
             await Promise.all(Array.from(clientsData.values()).map(client => {
                 const finalClient = { ...client, products: Array.from(client.products.values()), lastPurchaseDate: client.lastPurchaseDate?.toISOString().split('T')[0] || null };
                 return new Promise((res, rej) => {
                     const req = clientTx.objectStore('clients').put(finalClient);
-                    req.onsuccess = res;
-                    req.onerror = rej;
+                    req.onsuccess = res; req.onerror = rej;
                 });
             }));
             
-            // Transação para Produtos
             const productTx = db.transaction('products', 'readwrite');
             await Promise.all(apiProducts.map(p => {
                 const productData = {
-                    id: p.id,
-                    name: p.nome,
-                    sku: p.sku,
+                    id: p.id, name: p.nome, sku: p.sku,
                     image: p.imagens?.[0] || null,
                     isActive: p.ativado,
                     managesStock: p.estoque?.controlar_estoque || false
                 };
                 return new Promise((res, rej) => {
                     const req = productTx.objectStore('products').put(productData);
-                    req.onsuccess = res;
-                    req.onerror = rej;
+                    req.onsuccess = res; req.onerror = rej;
                 });
             }));
 
@@ -332,15 +321,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
-    // --- INICIALIZAÇÃO E LISTENERS ---
     function setupEventListeners() {
         navClients.addEventListener('click', (e) => { e.preventDefault(); showPage('clients-page'); });
         navProducts.addEventListener('click', (e) => { e.preventDefault(); showPage('products-page'); });
-        
         addClientButton.addEventListener('click', () => openModal('client-modal'));
         cancelButton.addEventListener('click', () => closeModal('client-modal'));
         clientForm.addEventListener('submit', handleFormSubmit);
-        
         clientCardsContainer.addEventListener('click', (event) => {
             const button = event.target.closest('button');
             if (!button) return;
@@ -349,27 +335,21 @@ document.addEventListener('DOMContentLoaded', () => {
             else if (button.classList.contains('edit-client-button')) editClient(id);
             else if (button.classList.contains('delete-client-button')) { clientIdToDelete = id; openModal('confirm-modal'); }
         });
-        
         closeDetailsButton.addEventListener('click', () => closeModal('details-modal'));
         openSettingsButton.addEventListener('click', () => openModal('settings-modal'));
         settingsForm.addEventListener('submit', (e) => { e.preventDefault(); saveSettings(); });
         cancelSettingsButton.addEventListener('click', () => closeModal('settings-modal'));
-        
         confirmDeleteButton.addEventListener('click', confirmDeletion);
         cancelDeleteButton.addEventListener('click', () => closeModal('confirm-modal'));
-
         searchInput.addEventListener('input', renderClients);
         filterStatusSelect.addEventListener('change', renderClients);
         filterTagSelect.addEventListener('change', renderClients);
-        
         productSearchInput.addEventListener('input', renderProducts);
         filterStockSelect.addEventListener('change', renderProducts);
         filterActiveSelect.addEventListener('change', renderProducts);
-        
         syncButton.addEventListener('click', syncData);
     }
     
-    // Funções de CRUD e Modais de Clientes (sem alterações)
     function saveSettings() { if (!db) return; const tx = db.transaction('settings', 'readwrite'); tx.objectStore('settings').put({ id: 'config', statusAtivoDays: parseInt(statusAtivoDaysInput.value,10)||30, statusRiscoDays: parseInt(statusRiscoDaysInput.value,10)||90 }); tx.oncomplete = () => { showToast('Configurações salvas!', 'success'); closeModal('settings-modal'); loadSettingsAndRenderAll(); }; }
     function handleFormSubmit(e) { e.preventDefault(); const id = clientIdInput.value; const data={ name: name.value, email: email.value, phone: phone.value, birthday: birthday.value }; const tx = db.transaction('clients', 'readwrite'); if (id) { const req = tx.objectStore('clients').get(id); req.onsuccess = () => tx.objectStore('clients').put({ ...req.result, ...data, id: id }); } else { tx.objectStore('clients').add({ ...data, id: `manual_${Date.now()}` }); } tx.oncomplete = () => { renderClients(); closeModal('client-modal'); showToast(`Cliente ${id ? 'atualizado' : 'adicionado'}!`, 'success'); }; }
     function editClient(id) { const req = db.transaction('clients', 'readonly').objectStore('clients').get(id); req.onsuccess = (e) => { const c = e.target.result; modalTitle.textContent = 'Editar Cliente'; clientIdInput.value = c.id; name.value = c.name; email.value = c.email; phone.value = c.phone; birthday.value = c.birthday; openModal('client-modal'); }; }
