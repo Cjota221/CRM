@@ -11,7 +11,6 @@ async function fetchAllPages(endpoint, token) {
   const dataInicial = tenYearsAgo.toISOString().split('T')[0];
 
   while (hasMore) {
-    // Adiciona parâmetros para buscar dados históricos e incluir detalhes extras
     const url = `${endpoint}?page=${page}&length=100&data_inicial=${dataInicial}&incluir_produtos=1`;
     console.log(`[INFO] A procurar ${endpoint}, página ${page}...`);
     
@@ -61,33 +60,48 @@ exports.handler = async (event) => {
   }
   
   try {
-    console.log("[INFO] A iniciar busca paralela de clientes, pedidos e produtos.");
-
-    // Busca todos os dados em paralelo para otimizar o tempo
-    const [clients, orders, products] = await Promise.all([
+    console.log("[INFO] A iniciar busca paralela de clientes, pedidos base e produtos.");
+    
+    const [clients, baseOrders, products] = await Promise.all([
       fetchAllPages('https://api.facilzap.app.br/clientes', FACILZAP_TOKEN),
       fetchAllPages('https://api.facilzap.app.br/pedidos', FACILZAP_TOKEN),
       fetchAllPages('https://api.facilzap.app.br/produtos', FACILZAP_TOKEN)
     ]);
-    
-    console.log(`[INFO] Busca finalizada. ${clients.length} clientes, ${orders.length} pedidos e ${products.length} produtos encontrados.`);
-    
-    // --- INÍCIO DO CÓDIGO DE DEPURAÇÃO ---
-    // Procura o primeiro pedido que tenha qualquer campo que pareça uma lista de produtos
-    const firstOrderWithProducts = orders.find(order => 
-        (order.produtos && order.produtos.length > 0) ||
-        (order.itens && order.itens.length > 0) ||
-        (order.ads_campanha && order.ads_campanha.produtos && order.ads_campanha.produtos.length > 0)
-    );
 
-    if (firstOrderWithProducts) {
-        console.log('[DEBUG] Estrutura do primeiro PEDIDO COM PRODUTOS:', JSON.stringify(firstOrderWithProducts, null, 2));
-    } else if (orders.length > 0) {
-        console.log('[DEBUG] Nenhum pedido encontrado com uma lista de produtos nos campos esperados. Estrutura do primeiro pedido recebido:', JSON.stringify(orders[0], null, 2));
-    }
-    // --- FIM DO CÓDIGO DE DEPURAÇÃO ---
+    // --- INÍCIO DA NOVA LÓGICA DE DETALHAMENTO DE PEDIDOS ---
+    console.log(`[INFO] Foram encontrados ${baseOrders.length} pedidos. A verificar detalhes para obter produtos...`);
 
-    // Retorna um objeto com as três listas de dados
+    const detailedOrdersPromises = baseOrders.map(async (order) => {
+      const hasProducts = (order.produtos && order.produtos.length > 0) || (order.itens && order.itens.length > 0);
+      
+      if (!hasProducts && order.id) {
+        try {
+          const detailUrl = `https://api.facilzap.app.br/pedidos/${order.id}`;
+          const detailResponse = await fetch(detailUrl, {
+            headers: { 'Authorization': `Bearer ${FACILZAP_TOKEN}`, 'Content-Type': 'application/json' }
+          });
+          
+          if (detailResponse.ok) {
+            const detailData = await detailResponse.json();
+            console.log(`[INFO] Detalhes do pedido ${order.id} obtidos com sucesso.`);
+            return detailData.data || detailData;
+          } else {
+            console.warn(`[AVISO] Falha ao buscar detalhes para o pedido ${order.id}. Status: ${detailResponse.status}. A usar dados básicos.`);
+            return order;
+          }
+        } catch (e) {
+          console.error(`[ERRO] Erro ao buscar detalhes para o pedido ${order.id}:`, e.message);
+          return order;
+        }
+      }
+      return order;
+    });
+
+    const orders = await Promise.all(detailedOrdersPromises);
+    // --- FIM DA NOVA LÓGICA ---
+    
+    console.log(`[INFO] Busca finalizada. ${clients.length} clientes, ${orders.length} pedidos detalhados e ${products.length} produtos encontrados.`);
+    
     return {
       statusCode: 200,
       headers: { ...headers, 'Content-Type': 'application/json' },
@@ -104,3 +118,4 @@ exports.handler = async (event) => {
     };
   }
 };
+
