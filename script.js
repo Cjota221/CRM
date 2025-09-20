@@ -318,28 +318,44 @@ document.addEventListener('DOMContentLoaded', () => {
         syncButton.innerHTML = '<i class="fas fa-sync-alt w-6 text-center animate-spin"></i><span class="ml-4">Sincronizando...</span>';
 
         try {
+            console.log('=== INICIANDO SINCRONIZAÇÃO ===');
             const response = await fetch('/api/facilzap-proxy');
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.error || `Erro HTTP ${response.status}`);
             }
 
-            const { clients: apiClients, orders: apiOrders, products: apiProducts } = await response.json();
-            console.log('Dados recebidos da API:', { 
-                clientsCount: apiClients?.length, 
-                ordersCount: apiOrders?.length, 
-                productsCount: apiProducts?.length,
-                sampleOrder: apiOrders?.[0] // Debug - mostrar estrutura de um pedido
-            });
+            const responseData = await response.json();
+            console.log('=== DADOS BRUTOS DA API ===', responseData);
+            
+            const { clients: apiClients, orders: apiOrders, products: apiProducts } = responseData;
+            
+            console.log('=== ANÁLISE DOS DADOS ===');
+            console.log('Clientes:', apiClients?.length || 'UNDEFINED');
+            console.log('Pedidos:', apiOrders?.length || 'UNDEFINED');
+            console.log('Produtos:', apiProducts?.length || 'UNDEFINED');
+            
+            if (apiOrders && apiOrders.length > 0) {
+                console.log('=== ESTRUTURA DO PRIMEIRO PEDIDO ===');
+                console.log('Pedido completo:', JSON.stringify(apiOrders[0], null, 2));
+                console.log('Campos do pedido:', Object.keys(apiOrders[0]));
+            }
             
             if (!apiClients || !apiOrders || !apiProducts) {
-                throw new Error("Resposta da API inválida.");
+                throw new Error("Resposta da API inválida - faltam dados.");
+            }
+            
+            if (!Array.isArray(apiOrders) || apiOrders.length === 0) {
+                throw new Error("Nenhum pedido foi retornado pela API.");
             }
             
             // Mapear clientes
             const clientsData = new Map();
             apiClients.forEach(c => {
-                if (!c || !c.id) return;
+                if (!c || !c.id) {
+                    console.warn('Cliente sem ID ignorado:', c);
+                    return;
+                }
                 clientsData.set(String(c.id), {
                     id: String(c.id), 
                     name: c.nome, 
@@ -361,86 +377,153 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             });
             
-            console.log('Clientes mapeados:', clientsData.size);
+            console.log(`=== CLIENTES MAPEADOS: ${clientsData.size} ===`);
             
-            // Processar pedidos
+            // Processar pedidos com MÁXIMA verbosidade
             const ordersToSave = [];
             let processedOrders = 0;
             let ordersWithClient = 0;
             let ordersWithoutClient = 0;
+            let ordersWithoutId = 0;
 
+            console.log('=== PROCESSANDO PEDIDOS ===');
+            
             apiOrders.forEach((order, index) => {
-                console.log(`Processando pedido ${index + 1}:`, order); // Debug detalhado
+                console.log(`\n--- PEDIDO ${index + 1}/${apiOrders.length} ---`);
+                console.log('Pedido original:', order);
                 
-                // Validar se o pedido tem ID
-                if (!order.id) {
-                    console.warn('Pedido sem ID ignorado:', order);
+                // Verificar todas as possíveis chaves de ID
+                const possibleIds = [
+                    order.id, order.ID, order._id, order.pedido_id, 
+                    order.order_id, order.numero, order.number
+                ];
+                
+                const orderId = possibleIds.find(id => id !== undefined && id !== null);
+                
+                if (!orderId) {
+                    console.error('❌ PEDIDO SEM ID VÁLIDO - IGNORADO');
+                    console.log('IDs tentados:', possibleIds);
+                    ordersWithoutId++;
                     return;
                 }
 
-                // Buscar ID do cliente de várias formas possíveis
+                console.log('✅ ID do pedido encontrado:', orderId);
+
+                // Buscar dados do cliente com TODAS as possibilidades
                 let clientId = null;
-                if (order.cliente?.id) {
-                    clientId = String(order.cliente.id);
-                } else if (order.cliente_id) {
-                    clientId = String(order.cliente_id);
-                } else if (order.clienteId) {
-                    clientId = String(order.clienteId);
-                }
-
-                // Buscar nome do cliente
                 let clientName = null;
-                if (order.cliente?.nome) {
-                    clientName = order.cliente.nome;
-                } else if (order.cliente_nome) {
-                    clientName = order.cliente_nome;
-                } else if (order.clienteName) {
-                    clientName = order.clienteName;
+                
+                // Tentar múltiplas estruturas para cliente
+                const clientSources = [
+                    order.cliente, order.client, order.customer, order.user
+                ];
+                
+                for (const clientSource of clientSources) {
+                    if (clientSource && clientSource.id) {
+                        clientId = String(clientSource.id);
+                        clientName = clientSource.nome || clientSource.name || null;
+                        break;
+                    }
+                }
+                
+                // Se não encontrou no objeto, tentar campos diretos
+                if (!clientId) {
+                    const directClientIds = [
+                        order.cliente_id, order.client_id, order.customer_id, 
+                        order.user_id, order.clienteId, order.clientId
+                    ];
+                    clientId = directClientIds.find(id => id !== undefined && id !== null);
+                    if (clientId) clientId = String(clientId);
+                }
+                
+                // Nome do cliente em campos diretos
+                if (!clientName) {
+                    const directClientNames = [
+                        order.cliente_nome, order.client_name, order.customer_name,
+                        order.clientName, order.clienteNome
+                    ];
+                    clientName = directClientNames.find(name => name !== undefined && name !== null);
                 }
 
-                console.log(`Pedido ${order.id}: clientId=${clientId}, clientName=${clientName}`);
+                console.log('Cliente encontrado - ID:', clientId, 'Nome:', clientName);
 
-                // Sempre salvar o pedido, mesmo sem cliente
+                // Buscar dados do pedido
+                const possibleDates = [
+                    order.data, order.date, order.created_at, order.createdAt, 
+                    order.data_pedido, order.order_date
+                ];
+                const orderDate = possibleDates.find(date => date !== undefined && date !== null) || new Date().toISOString();
+
+                const possibleTotals = [
+                    order.total, order.valor_total, order.amount, order.value,
+                    order.price, order.subtotal, order.grand_total
+                ];
+                const orderTotal = possibleTotals.find(total => total !== undefined && total !== null) || 0;
+
+                const possibleCodes = [
+                    order.codigo, order.code, order.number, order.numero, String(orderId)
+                ];
+                const orderCode = possibleCodes.find(code => code !== undefined && code !== null) || String(orderId);
+
+                // Criar objeto do pedido
                 const orderToSave = {
-                    id: String(order.id),
-                    codigo: order.codigo || order.number || String(order.id),
-                    data: order.data || order.created_at || order.date || new Date().toISOString(),
-                    total: parseFloat(order.total || order.valor_total || order.amount || 0),
+                    id: String(orderId),
+                    codigo: String(orderCode),
+                    data: orderDate,
+                    total: parseFloat(orderTotal),
                     clientId: clientId,
                     clientName: clientName
                 };
 
+                console.log('Pedido processado:', orderToSave);
                 ordersToSave.push(orderToSave);
                 processedOrders++;
 
-                // Se tem cliente, processar dados do cliente
+                // Processar cliente se existir
                 if (clientId && clientsData.has(clientId)) {
                     ordersWithClient++;
+                    console.log('✅ Cliente encontrado no mapa, atualizando dados...');
+                    
                     const client = clientsData.get(clientId);
                     client.totalSpent += orderToSave.total;
                     client.orderCount++;
                     
-                    const orderDate = new Date(orderToSave.data);
-                    if (!client.lastPurchaseDate || client.lastPurchaseDate < orderDate) {
-                        client.lastPurchaseDate = orderDate;
+                    const parsedDate = new Date(orderToSave.data);
+                    if (!client.lastPurchaseDate || client.lastPurchaseDate < parsedDate) {
+                        client.lastPurchaseDate = parsedDate;
                     }
                     
                     // Processar produtos do pedido
-                    const productList = order.produtos || order.itens || order.products || order.items || [];
-                    productList.forEach(item => {
-                        if (!item.codigo && !item.sku && !item.id) return;
+                    const productSources = [
+                        order.produtos, order.products, order.itens, order.items,
+                        order.linhas, order.lines, order.order_items
+                    ];
+                    
+                    let productList = [];
+                    for (const source of productSources) {
+                        if (Array.isArray(source) && source.length > 0) {
+                            productList = source;
+                            break;
+                        }
+                    }
+                    
+                    console.log('Produtos encontrados:', productList.length);
+                    
+                    productList.forEach((item, itemIndex) => {
+                        console.log(`  Produto ${itemIndex + 1}:`, item);
                         
-                        const productCode = item.codigo || item.sku || String(item.id);
-                        const quantity = parseInt(item.quantidade || item.quantity || 1);
-                        const itemTotal = parseFloat(item.subtotal || item.valor || item.total || 0);
+                        const productCode = item.codigo || item.sku || item.id || `item_${itemIndex}`;
+                        const quantity = parseInt(item.quantidade || item.quantity || item.qty || 1);
+                        const itemTotal = parseFloat(item.subtotal || item.valor || item.total || item.price || 0);
                         const price = quantity > 0 ? (itemTotal / quantity) : 0;
+                        const productName = item.nome || item.name || item.title || productCode;
 
                         const productMap = client.products;
                         if (productMap.has(productCode)) {
                             productMap.get(productCode).quantity += quantity;
                         } else {
                             productMap.set(productCode, { 
-                                name: item.nome || item.name || productCode, 
+                                name: productName, 
                                 quantity: quantity, 
                                 price: price 
                             });
@@ -449,22 +532,42 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     ordersWithoutClient++;
                     if (clientId) {
-                        console.warn(`Cliente ID ${clientId} não encontrado na lista de clientes`);
+                        console.warn(`⚠️  Cliente ID ${clientId} não encontrado na lista de clientes`);
+                    } else {
+                        console.warn('⚠️  Pedido sem cliente associado');
                     }
                 }
+                
+                console.log(`--- FIM DO PEDIDO ${index + 1} ---\n`);
             });
 
-            console.log(`Resumo do processamento:
-                - Pedidos processados: ${processedOrders}
-                - Pedidos com cliente: ${ordersWithClient}
-                - Pedidos sem cliente: ${ordersWithoutClient}
-                - Total a salvar: ${ordersToSave.length}`);
+            console.log(`\n=== RESUMO DO PROCESSAMENTO ===`);
+            console.log(`Pedidos na API: ${apiOrders.length}`);
+            console.log(`Pedidos sem ID: ${ordersWithoutId}`);
+            console.log(`Pedidos processados: ${processedOrders}`);
+            console.log(`Pedidos com cliente: ${ordersWithClient}`);
+            console.log(`Pedidos sem cliente: ${ordersWithoutClient}`);
+            console.log(`Total a salvar: ${ordersToSave.length}`);
+            
+            if (ordersToSave.length === 0) {
+                throw new Error('Nenhum pedido válido foi processado. Verifique a estrutura dos dados da API.');
+            }
 
-            // Salvar no IndexedDB com promises para aguardar conclusão
+            // Salvar no IndexedDB
+            console.log('=== SALVANDO NO INDEXEDDB ===');
+            
+            // Salvar clientes
             const clientTxPromise = new Promise((resolve, reject) => {
+                console.log('Salvando clientes...');
                 const clientTx = db.transaction('clients', 'readwrite');
-                clientTx.oncomplete = resolve;
-                clientTx.onerror = reject;
+                clientTx.oncomplete = () => {
+                    console.log('✅ Clientes salvos com sucesso');
+                    resolve();
+                };
+                clientTx.onerror = (e) => {
+                    console.error('❌ Erro ao salvar clientes:', e);
+                    reject(e);
+                };
                 
                 const clientStore = clientTx.objectStore('clients');
                 clientStore.clear();
@@ -479,10 +582,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             });
 
+            // Salvar produtos
             const productTxPromise = new Promise((resolve, reject) => {
+                console.log('Salvando produtos...');
                 const productTx = db.transaction('products', 'readwrite');
-                productTx.oncomplete = resolve;
-                productTx.onerror = reject;
+                productTx.oncomplete = () => {
+                    console.log('✅ Produtos salvos com sucesso');
+                    resolve();
+                };
+                productTx.onerror = (e) => {
+                    console.error('❌ Erro ao salvar produtos:', e);
+                    reject(e);
+                };
                 
                 const productStore = productTx.objectStore('products');
                 productStore.clear();
@@ -499,35 +610,61 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             });
 
+            // Salvar pedidos
             const orderTxPromise = new Promise((resolve, reject) => {
+                console.log(`Salvando ${ordersToSave.length} pedidos...`);
                 const orderTx = db.transaction('orders', 'readwrite');
+                
+                let savedCount = 0;
+                let errorCount = 0;
+                
                 orderTx.oncomplete = () => {
-                    console.log('Transação de pedidos concluída');
+                    console.log(`✅ Transação de pedidos concluída - Salvos: ${savedCount}, Erros: ${errorCount}`);
                     resolve();
                 };
                 orderTx.onerror = (e) => {
-                    console.error('Erro na transação de pedidos:', e);
+                    console.error('❌ Erro na transação de pedidos:', e);
                     reject(e);
                 };
                 
                 const orderStore = orderTx.objectStore('orders');
-                orderStore.clear();
                 
-                console.log(`Salvando ${ordersToSave.length} pedidos no IndexedDB`);
-                ordersToSave.forEach((order, index) => {
-                    console.log(`Salvando pedido ${index + 1}:`, order);
-                    const request = orderStore.put(order);
-                    request.onerror = (e) => console.error(`Erro ao salvar pedido ${order.id}:`, e);
-                });
+                // Limpar dados antigos
+                const clearRequest = orderStore.clear();
+                clearRequest.onsuccess = () => {
+                    console.log('Dados antigos de pedidos limpos');
+                    
+                    // Salvar novos pedidos
+                    ordersToSave.forEach((order, index) => {
+                        const request = orderStore.put(order);
+                        request.onsuccess = () => {
+                            savedCount++;
+                            console.log(`✅ Pedido ${index + 1} salvo:`, order.codigo);
+                        };
+                        request.onerror = (e) => {
+                            errorCount++;
+                            console.error(`❌ Erro ao salvar pedido ${index + 1} (${order.codigo}):`, e);
+                        };
+                    });
+                };
+                clearRequest.onerror = (e) => {
+                    console.error('❌ Erro ao limpar pedidos antigos:', e);
+                    reject(e);
+                };
             });
 
             await Promise.all([clientTxPromise, productTxPromise, orderTxPromise]);
 
+            console.log('=== SINCRONIZAÇÃO CONCLUÍDA ===');
             showToast(`Sincronização concluída! ${processedOrders} pedidos importados.`, 'success');
-            loadSettingsAndRenderAll();
+            
+            // Forçar re-renderização
+            setTimeout(() => {
+                loadSettingsAndRenderAll();
+            }, 500);
 
         } catch (error) {
-            console.error('Erro na sincronização:', error);
+            console.error('💥 ERRO NA SINCRONIZAÇÃO:', error);
             showToast(`Erro na sincronização: ${error.message}`, 'error', 5000);
         } finally {
             syncButton.disabled = false;
