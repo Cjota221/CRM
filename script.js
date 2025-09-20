@@ -336,9 +336,16 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('Produtos:', apiProducts?.length || 'UNDEFINED');
             
             if (apiOrders && apiOrders.length > 0) {
-                console.log('=== ESTRUTURA DO PRIMEIRO PEDIDO ===');
-                console.log('Pedido completo:', JSON.stringify(apiOrders[0], null, 2));
-                console.log('Campos do pedido:', Object.keys(apiOrders[0]));
+                console.log('=== ESTRUTURA DOS PRIMEIROS 3 PEDIDOS ===');
+                apiOrders.slice(0, 3).forEach((order, index) => {
+                    console.log(`\n🔍 PEDIDO ${index + 1}:`);
+                    console.log('Objeto completo:', order);
+                    console.log('Todas as chaves:', Object.keys(order));
+                    console.log('Valores das chaves:');
+                    Object.keys(order).forEach(key => {
+                        console.log(`  ${key}:`, order[key]);
+                    });
+                });
             }
             
             if (!apiClients || !apiOrders || !apiProducts) {
@@ -352,24 +359,32 @@ document.addEventListener('DOMContentLoaded', () => {
             // Mapear clientes
             const clientsData = new Map();
             apiClients.forEach(c => {
-                if (!c || !c.id) {
+                if (!c) {
+                    console.warn('Cliente null/undefined ignorado');
+                    return;
+                }
+                
+                // Buscar ID do cliente de várias formas
+                const clientId = c.id || c.ID || c._id || c.cliente_id || c.clienteId;
+                if (!clientId) {
                     console.warn('Cliente sem ID ignorado:', c);
                     return;
                 }
-                clientsData.set(String(c.id), {
-                    id: String(c.id), 
-                    name: c.nome, 
+                
+                clientsData.set(String(clientId), {
+                    id: String(clientId), 
+                    name: c.nome || c.name, 
                     email: c.email, 
-                    phone: c.whatsapp,
-                    birthday: c.data_nascimento, 
+                    phone: c.whatsapp || c.phone,
+                    birthday: c.data_nascimento || c.birthday, 
                     cpf: c.cpf, 
-                    address: c.endereco,
-                    address_number: c.numero, 
-                    address_complement: c.complemento,
-                    address_neighborhood: c.bairro, 
-                    city: c.cidade, 
-                    state: c.estado,
-                    zip_code: c.cep, 
+                    address: c.endereco || c.address,
+                    address_number: c.numero || c.number, 
+                    address_complement: c.complemento || c.complement,
+                    address_neighborhood: c.bairro || c.neighborhood, 
+                    city: c.cidade || c.city, 
+                    state: c.estado || c.state,
+                    zip_code: c.cep || c.zip, 
                     lastPurchaseDate: null,
                     totalSpent: 0, 
                     orderCount: 0, 
@@ -379,7 +394,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             console.log(`=== CLIENTES MAPEADOS: ${clientsData.size} ===`);
             
-            // Processar pedidos com MÁXIMA verbosidade
+            // Processar pedidos com MÁXIMA flexibilidade
             const ordersToSave = [];
             let processedOrders = 0;
             let ordersWithClient = 0;
@@ -390,101 +405,156 @@ document.addEventListener('DOMContentLoaded', () => {
             
             apiOrders.forEach((order, index) => {
                 console.log(`\n--- PEDIDO ${index + 1}/${apiOrders.length} ---`);
-                console.log('Pedido original:', order);
+                console.log('Pedido completo:', JSON.stringify(order, null, 2));
                 
-                // Verificar todas as possíveis chaves de ID
-                const possibleIds = [
+                // NOVA ABORDAGEM: Buscar ID em QUALQUER campo que pareça um ID
+                let orderId = null;
+                
+                // Método 1: Campos óbvios de ID
+                const obviosIds = [
                     order.id, order.ID, order._id, order.pedido_id, 
-                    order.order_id, order.numero, order.number
+                    order.order_id, order.numero, order.number, order.codigo,
+                    order.code, order.pedidoId, order.orderId
                 ];
                 
-                const orderId = possibleIds.find(id => id !== undefined && id !== null);
+                orderId = obviosIds.find(id => id !== undefined && id !== null && id !== '');
                 
+                // Método 2: Se não encontrou, usar o índice como ID temporário
                 if (!orderId) {
-                    console.error('❌ PEDIDO SEM ID VÁLIDO - IGNORADO');
-                    console.log('IDs tentados:', possibleIds);
-                    ordersWithoutId++;
-                    return;
+                    console.log('⚠️ Nenhum ID encontrado nos campos óbvios, verificando outros campos...');
+                    
+                    // Buscar em todos os valores numéricos ou strings que parecem IDs
+                    Object.keys(order).forEach(key => {
+                        const value = order[key];
+                        if (!orderId && (typeof value === 'number' || typeof value === 'string')) {
+                            if (value && !isNaN(value) && value.toString().length >= 1) {
+                                console.log(`🔍 Possível ID encontrado no campo '${key}':`, value);
+                                orderId = value;
+                            }
+                        }
+                    });
+                }
+                
+                // Método 3: Último recurso - usar timestamp + índice
+                if (!orderId) {
+                    orderId = `temp_${Date.now()}_${index}`;
+                    console.log('⚠️ Criando ID temporário:', orderId);
                 }
 
-                console.log('✅ ID do pedido encontrado:', orderId);
+                console.log('✅ ID final escolhido:', orderId);
 
                 // Buscar dados do cliente com TODAS as possibilidades
                 let clientId = null;
                 let clientName = null;
                 
-                // Tentar múltiplas estruturas para cliente
-                const clientSources = [
-                    order.cliente, order.client, order.customer, order.user
-                ];
+                // Método 1: Objeto cliente
+                if (order.cliente) {
+                    clientId = order.cliente.id || order.cliente.ID || order.cliente._id;
+                    clientName = order.cliente.nome || order.cliente.name;
+                }
                 
-                for (const clientSource of clientSources) {
-                    if (clientSource && clientSource.id) {
-                        clientId = String(clientSource.id);
-                        clientName = clientSource.nome || clientSource.name || null;
-                        break;
+                // Método 2: Campos diretos
+                if (!clientId) {
+                    const clientIdFields = [
+                        'cliente_id', 'client_id', 'customer_id', 'user_id',
+                        'clienteId', 'clientId', 'customerId', 'userId'
+                    ];
+                    
+                    for (const field of clientIdFields) {
+                        if (order[field]) {
+                            clientId = order[field];
+                            break;
+                        }
                     }
                 }
                 
-                // Se não encontrou no objeto, tentar campos diretos
-                if (!clientId) {
-                    const directClientIds = [
-                        order.cliente_id, order.client_id, order.customer_id, 
-                        order.user_id, order.clienteId, order.clientId
-                    ];
-                    clientId = directClientIds.find(id => id !== undefined && id !== null);
-                    if (clientId) clientId = String(clientId);
-                }
-                
-                // Nome do cliente em campos diretos
+                // Método 3: Nome do cliente em campos diretos
                 if (!clientName) {
-                    const directClientNames = [
-                        order.cliente_nome, order.client_name, order.customer_name,
-                        order.clientName, order.clienteNome
+                    const clientNameFields = [
+                        'cliente_nome', 'client_name', 'customer_name',
+                        'clientName', 'clienteNome', 'customerName'
                     ];
-                    clientName = directClientNames.find(name => name !== undefined && name !== null);
+                    
+                    for (const field of clientNameFields) {
+                        if (order[field]) {
+                            clientName = order[field];
+                            break;
+                        }
+                    }
                 }
 
                 console.log('Cliente encontrado - ID:', clientId, 'Nome:', clientName);
 
-                // Buscar dados do pedido
-                const possibleDates = [
-                    order.data, order.date, order.created_at, order.createdAt, 
-                    order.data_pedido, order.order_date
+                // Buscar data do pedido
+                let orderDate = null;
+                const dateFields = [
+                    'data', 'date', 'created_at', 'createdAt', 'data_pedido',
+                    'order_date', 'data_criacao', 'timestamp'
                 ];
-                const orderDate = possibleDates.find(date => date !== undefined && date !== null) || new Date().toISOString();
+                
+                for (const field of dateFields) {
+                    if (order[field]) {
+                        orderDate = order[field];
+                        break;
+                    }
+                }
+                
+                if (!orderDate) {
+                    orderDate = new Date().toISOString();
+                    console.log('⚠️ Data não encontrada, usando data atual');
+                }
 
-                const possibleTotals = [
-                    order.total, order.valor_total, order.amount, order.value,
-                    order.price, order.subtotal, order.grand_total
+                // Buscar valor total
+                let orderTotal = 0;
+                const totalFields = [
+                    'total', 'valor_total', 'amount', 'value', 'price',
+                    'subtotal', 'grand_total', 'valor', 'preco'
                 ];
-                const orderTotal = possibleTotals.find(total => total !== undefined && total !== null) || 0;
+                
+                for (const field of totalFields) {
+                    if (order[field] !== undefined && order[field] !== null) {
+                        orderTotal = parseFloat(order[field]) || 0;
+                        if (orderTotal > 0) break;
+                    }
+                }
 
-                const possibleCodes = [
-                    order.codigo, order.code, order.number, order.numero, String(orderId)
+                // Buscar código do pedido
+                let orderCode = null;
+                const codeFields = [
+                    'codigo', 'code', 'number', 'numero', 'reference', 'referencia'
                 ];
-                const orderCode = possibleCodes.find(code => code !== undefined && code !== null) || String(orderId);
+                
+                for (const field of codeFields) {
+                    if (order[field]) {
+                        orderCode = String(order[field]);
+                        break;
+                    }
+                }
+                
+                if (!orderCode) {
+                    orderCode = String(orderId);
+                }
 
                 // Criar objeto do pedido
                 const orderToSave = {
                     id: String(orderId),
-                    codigo: String(orderCode),
+                    codigo: orderCode,
                     data: orderDate,
-                    total: parseFloat(orderTotal),
-                    clientId: clientId,
+                    total: orderTotal,
+                    clientId: clientId ? String(clientId) : null,
                     clientName: clientName
                 };
 
-                console.log('Pedido processado:', orderToSave);
+                console.log('✅ Pedido processado:', orderToSave);
                 ordersToSave.push(orderToSave);
                 processedOrders++;
 
                 // Processar cliente se existir
-                if (clientId && clientsData.has(clientId)) {
+                if (clientId && clientsData.has(String(clientId))) {
                     ordersWithClient++;
                     console.log('✅ Cliente encontrado no mapa, atualizando dados...');
                     
-                    const client = clientsData.get(clientId);
+                    const client = clientsData.get(String(clientId));
                     client.totalSpent += orderToSave.total;
                     client.orderCount++;
                     
@@ -496,7 +566,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Processar produtos do pedido
                     const productSources = [
                         order.produtos, order.products, order.itens, order.items,
-                        order.linhas, order.lines, order.order_items
+                        order.linhas, order.lines, order.order_items, order.product_list
                     ];
                     
                     let productList = [];
@@ -510,8 +580,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.log('Produtos encontrados:', productList.length);
                     
                     productList.forEach((item, itemIndex) => {
-                        console.log(`  Produto ${itemIndex + 1}:`, item);
-                        
                         const productCode = item.codigo || item.sku || item.id || `item_${itemIndex}`;
                         const quantity = parseInt(item.quantidade || item.quantity || item.qty || 1);
                         const itemTotal = parseFloat(item.subtotal || item.valor || item.total || item.price || 0);
@@ -532,13 +600,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     ordersWithoutClient++;
                     if (clientId) {
-                        console.warn(`⚠️  Cliente ID ${clientId} não encontrado na lista de clientes`);
+                        console.warn(`⚠️ Cliente ID ${clientId} não encontrado na lista de clientes`);
                     } else {
-                        console.warn('⚠️  Pedido sem cliente associado');
+                        console.warn('⚠️ Pedido sem cliente associado');
                     }
                 }
                 
-                console.log(`--- FIM DO PEDIDO ${index + 1} ---\n`);
+                console.log(`--- FIM DO PEDIDO ${index + 1} ---`);
             });
 
             console.log(`\n=== RESUMO DO PROCESSAMENTO ===`);
@@ -599,10 +667,79 @@ document.addEventListener('DOMContentLoaded', () => {
                 productStore.clear();
                 
                 apiProducts.forEach(p => {
+                    const productId = p.id || p.ID || p._id || `product_${Date.now()}_${Math.random()}`;
                     productStore.put({
-                        id: String(p.id), 
-                        name: p.nome || p.name, 
-                        sku: p.sku,
+                        id: String(productId), 
+                        name: p.nome || p.name || 'Produto sem nome', 
+                        sku: p.sku || '',
+                        image: p.imagens?.[0] || p.image || null,
+                        isActive: p.ativado !== false,
+                        managesStock: p.estoque?.controlar_estoque || false
+                    });
+                });
+            });
+
+            // Salvar pedidos
+            const orderTxPromise = new Promise((resolve, reject) => {
+                console.log(`Salvando ${ordersToSave.length} pedidos...`);
+                const orderTx = db.transaction('orders', 'readwrite');
+                
+                let savedCount = 0;
+                let errorCount = 0;
+                
+                orderTx.oncomplete = () => {
+                    console.log(`✅ Transação de pedidos concluída - Salvos: ${savedCount}, Erros: ${errorCount}`);
+                    resolve();
+                };
+                orderTx.onerror = (e) => {
+                    console.error('❌ Erro na transação de pedidos:', e);
+                    reject(e);
+                };
+                
+                const orderStore = orderTx.objectStore('orders');
+                
+                // Limpar dados antigos
+                const clearRequest = orderStore.clear();
+                clearRequest.onsuccess = () => {
+                    console.log('Dados antigos de pedidos limpos');
+                    
+                    // Salvar novos pedidos
+                    ordersToSave.forEach((order, index) => {
+                        const request = orderStore.put(order);
+                        request.onsuccess = () => {
+                            savedCount++;
+                            console.log(`✅ Pedido ${index + 1} salvo:`, order.codigo);
+                        };
+                        request.onerror = (e) => {
+                            errorCount++;
+                            console.error(`❌ Erro ao salvar pedido ${index + 1} (${order.codigo}):`, e);
+                        };
+                    });
+                };
+                clearRequest.onerror = (e) => {
+                    console.error('❌ Erro ao limpar pedidos antigos:', e);
+                    reject(e);
+                };
+            });
+
+            await Promise.all([clientTxPromise, productTxPromise, orderTxPromise]);
+
+            console.log('=== SINCRONIZAÇÃO CONCLUÍDA ===');
+            showToast(`Sincronização concluída! ${processedOrders} pedidos importados.`, 'success');
+            
+            // Forçar re-renderização
+            setTimeout(() => {
+                loadSettingsAndRenderAll();
+            }, 500);
+
+        } catch (error) {
+            console.error('💥 ERRO NA SINCRONIZAÇÃO:', error);
+            showToast(`Erro na sincronização: ${error.message}`, 'error', 5000);
+        } finally {
+            syncButton.disabled = false;
+            syncButton.innerHTML = '<i class="fas fa-sync-alt w-6 text-center"></i><span class="ml-4">Sincronizar Dados</span>';
+        }
+    }
                         image: p.imagens?.[0] || p.image || null,
                         isActive: p.ativado !== false,
                         managesStock: p.estoque?.controlar_estoque || false
