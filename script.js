@@ -218,9 +218,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     ? { text: 'Ativado', class: 'status-ativo' }
                     : { text: 'Desativado', class: 'status-inativo' };
                 
-                // LÓGICA CORRETA E FINAL PARA USAR O PROXY DE IMAGEM
+                // CORREÇÃO: Codifica a URL da imagem para garantir que o proxy a receba corretamente
                 const imageUrl = product.image 
-                    ? `/facilzap-images/${product.image}`
+                    ? `/facilzap-images/${encodeURIComponent(product.image)}`
                     : 'https://placehold.co/400x400/f3f4f6/cbd5e0?text=Sem+Imagem';
 
                 const card = document.createElement('div');
@@ -361,4 +361,3 @@ document.addEventListener('DOMContentLoaded', () => {
     initDB();
     setupEventListeners();
 });
-
