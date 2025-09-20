@@ -13,7 +13,7 @@ async function fetchAllPages(endpoint, token) {
   while (hasMore) {
     // Adiciona parâmetros para buscar dados históricos e incluir detalhes extras
     const url = `${endpoint}?page=${page}&length=100&data_inicial=${dataInicial}&incluir_produtos=1`;
-    console.log(`[INFO] Buscando ${endpoint}, página ${page}...`);
+    console.log(`[INFO] A procurar ${endpoint}, página ${page}...`);
     
     const response = await fetch(url, {
       method: 'GET',
@@ -61,7 +61,7 @@ exports.handler = async (event) => {
   }
   
   try {
-    console.log("[INFO] Iniciando busca paralela de clientes, pedidos e produtos.");
+    console.log("[INFO] A iniciar busca paralela de clientes, pedidos e produtos.");
 
     // Busca todos os dados em paralelo para otimizar o tempo
     const [clients, orders, products] = await Promise.all([
@@ -72,6 +72,21 @@ exports.handler = async (event) => {
     
     console.log(`[INFO] Busca finalizada. ${clients.length} clientes, ${orders.length} pedidos e ${products.length} produtos encontrados.`);
     
+    // --- INÍCIO DO CÓDIGO DE DEPURAÇÃO ---
+    // Procura o primeiro pedido que tenha qualquer campo que pareça uma lista de produtos
+    const firstOrderWithProducts = orders.find(order => 
+        (order.produtos && order.produtos.length > 0) ||
+        (order.itens && order.itens.length > 0) ||
+        (order.ads_campanha && order.ads_campanha.produtos && order.ads_campanha.produtos.length > 0)
+    );
+
+    if (firstOrderWithProducts) {
+        console.log('[DEBUG] Estrutura do primeiro PEDIDO COM PRODUTOS:', JSON.stringify(firstOrderWithProducts, null, 2));
+    } else if (orders.length > 0) {
+        console.log('[DEBUG] Nenhum pedido encontrado com uma lista de produtos nos campos esperados. Estrutura do primeiro pedido recebido:', JSON.stringify(orders[0], null, 2));
+    }
+    // --- FIM DO CÓDIGO DE DEPURAÇÃO ---
+
     // Retorna um objeto com as três listas de dados
     return {
       statusCode: 200,
