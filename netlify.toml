@@ -1,10 +1,18 @@
 [build]
 functions = "functions"
+
 [[redirects]]
 from = "/api/facilzap-proxy"
 to = "/.netlify/functions/facilzap-proxy"
 status = 200
 force = true
+
+[[redirects]]
+from = "/api/image-proxy"
+to = "/.netlify/functions/image-proxy"
+status = 200
+force = true
+
 [functions]
 node_bundler = "esbuild"
 [functions."*"]
