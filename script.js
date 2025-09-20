@@ -245,7 +245,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function syncData() {
-        showToast('Buscando dados na FacilZap... Isso pode levar um momento.', 'info');
+        showToast('Buscando dados na FacilZap... Isto pode levar um momento.', 'info');
         syncButton.disabled = true;
         syncButton.innerHTML = '<i class="fas fa-sync-alt w-6 text-center animate-spin"></i><span class="ml-4">Sincronizando...</span>';
 
@@ -259,8 +259,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const clientsData = new Map();
             apiClients.forEach(c => {
                 if (!c || !c.id) return;
-                clientsData.set(c.id, {
-                    id: c.id, name: c.nome, email: c.email, phone: c.whatsapp,
+                // CORREÇÃO: Forçar a ID a ser uma string para garantir a correspondência
+                const clientIdStr = String(c.id);
+                clientsData.set(clientIdStr, {
+                    id: clientIdStr, name: c.nome, email: c.email, phone: c.whatsapp,
                     birthday: c.data_nascimento, cpf: c.cpf, address: c.endereco,
                     address_number: c.numero, address_complement: c.complemento,
                     address_neighborhood: c.bairro, city: c.cidade, state: c.estado,
@@ -271,8 +273,13 @@ document.addEventListener('DOMContentLoaded', () => {
             
             apiOrders.forEach(order => {
                 const clientId = order.cliente?.id;
-                if (!clientId || !clientsData.has(clientId)) return;
-                const client = clientsData.get(clientId);
+                if (!clientId) return;
+
+                // CORREÇÃO: Forçar a ID a ser uma string para garantir a correspondência
+                const clientIdStr = String(clientId);
+                if (!clientsData.has(clientIdStr)) return;
+
+                const client = clientsData.get(clientIdStr);
                 client.totalSpent += parseFloat(order.total || 0);
                 client.orderCount++;
                 const orderDate = order.data ? new Date(order.data) : null;
@@ -310,7 +317,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const productTx = db.transaction('products', 'readwrite');
             await Promise.all(apiProducts.map(p => {
                 const productData = {
-                    id: p.id, name: p.nome, sku: p.sku,
+                    id: String(p.id), name: p.nome, sku: p.sku,
                     image: p.imagens?.[0] || null,
                     isActive: p.ativado,
                     managesStock: p.estoque?.controlar_estoque || false
