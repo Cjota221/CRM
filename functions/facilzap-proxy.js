@@ -6,13 +6,12 @@ async function fetchAllPages(endpoint, token) {
   let page = 1;
   let hasMore = true;
 
-  // Define uma data inicial para buscar todos os registros (ex: últimos 10 anos)
   const tenYearsAgo = new Date();
   tenYearsAgo.setFullYear(tenYearsAgo.getFullYear() - 10);
   const dataInicial = tenYearsAgo.toISOString().split('T')[0];
 
   while (hasMore) {
-    // Adiciona parâmetros para buscar todos os dados históricos e incluir detalhes
+    // Adiciona parâmetros para buscar dados históricos e incluir detalhes extras
     const url = `${endpoint}?page=${page}&length=100&data_inicial=${dataInicial}&incluir_produtos=1`;
     console.log(`[INFO] Buscando ${endpoint}, página ${page}...`);
     
@@ -25,9 +24,7 @@ async function fetchAllPages(endpoint, token) {
     });
 
     if (!response.ok) {
-        // Se a autenticação falhar, interrompe imediatamente
         if (response.status === 401) throw new Error("401 - Token de autorização da FacilZap inválido.");
-        // Para outros erros, lança uma exceção que será capturada abaixo
         const errorBody = await response.text();
         throw new Error(`Erro da API para ${endpoint} na página ${page}: Status ${response.status} - ${errorBody}`);
     }
@@ -64,29 +61,22 @@ exports.handler = async (event) => {
   }
   
   try {
-    console.log("[INFO] Iniciando busca paralela de clientes e pedidos.");
+    console.log("[INFO] Iniciando busca paralela de clientes, pedidos e produtos.");
 
-    // Busca todos os clientes e todos os pedidos em paralelo para otimizar o tempo
-    const [clients, orders] = await Promise.all([
+    // Busca todos os dados em paralelo para otimizar o tempo
+    const [clients, orders, products] = await Promise.all([
       fetchAllPages('https://api.facilzap.app.br/clientes', FACILZAP_TOKEN),
-      fetchAllPages('https://api.facilzap.app.br/pedidos', FACILZAP_TOKEN)
+      fetchAllPages('https://api.facilzap.app.br/pedidos', FACILZAP_TOKEN),
+      fetchAllPages('https://api.facilzap.app.br/produtos', FACILZAP_TOKEN)
     ]);
     
-    console.log(`[INFO] Busca finalizada. ${clients.length} clientes e ${orders.length} pedidos encontrados.`);
+    console.log(`[INFO] Busca finalizada. ${clients.length} clientes, ${orders.length} pedidos e ${products.length} produtos encontrados.`);
     
-    // **NOVA LINHA DE DEBUG:** Encontra o primeiro pedido que tenha algum campo de itens/produtos e o imprime no log
-    const firstOrderWithProducts = orders.find(o => o.produtos || o.itens || o.products || o.items);
-    if (firstOrderWithProducts) {
-        console.log('[DEBUG] Estrutura do primeiro PEDIDO COM PRODUTOS:', JSON.stringify(firstOrderWithProducts, null, 2));
-    } else {
-        console.log('[DEBUG] Nenhum pedido retornado pela API continha um campo de produtos/itens visível.');
-    }
-    
-    // Retorna um objeto com as duas listas de dados
+    // Retorna um objeto com as três listas de dados
     return {
       statusCode: 200,
       headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clients, orders })
+      body: JSON.stringify({ clients, orders, products })
     };
 
   } catch (error) {
