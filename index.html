@@ -12,30 +12,26 @@
     <style>
         body { font-family: 'Inter', sans-serif; }
         .modal-bg { background-color: rgba(0,0,0,0.5); }
-        .status-badge, .tag-badge {
-            padding: 0.25rem 0.75rem;
-            border-radius: 9999px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+        .status-badge, .tag-badge, .stock-badge {
+            padding: 0.25rem 0.75rem; border-radius: 9999px;
+            font-size: 0.75rem; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.5px;
         }
         .status-ativo { background-color: #dcfce7; color: #166534; }
         .status-risco { background-color: #fee2e2; color: #991b1b; }
         .status-inativo { background-color: #f3f4f6; color: #4b5563; }
         .status-sem-historico { background-color: #e0e7ff; color: #3730a3; }
         .tag-fiel { background-color: #fef9c3; color: #854d0e; }
+        .stock-in { background-color: #dcfce7; color: #166534; }
+        .stock-out { background-color: #fee2e2; color: #991b1b; }
+        .stock-unmanaged { background-color: #e0e7ff; color: #3730a3; }
+        .nav-link.active { background-color: #4a5568; color: white; }
         .toast-container { position: fixed; top: 1.5rem; right: 1.5rem; z-index: 1000; }
         .toast-notification {
-            background-color: #fff;
-            color: #333;
-            padding: 1rem 1.5rem;
-            border-radius: 0.5rem;
-            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-            transform: translateX(120%);
-            transition: transform 0.3s ease-in-out;
-            margin-bottom: 1rem;
-            border-left-width: 4px;
+            background-color: #fff; color: #333; padding: 1rem 1.5rem;
+            border-radius: 0.5rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            transform: translateX(120%); transition: transform 0.3s ease-in-out;
+            margin-bottom: 1rem; border-left-width: 4px;
         }
         .toast-notification.show { transform: translateX(0); }
         .toast-success { border-color: #22c55e; }
@@ -52,177 +48,82 @@
                 <h2 class="text-2xl font-semibold">CRM FacilZap</h2>
             </div>
             <nav class="flex-1 px-4 py-4 space-y-2">
-                <a href="#" id="sync-button" class="flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
-                    <i class="fas fa-sync-alt w-6 text-center"></i>
-                    <span class="ml-4">Sincronizar Dados</span>
+                <a href="#" id="nav-clients" class="nav-link flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200 active">
+                    <i class="fas fa-users w-6 text-center"></i><span class="ml-4">Clientes</span>
                 </a>
-                 <a href="#" id="open-settings-button" class="flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
-                    <i class="fas fa-cog w-6 text-center"></i>
-                    <span class="ml-4">Configurações</span>
+                <a href="#" id="nav-products" class="nav-link flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
+                    <i class="fas fa-box-open w-6 text-center"></i><span class="ml-4">Produtos</span>
                 </a>
+                <div class="border-t border-gray-700 pt-4 mt-4 space-y-2">
+                    <a href="#" id="sync-button" class="flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
+                        <i class="fas fa-sync-alt w-6 text-center"></i><span class="ml-4">Sincronizar Dados</span>
+                    </a>
+                     <a href="#" id="open-settings-button" class="flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
+                        <i class="fas fa-cog w-6 text-center"></i><span class="ml-4">Configurações</span>
+                    </a>
+                </div>
             </nav>
         </div>
 
         <!-- Main content -->
         <div class="flex-1 flex flex-col overflow-hidden">
-            <header class="bg-white shadow-sm">
-                <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
-                    <div class="flex items-baseline">
-                        <h1 class="text-xl font-semibold text-gray-900">Painel de Clientes</h1>
-                        <span id="client-count-display" class="ml-4 text-sm font-normal text-gray-500"></span>
+            <!-- PÁGINA DE CLIENTES -->
+            <div id="clients-page" class="page-content flex flex-col h-full">
+                <header class="bg-white shadow-sm">
+                    <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
+                        <div class="flex items-baseline">
+                            <h1 class="text-xl font-semibold text-gray-900">Painel de Clientes</h1>
+                            <span id="client-count-display" class="ml-4 text-sm font-normal text-gray-500"></span>
+                        </div>
+                        <button id="add-client-button" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">
+                            <i class="fas fa-plus mr-2"></i> Adicionar Cliente
+                        </button>
                     </div>
-                    <button id="add-client-button" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                        <i class="fas fa-plus mr-2"></i> Adicionar Cliente
-                    </button>
-                </div>
-            </header>
-            <main class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-6">
-                <div class="container mx-auto">
-                    <!-- Filters -->
-                    <div class="bg-white p-4 rounded-lg shadow mb-6 flex items-center space-x-4 flex-wrap gap-4">
-                       <div class="flex-1 min-w-[250px]">
-                            <div class="relative">
-                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                    <i class="fas fa-search text-gray-400"></i>
-                                </div>
-                                <input type="text" id="search-input" class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md" placeholder="Buscar por nome, e-mail...">
-                            </div>
+                </header>
+                <main class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-6">
+                    <div class="container mx-auto">
+                        <div class="bg-white p-4 rounded-lg shadow mb-6 flex items-center space-x-4 flex-wrap gap-4">
+                           <div class="flex-1 min-w-[250px]"><div class="relative"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i class="fas fa-search text-gray-400"></i></div><input type="text" id="search-input" class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md" placeholder="Buscar por nome, e-mail..."></div></div>
+                            <div><select id="filter-status" class="rounded-md border-gray-300 shadow-sm"><option value="todos">Todos os Status</option><option value="ativo">Ativo</option><option value="em-risco">Em Risco</option><option value="inativo">Inativo</option><option value="sem-historico">Sem Histórico</option></select></div>
+                            <div><select id="filter-tag" class="rounded-md border-gray-300 shadow-sm"><option value="todos">Todas as Tags</option><option value="cliente-fiel">Cliente Fiel</option></select></div>
                         </div>
-                        <div>
-                            <label for="filter-status" class="sr-only">Filtrar por Status</label>
-                            <select id="filter-status" class="rounded-md border-gray-300 shadow-sm">
-                                <option value="todos">Todos os Status</option>
-                                <option value="ativo">Ativo</option>
-                                <option value="em-risco">Em Risco</option>
-                                <option value="inativo">Inativo</option>
-                                <option value="sem-historico">Sem Histórico</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label for="filter-tag" class="sr-only">Filtrar por Tag</label>
-                            <select id="filter-tag" class="rounded-md border-gray-300 shadow-sm">
-                                <option value="todos">Todas as Tags</option>
-                                <option value="cliente-fiel">Cliente Fiel</option>
-                            </select>
+                        <div id="client-cards-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"></div>
+                        <div id="no-clients-message" class="hidden text-center py-12 px-4 bg-white rounded-lg shadow"><i class="fas fa-user-friends fa-3x text-gray-300"></i><h3 class="mt-2 text-sm font-medium text-gray-900">Nenhum cliente encontrado</h3><p class="mt-1 text-sm text-gray-500">Clique em "Sincronizar Dados" ou adicione um novo cliente.</p></div>
+                    </div>
+                </main>
+            </div>
+            
+            <!-- PÁGINA DE PRODUTOS (NOVA) -->
+            <div id="products-page" class="page-content hidden flex-col h-full">
+                <header class="bg-white shadow-sm">
+                    <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
+                        <div class="flex items-baseline">
+                            <h1 class="text-xl font-semibold text-gray-900">Painel de Produtos</h1>
+                            <span id="product-count-display" class="ml-4 text-sm font-normal text-gray-500"></span>
                         </div>
                     </div>
-
-                    <!-- Client Cards Grid -->
-                    <div id="client-cards-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                        <!-- Client cards will be inserted here -->
-                    </div>
-                    <div id="no-clients-message" class="hidden text-center py-12 px-4 bg-white rounded-lg shadow">
-                        <i class="fas fa-user-friends fa-3x text-gray-300"></i>
-                        <h3 class="mt-2 text-sm font-medium text-gray-900">Nenhum cliente encontrado</h3>
-                        <p class="mt-1 text-sm text-gray-500">Clique em "Sincronizar Dados" ou adicione um novo cliente.</p>
-                    </div>
-                </div>
-            </main>
-        </div>
-    </div>
-
-    <!-- Modals (Add/Edit, Details, Settings) -->
-    <!-- Client Add/Edit Modal -->
-    <div id="client-modal" class="fixed z-10 inset-0 overflow-y-auto hidden">
-        <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div class="fixed inset-0 transition-opacity" aria-hidden="true"><div class="absolute inset-0 bg-gray-500 opacity-75 modal-bg"></div></div>
-            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-            <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-                <form id="client-form">
-                    <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                        <h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-title">Adicionar Novo Cliente</h3>
-                        <input type="hidden" id="client-id">
-                        <div class="mt-4 space-y-4">
-                            <div><label for="name" class="block text-sm font-medium text-gray-700">Nome</label><input type="text" id="name" class="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" required></div>
-                            <div><label for="email" class="block text-sm font-medium text-gray-700">Email</label><input type="email" id="email" class="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"></div>
-                            <div><label for="phone" class="block text-sm font-medium text-gray-700">Telefone</label><input type="tel" id="phone" class="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"></div>
-                            <div><label for="birthday" class="block text-sm font-medium text-gray-700">Aniversário</label><input type="date" id="birthday" class="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"></div>
+                </header>
+                <main class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-6">
+                    <div class="container mx-auto">
+                        <div class="bg-white p-4 rounded-lg shadow mb-6 flex items-center space-x-4 flex-wrap gap-4">
+                           <div class="flex-1 min-w-[250px]"><div class="relative"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i class="fas fa-search text-gray-400"></i></div><input type="text" id="product-search-input" class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md" placeholder="Buscar por nome, SKU..."></div></div>
+                            <div><select id="filter-stock" class="rounded-md border-gray-300 shadow-sm"><option value="todos">Todo o Estoque</option><option value="gerenciado">Gerenciado</option><option value="nao-gerenciado">Não Gerenciado</option></select></div>
+                            <div><select id="filter-active" class="rounded-md border-gray-300 shadow-sm"><option value="todos">Todos os Status</option><option value="ativado">Ativado</option><option value="desativado">Desativado</option></select></div>
                         </div>
+                        <div id="product-cards-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"></div>
+                        <div id="no-products-message" class="hidden text-center py-12 px-4 bg-white rounded-lg shadow"><i class="fas fa-box-open fa-3x text-gray-300"></i><h3 class="mt-2 text-sm font-medium text-gray-900">Nenhum produto encontrado</h3><p class="mt-1 text-sm text-gray-500">Clique em "Sincronizar Dados" para carregar os produtos.</p></div>
                     </div>
-                    <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                        <button type="submit" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 sm:ml-3 sm:w-auto sm:text-sm">Salvar</button>
-                        <button type="button" id="cancel-button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:w-auto sm:text-sm">Cancelar</button>
-                    </div>
-                </form>
+                </main>
             </div>
         </div>
     </div>
+
+    <!-- Modals (Add/Edit, Details, Settings, Confirm) -->
+    <div id="client-modal" class="fixed z-10 inset-0 overflow-y-auto hidden"><div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0"><div class="fixed inset-0 transition-opacity" aria-hidden="true"><div class="absolute inset-0 bg-gray-500 opacity-75 modal-bg"></div></div><span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span><div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full"><form id="client-form"><div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4"><h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-title">Adicionar Novo Cliente</h3><input type="hidden" id="client-id"><div class="mt-4 space-y-4"><div><label for="name" class="block text-sm font-medium text-gray-700">Nome</label><input type="text" id="name" class="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" required></div><div><label for="email" class="block text-sm font-medium text-gray-700">Email</label><input type="email" id="email" class="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"></div><div><label for="phone" class="block text-sm font-medium text-gray-700">Telefone</label><input type="tel" id="phone" class="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"></div><div><label for="birthday" class="block text-sm font-medium text-gray-700">Aniversário</label><input type="date" id="birthday" class="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"></div></div></div><div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse"><button type="submit" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 sm:ml-3 sm:w-auto sm:text-sm">Salvar</button><button type="button" id="cancel-button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:w-auto sm:text-sm">Cancelar</button></div></form></div></div></div>
+    <div id="details-modal" class="fixed z-20 inset-0 overflow-y-auto hidden"><div class="flex items-center justify-center min-h-screen p-4 text-center sm:block"><div class="fixed inset-0 transition-opacity" aria-hidden="true"><div class="absolute inset-0 bg-gray-500 opacity-75 modal-bg"></div></div><span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span><div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-3xl sm:w-full"><div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4"><div class="flex justify-between items-start"><h3 class="text-lg leading-6 font-medium text-gray-900" id="details-modal-title">Detalhes do Cliente</h3><button id="close-details-button" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times fa-lg"></i></button></div><div id="details-modal-content" class="mt-4 max-h-[70vh] overflow-y-auto"></div></div></div></div></div>
+    <div id="settings-modal" class="fixed z-10 inset-0 overflow-y-auto hidden"><div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0"><div class="fixed inset-0 transition-opacity" aria-hidden="true"><div class="absolute inset-0 bg-gray-500 opacity-75 modal-bg"></div></div><span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span><div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full"><form id="settings-form"><div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4"><h3 class="text-lg leading-6 font-medium text-gray-900">Configurações</h3><div class="mt-6 border-t border-gray-200 pt-6"><h4 class="text-md font-medium text-gray-800">Status dos Clientes</h4><p class="text-sm text-gray-500 mb-4">Defina os intervalos em dias para cada status.</p><div class="space-y-4"><div><label for="status-ativo-days" class="block text-sm font-medium text-gray-700">Cliente Ativo (até X dias)</label><input type="number" id="status-ativo-days" class="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" required></div><div><label for="status-risco-days" class="block text-sm font-medium text-gray-700">Cliente em Risco (até X dias)</label><input type="number" id="status-risco-days" class="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" required></div><p class="text-xs text-gray-500">Acima do valor "Em Risco", o cliente é "Inativo".</p></div></div></div><div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse"><button type="submit" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 sm:ml-3 sm:w-auto sm:text-sm">Salvar</button><button type="button" id="cancel-settings-button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:w-auto sm:text-sm">Cancelar</button></div></form></div></div></div>
+    <div id="confirm-modal" class="fixed z-30 inset-0 overflow-y-auto hidden"><div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0"><div class="fixed inset-0 transition-opacity" aria-hidden="true"><div class="absolute inset-0 bg-gray-500 opacity-75"></div></div><span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span><div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full"><div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4"><div class="sm:flex sm:items-start"><div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10"><i class="fas fa-exclamation-triangle text-red-600"></i></div><div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left"><h3 class="text-lg leading-6 font-medium text-gray-900">Excluir Cliente</h3><div class="mt-2"><p class="text-sm text-gray-500">Tem certeza que deseja excluir este cliente? Esta ação é irreversível.</p></div></div></div></div><div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse"><button type="button" id="confirm-delete-button" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 sm:ml-3 sm:w-auto sm:text-sm">Excluir</button><button type="button" id="cancel-delete-button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:w-auto sm:text-sm">Cancelar</button></div></div></div></div>
     
-    <!-- Details Modal -->
-    <div id="details-modal" class="fixed z-20 inset-0 overflow-y-auto hidden">
-        <div class="flex items-center justify-center min-h-screen p-4 text-center sm:block">
-            <div class="fixed inset-0 transition-opacity" aria-hidden="true"><div class="absolute inset-0 bg-gray-500 opacity-75 modal-bg"></div></div>
-            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-            <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-3xl sm:w-full">
-                <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                    <div class="flex justify-between items-start">
-                         <h3 class="text-lg leading-6 font-medium text-gray-900" id="details-modal-title">Detalhes do Cliente</h3>
-                         <button id="close-details-button" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times fa-lg"></i></button>
-                    </div>
-                    <div id="details-modal-content" class="mt-4 max-h-[70vh] overflow-y-auto">
-                        <!-- Details content will be injected here -->
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Settings Modal -->
-    <div id="settings-modal" class="fixed z-10 inset-0 overflow-y-auto hidden">
-        <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div class="fixed inset-0 transition-opacity" aria-hidden="true"><div class="absolute inset-0 bg-gray-500 opacity-75 modal-bg"></div></div>
-            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-            <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-                <form id="settings-form">
-                    <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                        <h3 class="text-lg leading-6 font-medium text-gray-900">Configurações</h3>
-                        <div class="mt-6 border-t border-gray-200 pt-6">
-                            <h4 class="text-md font-medium text-gray-800">Status dos Clientes</h4>
-                            <p class="text-sm text-gray-500 mb-4">Defina os intervalos em dias para cada status.</p>
-                            <div class="space-y-4">
-                                <div><label for="status-ativo-days" class="block text-sm font-medium text-gray-700">Cliente Ativo (até X dias)</label><input type="number" id="status-ativo-days" class="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" required></div>
-                                <div><label for="status-risco-days" class="block text-sm font-medium text-gray-700">Cliente em Risco (até X dias)</label><input type="number" id="status-risco-days" class="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" required></div>
-                                 <p class="text-xs text-gray-500">Acima do valor "Em Risco", o cliente é "Inativo".</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                        <button type="submit" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 sm:ml-3 sm:w-auto sm:text-sm">Salvar</button>
-                        <button type="button" id="cancel-settings-button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:w-auto sm:text-sm">Cancelar</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <!-- NOVO: Confirmation Modal -->
-    <div id="confirm-modal" class="fixed z-30 inset-0 overflow-y-auto hidden">
-        <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div class="fixed inset-0 transition-opacity" aria-hidden="true"><div class="absolute inset-0 bg-gray-500 opacity-75 modal-bg"></div></div>
-            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-            <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-                <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                    <div class="sm:flex sm:items-start">
-                        <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
-                            <i class="fas fa-exclamation-triangle text-red-600"></i>
-                        </div>
-                        <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
-                            <h3 class="text-lg leading-6 font-medium text-gray-900" id="confirm-modal-title">Excluir Cliente</h3>
-                            <div class="mt-2">
-                                <p class="text-sm text-gray-500" id="confirm-modal-text">Tem certeza que deseja excluir este cliente? Esta ação é irreversível.</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                    <button type="button" id="confirm-delete-button" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 sm:ml-3 sm:w-auto sm:text-sm">Excluir</button>
-                    <button type="button" id="cancel-delete-button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:w-auto sm:text-sm">Cancelar</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Toast Container -->
     <div id="toast-container" class="toast-container"></div>
     
     <script src="script.js"></script>
