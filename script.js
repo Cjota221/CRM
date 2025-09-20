@@ -1,5 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const dbName = 'CRMDatabase_FacilZap_v3'; // Versão do DB incrementada para nova estrutura
+    const dbName = 'CRMDatabase_FacilZap_v3';
     let db;
 
     // --- Elementos Comuns da UI ---
@@ -277,6 +277,7 @@ document.addEventListener('DOMContentLoaded', () => {
         request.onerror = (e) => console.error("Erro ao ler pedidos do DB:", e.target.error);
         request.onsuccess = (e) => {
             const orders = e.target.result;
+            console.log('Pedidos carregados do DB:', orders); // Debug
             orderListContainer.innerHTML = '';
 
             const searchTerm = orderSearchInput.value.toLowerCase();
@@ -290,13 +291,16 @@ document.addEventListener('DOMContentLoaded', () => {
             orderCountDisplay.textContent = `Exibindo ${filteredOrders.length} de ${orders.length} pedidos`;
             noOrdersMessage.classList.toggle('hidden', filteredOrders.length > 0);
 
+            // Ordenar por data (mais recentes primeiro)
+            filteredOrders.sort((a, b) => new Date(b.data) - new Date(a.data));
+
             filteredOrders.forEach(order => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
-                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${order.codigo}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${order.codigo || 'N/A'}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${order.clientName || 'N/A'}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${new Date(order.data).toLocaleDateString()}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 text-right font-semibold">R$ ${order.total.toFixed(2)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${order.data ? new Date(order.data).toLocaleDateString('pt-BR') : 'N/A'}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 text-right font-semibold">R$ ${(order.total || 0).toFixed(2)}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
                         <button class="text-indigo-600 hover:text-indigo-900 view-client-from-order" data-client-id="${order.clientId}" title="Ver Cliente" ${!order.clientId ? 'disabled' : ''}>
                             <i class="fas fa-user ${!order.clientId ? 'text-gray-300' : ''}"></i>
@@ -315,90 +319,211 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const response = await fetch('/api/facilzap-proxy');
-            if (!response.ok) throw new Error((await response.json()).error || `Erro HTTP ${response.status}`);
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || `Erro HTTP ${response.status}`);
+            }
 
-            const { clients: apiClients, orders: apiOrders, products: apiProducts } = await response.json(); 
-            if (!apiClients || !apiOrders || !apiProducts) throw new Error("Resposta da API inválida.");
+            const { clients: apiClients, orders: apiOrders, products: apiProducts } = await response.json();
+            console.log('Dados recebidos da API:', { 
+                clientsCount: apiClients?.length, 
+                ordersCount: apiOrders?.length, 
+                productsCount: apiProducts?.length,
+                sampleOrder: apiOrders?.[0] // Debug - mostrar estrutura de um pedido
+            });
             
+            if (!apiClients || !apiOrders || !apiProducts) {
+                throw new Error("Resposta da API inválida.");
+            }
+            
+            // Mapear clientes
             const clientsData = new Map();
             apiClients.forEach(c => {
                 if (!c || !c.id) return;
                 clientsData.set(String(c.id), {
-                    id: String(c.id), name: c.nome, email: c.email, phone: c.whatsapp,
-                    birthday: c.data_nascimento, cpf: c.cpf, address: c.endereco,
-                    address_number: c.numero, address_complement: c.complemento,
-                    address_neighborhood: c.bairro, city: c.cidade, state: c.estado,
-                    zip_code: c.cep, lastPurchaseDate: null,
-                    totalSpent: 0, orderCount: 0, products: new Map()
+                    id: String(c.id), 
+                    name: c.nome, 
+                    email: c.email, 
+                    phone: c.whatsapp,
+                    birthday: c.data_nascimento, 
+                    cpf: c.cpf, 
+                    address: c.endereco,
+                    address_number: c.numero, 
+                    address_complement: c.complemento,
+                    address_neighborhood: c.bairro, 
+                    city: c.cidade, 
+                    state: c.estado,
+                    zip_code: c.cep, 
+                    lastPurchaseDate: null,
+                    totalSpent: 0, 
+                    orderCount: 0, 
+                    products: new Map()
                 });
             });
             
+            console.log('Clientes mapeados:', clientsData.size);
+            
+            // Processar pedidos
             const ordersToSave = [];
-            apiOrders.forEach(order => {
-                const clientId = order.cliente?.id ? String(order.cliente.id) : null;
+            let processedOrders = 0;
+            let ordersWithClient = 0;
+            let ordersWithoutClient = 0;
+
+            apiOrders.forEach((order, index) => {
+                console.log(`Processando pedido ${index + 1}:`, order); // Debug detalhado
                 
-                // --- LÓGICA CORRIGIDA E FOCADA EM CLIENTES ---
+                // Validar se o pedido tem ID
+                if (!order.id) {
+                    console.warn('Pedido sem ID ignorado:', order);
+                    return;
+                }
+
+                // Buscar ID do cliente de várias formas possíveis
+                let clientId = null;
+                if (order.cliente?.id) {
+                    clientId = String(order.cliente.id);
+                } else if (order.cliente_id) {
+                    clientId = String(order.cliente_id);
+                } else if (order.clienteId) {
+                    clientId = String(order.clienteId);
+                }
+
+                // Buscar nome do cliente
+                let clientName = null;
+                if (order.cliente?.nome) {
+                    clientName = order.cliente.nome;
+                } else if (order.cliente_nome) {
+                    clientName = order.cliente_nome;
+                } else if (order.clienteName) {
+                    clientName = order.clienteName;
+                }
+
+                console.log(`Pedido ${order.id}: clientId=${clientId}, clientName=${clientName}`);
+
+                // Sempre salvar o pedido, mesmo sem cliente
+                const orderToSave = {
+                    id: String(order.id),
+                    codigo: order.codigo || order.number || String(order.id),
+                    data: order.data || order.created_at || order.date || new Date().toISOString(),
+                    total: parseFloat(order.total || order.valor_total || order.amount || 0),
+                    clientId: clientId,
+                    clientName: clientName
+                };
+
+                ordersToSave.push(orderToSave);
+                processedOrders++;
+
+                // Se tem cliente, processar dados do cliente
                 if (clientId && clientsData.has(clientId)) {
+                    ordersWithClient++;
                     const client = clientsData.get(clientId);
-                    client.totalSpent += parseFloat(order.total || 0);
+                    client.totalSpent += orderToSave.total;
                     client.orderCount++;
-                    const orderDate = order.data ? new Date(order.data) : null;
-                    if (orderDate && (!client.lastPurchaseDate || client.lastPurchaseDate < orderDate)) {
+                    
+                    const orderDate = new Date(orderToSave.data);
+                    if (!client.lastPurchaseDate || client.lastPurchaseDate < orderDate) {
                         client.lastPurchaseDate = orderDate;
                     }
                     
+                    // Processar produtos do pedido
                     const productList = order.produtos || order.itens || order.products || order.items || [];
                     productList.forEach(item => {
-                        const productMap = client.products;
-                        if (!item.codigo || !item.nome) return;
-                        const quantity = parseInt(item.quantidade) || 1;
-                        const price = (parseFloat(item.subtotal || item.valor || 0) / quantity);
+                        if (!item.codigo && !item.sku && !item.id) return;
+                        
+                        const productCode = item.codigo || item.sku || String(item.id);
+                        const quantity = parseInt(item.quantidade || item.quantity || 1);
+                        const itemTotal = parseFloat(item.subtotal || item.valor || item.total || 0);
+                        const price = quantity > 0 ? (itemTotal / quantity) : 0;
 
-                        if (productMap.has(item.codigo)) {
-                            productMap.get(item.codigo).quantity += quantity;
+                        const productMap = client.products;
+                        if (productMap.has(productCode)) {
+                            productMap.get(productCode).quantity += quantity;
                         } else {
-                            productMap.set(item.codigo, { name: item.nome, quantity: quantity, price: price });
+                            productMap.set(productCode, { 
+                                name: item.nome || item.name || productCode, 
+                                quantity: quantity, 
+                                price: price 
+                            });
                         }
                     });
-
-                    // Adiciona o pedido à lista para ser salvo, pois pertence a um cliente válido
-                    ordersToSave.push({
-                        id: order.id,
-                        codigo: order.codigo,
-                        data: order.data,
-                        total: parseFloat(order.total || 0),
-                        clientId: clientId,
-                        clientName: order.cliente?.nome
-                    });
+                } else {
+                    ordersWithoutClient++;
+                    if (clientId) {
+                        console.warn(`Cliente ID ${clientId} não encontrado na lista de clientes`);
+                    }
                 }
             });
 
-            // Transações
-            const clientTx = db.transaction('clients', 'readwrite');
-            clientTx.objectStore('clients').clear();
-            Array.from(clientsData.values()).forEach(client => {
-                const finalClient = { ...client, products: Array.from(client.products.values()), lastPurchaseDate: client.lastPurchaseDate?.toISOString().split('T')[0] || null };
-                clientTx.objectStore('clients').put(finalClient);
-            });
+            console.log(`Resumo do processamento:
+                - Pedidos processados: ${processedOrders}
+                - Pedidos com cliente: ${ordersWithClient}
+                - Pedidos sem cliente: ${ordersWithoutClient}
+                - Total a salvar: ${ordersToSave.length}`);
 
-            const productTx = db.transaction('products', 'readwrite');
-            productTx.objectStore('products').clear();
-            apiProducts.forEach(p => {
-                productTx.objectStore('products').put({
-                    id: p.id, name: p.nome, sku: p.sku,
-                    image: p.imagens?.[0] || null,
-                    isActive: p.ativado,
-                    managesStock: p.estoque?.controlar_estoque || false
+            // Salvar no IndexedDB com promises para aguardar conclusão
+            const clientTxPromise = new Promise((resolve, reject) => {
+                const clientTx = db.transaction('clients', 'readwrite');
+                clientTx.oncomplete = resolve;
+                clientTx.onerror = reject;
+                
+                const clientStore = clientTx.objectStore('clients');
+                clientStore.clear();
+                
+                Array.from(clientsData.values()).forEach(client => {
+                    const finalClient = { 
+                        ...client, 
+                        products: Array.from(client.products.values()), 
+                        lastPurchaseDate: client.lastPurchaseDate?.toISOString().split('T')[0] || null 
+                    };
+                    clientStore.put(finalClient);
                 });
             });
 
-            const orderTx = db.transaction('orders', 'readwrite');
-            orderTx.objectStore('orders').clear();
-            ordersToSave.forEach(order => orderTx.objectStore('orders').put(order));
+            const productTxPromise = new Promise((resolve, reject) => {
+                const productTx = db.transaction('products', 'readwrite');
+                productTx.oncomplete = resolve;
+                productTx.onerror = reject;
+                
+                const productStore = productTx.objectStore('products');
+                productStore.clear();
+                
+                apiProducts.forEach(p => {
+                    productStore.put({
+                        id: String(p.id), 
+                        name: p.nome || p.name, 
+                        sku: p.sku,
+                        image: p.imagens?.[0] || p.image || null,
+                        isActive: p.ativado !== false,
+                        managesStock: p.estoque?.controlar_estoque || false
+                    });
+                });
+            });
 
-            await Promise.all([clientTx.complete, productTx.complete, orderTx.complete]);
+            const orderTxPromise = new Promise((resolve, reject) => {
+                const orderTx = db.transaction('orders', 'readwrite');
+                orderTx.oncomplete = () => {
+                    console.log('Transação de pedidos concluída');
+                    resolve();
+                };
+                orderTx.onerror = (e) => {
+                    console.error('Erro na transação de pedidos:', e);
+                    reject(e);
+                };
+                
+                const orderStore = orderTx.objectStore('orders');
+                orderStore.clear();
+                
+                console.log(`Salvando ${ordersToSave.length} pedidos no IndexedDB`);
+                ordersToSave.forEach((order, index) => {
+                    console.log(`Salvando pedido ${index + 1}:`, order);
+                    const request = orderStore.put(order);
+                    request.onerror = (e) => console.error(`Erro ao salvar pedido ${order.id}:`, e);
+                });
+            });
 
-            showToast(`Sincronização concluída!`, 'success');
+            await Promise.all([clientTxPromise, productTxPromise, orderTxPromise]);
+
+            showToast(`Sincronização concluída! ${processedOrders} pedidos importados.`, 'success');
             loadSettingsAndRenderAll();
 
         } catch (error) {
@@ -410,13 +535,108 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
-    function openModal(modalId) { if (modalId === 'client-modal') { clientForm.reset(); clientIdInput.value = ''; modalTitle.textContent = 'Adicionar Novo Cliente'; } document.getElementById(modalId).classList.remove('hidden'); }
-    function closeModal(modalId) { document.getElementById(modalId).classList.add('hidden'); }
-    function saveSettings() { if (!db) return; const tx = db.transaction('settings', 'readwrite'); tx.objectStore('settings').put({ id: 'config', statusAtivoDays: parseInt(statusAtivoDaysInput.value, 10) || 30, statusRiscoDays: parseInt(statusRiscoDaysInput.value, 10) || 90 }); tx.oncomplete = () => { showToast('Configurações salvas!', 'success'); closeModal('settings-modal'); loadSettingsAndRenderAll(); }; }
-    function handleFormSubmit(e) { e.preventDefault(); const id = clientIdInput.value; const data = { name: document.getElementById('name').value, email: document.getElementById('email').value, phone: document.getElementById('phone').value, birthday: document.getElementById('birthday').value }; const tx = db.transaction('clients', 'readwrite'); if (id) { const req = tx.objectStore('clients').get(id); req.onsuccess = () => { tx.objectStore('clients').put({ ...req.result, ...data, id: id }); }; } else { tx.objectStore('clients').add({ ...data, id: `manual_${Date.now()}` }); } tx.oncomplete = () => { renderClients(); closeModal('client-modal'); showToast(`Cliente ${id ? 'atualizado' : 'adicionado'}!`, 'success'); }; }
-    function editClient(id) { const req = db.transaction('clients', 'readonly').objectStore('clients').get(id); req.onerror = () => showToast('Erro ao buscar cliente para edição.', 'error'); req.onsuccess = (e) => { const client = e.target.result; if (client) { modalTitle.textContent = 'Editar Cliente'; clientIdInput.value = client.id; document.getElementById('name').value = client.name || ''; document.getElementById('email').value = client.email || ''; document.getElementById('phone').value = client.phone || ''; document.getElementById('birthday').value = client.birthday || ''; openModal('client-modal'); } else { showToast('Cliente não encontrado. Sincronize os dados.', 'error'); } }; }
-    function viewClientDetails(id) { const req = db.transaction('clients', 'readonly').objectStore('clients').get(id); req.onerror = () => showToast('Erro ao buscar detalhes do cliente.', 'error'); req.onsuccess = (e) => { const c = e.target.result; if (!c) { showToast('Não foi possível carregar os detalhes. Sincronize os dados.', 'error'); return; } detailsModalTitle.textContent = `Detalhes de ${c.name}`; let phtml = '<p class="text-sm text-gray-500">Nenhum produto comprado.</p>'; if (c.products && c.products.length > 0) { phtml = `<table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Produto</th><th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Qtd</th><th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Preço Un.</th></tr></thead><tbody class="bg-white divide-y divide-gray-200">${c.products.map(p=>`<tr><td class="px-4 py-2 whitespace-nowrap">${p.name}</td><td class="px-4 py-2 text-center">${p.quantity}</td><td class="px-4 py-2 text-right font-medium">R$ ${p.price.toFixed(2)}</td></tr>`).join('')}</tbody></table>`; } const addr = [c.address, c.address_number, c.address_complement].filter(Boolean).join(', ') + (c.address_neighborhood ? ` - ${c.address_neighborhood}` : '') + (c.city ? `<br>${c.city}` : '') + (c.state ? `/${c.state}` : '') + (c.zip_code ? ` - CEP: ${c.zip_code}` : ''); detailsModalContent.innerHTML = `<div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 text-sm mb-6 pb-4 border-b"><div><strong class="text-gray-600 block"><i class="fas fa-envelope fa-fw mr-2 text-gray-400"></i>E-mail:</strong> ${c.email||'N/A'}</div><div><strong class="text-gray-600 block"><i class="fas fa-phone fa-fw mr-2 text-gray-400"></i>Telefone:</strong> ${c.phone||'N/A'}</div><div><strong class="text-gray-600 block"><i class="fas fa-id-card fa-fw mr-2 text-gray-400"></i>CPF:</strong> ${c.cpf||'N/A'}</div><div><strong class="text-gray-600 block"><i class="fas fa-gift fa-fw mr-2 text-gray-400"></i>Aniversário:</strong> ${c.birthday?new Date(c.birthday).toLocaleDateString():'N/A'}</div><div class="md:col-span-2"><strong class="text-gray-600 block"><i class="fas fa-map-marker-alt fa-fw mr-2 text-gray-400"></i>Endereço:</strong> ${addr||'N/A'}</div></div><div class="mt-4"><h3 class="text-lg font-semibold mb-2">Histórico de Compras</h3>${phtml}</div>`; openModal('details-modal'); }; }
-    function confirmDeletion() { if (!clientIdToDelete) return; const tx = db.transaction('clients', 'readwrite'); tx.objectStore('clients').delete(clientIdToDelete).onsuccess = () => { renderClients(); showToast('Cliente excluído.', 'success'); }; closeModal('confirm-modal'); clientIdToDelete = null; }
+    function openModal(modalId) { 
+        if (modalId === 'client-modal') { 
+            clientForm.reset(); 
+            clientIdInput.value = ''; 
+            modalTitle.textContent = 'Adicionar Novo Cliente'; 
+        } 
+        document.getElementById(modalId).classList.remove('hidden'); 
+    }
+    
+    function closeModal(modalId) { 
+        document.getElementById(modalId).classList.add('hidden'); 
+    }
+    
+    function saveSettings() { 
+        if (!db) return; 
+        const tx = db.transaction('settings', 'readwrite'); 
+        tx.objectStore('settings').put({ 
+            id: 'config', 
+            statusAtivoDays: parseInt(statusAtivoDaysInput.value, 10) || 30, 
+            statusRiscoDays: parseInt(statusRiscoDaysInput.value, 10) || 90 
+        }); 
+        tx.oncomplete = () => { 
+            showToast('Configurações salvas!', 'success'); 
+            closeModal('settings-modal'); 
+            loadSettingsAndRenderAll(); 
+        }; 
+    }
+    
+    function handleFormSubmit(e) { 
+        e.preventDefault(); 
+        const id = clientIdInput.value; 
+        const data = { 
+            name: document.getElementById('name').value, 
+            email: document.getElementById('email').value, 
+            phone: document.getElementById('phone').value, 
+            birthday: document.getElementById('birthday').value 
+        }; 
+        const tx = db.transaction('clients', 'readwrite'); 
+        if (id) { 
+            const req = tx.objectStore('clients').get(id); 
+            req.onsuccess = () => { 
+                tx.objectStore('clients').put({ ...req.result, ...data, id: id }); 
+            }; 
+        } else { 
+            tx.objectStore('clients').add({ ...data, id: `manual_${Date.now()}` }); 
+        } 
+        tx.oncomplete = () => { 
+            renderClients(); 
+            closeModal('client-modal'); 
+            showToast(`Cliente ${id ? 'atualizado' : 'adicionado'}!`, 'success'); 
+        }; 
+    }
+    
+    function editClient(id) { 
+        const req = db.transaction('clients', 'readonly').objectStore('clients').get(id); 
+        req.onerror = () => showToast('Erro ao buscar cliente para edição.', 'error'); 
+        req.onsuccess = (e) => { 
+            const client = e.target.result; 
+            if (client) { 
+                modalTitle.textContent = 'Editar Cliente'; 
+                clientIdInput.value = client.id; 
+                document.getElementById('name').value = client.name || ''; 
+                document.getElementById('email').value = client.email || ''; 
+                document.getElementById('phone').value = client.phone || ''; 
+                document.getElementById('birthday').value = client.birthday || ''; 
+                openModal('client-modal'); 
+            } else { 
+                showToast('Cliente não encontrado. Sincronize os dados.', 'error'); 
+            } 
+        }; 
+    }
+    
+    function viewClientDetails(id) { 
+        const req = db.transaction('clients', 'readonly').objectStore('clients').get(id); 
+        req.onerror = () => showToast('Erro ao buscar detalhes do cliente.', 'error'); 
+        req.onsuccess = (e) => { 
+            const c = e.target.result; 
+            if (!c) { 
+                showToast('Não foi possível carregar os detalhes. Sincronize os dados.', 'error'); 
+                return; 
+            } 
+            detailsModalTitle.textContent = `Detalhes de ${c.name}`; 
+            let phtml = '<p class="text-sm text-gray-500">Nenhum produto comprado.</p>'; 
+            if (c.products && c.products.length > 0) { 
+                phtml = `<table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Produto</th><th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Qtd</th><th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Preço Un.</th></tr></thead><tbody class="bg-white divide-y divide-gray-200">${c.products.map(p=>`<tr><td class="px-4 py-2 whitespace-nowrap">${p.name}</td><td class="px-4 py-2 text-center">${p.quantity}</td><td class="px-4 py-2 text-right font-medium">R$ ${p.price.toFixed(2)}</td></tr>`).join('')}</tbody></table>`; 
+            } 
+            const addr = [c.address, c.address_number, c.address_complement].filter(Boolean).join(', ') + (c.address_neighborhood ? ` - ${c.address_neighborhood}` : '') + (c.city ? `<br>${c.city}` : '') + (c.state ? `/${c.state}` : '') + (c.zip_code ? ` - CEP: ${c.zip_code}` : ''); 
+            detailsModalContent.innerHTML = `<div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 text-sm mb-6 pb-4 border-b"><div><strong class="text-gray-600 block"><i class="fas fa-envelope fa-fw mr-2 text-gray-400"></i>E-mail:</strong> ${c.email||'N/A'}</div><div><strong class="text-gray-600 block"><i class="fas fa-phone fa-fw mr-2 text-gray-400"></i>Telefone:</strong> ${c.phone||'N/A'}</div><div><strong class="text-gray-600 block"><i class="fas fa-id-card fa-fw mr-2 text-gray-400"></i>CPF:</strong> ${c.cpf||'N/A'}</div><div><strong class="text-gray-600 block"><i class="fas fa-gift fa-fw mr-2 text-gray-400"></i>Aniversário:</strong> ${c.birthday?new Date(c.birthday).toLocaleDateString():'N/A'}</div><div class="md:col-span-2"><strong class="text-gray-600 block"><i class="fas fa-map-marker-alt fa-fw mr-2 text-gray-400"></i>Endereço:</strong> ${addr||'N/A'}</div></div><div class="mt-4"><h3 class="text-lg font-semibold mb-2">Histórico de Compras</h3>${phtml}</div>`; 
+            openModal('details-modal'); 
+        }; 
+    }
+    
+    function confirmDeletion() { 
+        if (!clientIdToDelete) return; 
+        const tx = db.transaction('clients', 'readwrite'); 
+        tx.objectStore('clients').delete(clientIdToDelete).onsuccess = () => { 
+            renderClients(); 
+            showToast('Cliente excluído.', 'success'); 
+        }; 
+        closeModal('confirm-modal'); 
+        clientIdToDelete = null; 
+    }
     
     function setupEventListeners() {
         navClients.addEventListener('click', (e) => { e.preventDefault(); showPage('clients-page'); });
@@ -440,7 +660,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const button = event.target.closest('button.view-client-from-order');
             if (button) {
                 const clientId = button.dataset.clientId;
-                if (clientId && clientId !== 'null') viewClientDetails(clientId);
+                if (clientId && clientId !== 'null') {
+                    // Mudar para a página de clientes e mostrar detalhes
+                    showPage('clients-page');
+                    setTimeout(() => viewClientDetails(clientId), 100);
+                }
             }
         });
 
@@ -467,4 +691,3 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
     showPage('clients-page');
 });
-
