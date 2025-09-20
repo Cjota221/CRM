@@ -31,7 +31,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusAtivoDaysInput = document.getElementById('status-ativo-days');
     const statusRiscoDaysInput = document.getElementById('status-risco-days');
     
-    // Elementos do Modal de Confirmação
     const confirmModal = document.getElementById('confirm-modal');
     const confirmDeleteButton = document.getElementById('confirm-delete-button');
     const cancelDeleteButton = document.getElementById('cancel-delete-button');
@@ -40,7 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
         statusAtivoDays: 30,
         statusRiscoDays: 90,
     };
-    let clientIdToDelete = null; // Guarda o ID do cliente a ser excluído
+    let clientIdToDelete = null;
 
     function initDB() {
         const request = indexedDB.open(dbName, 2);
@@ -51,18 +50,10 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         request.onupgradeneeded = (e) => {
             db = e.target.result;
-            let store;
             if (!db.objectStoreNames.contains('clients')) {
-                store = db.createObjectStore('clients', { keyPath: 'id' });
-            } else {
-                store = e.target.transaction.objectStore('clients');
-            }
-
-            if (!store.indexNames.contains('email')) {
-                 store.createIndex('email', 'email', { unique: false });
-            }
-            if (!store.indexNames.contains('tag')) {
-                store.createIndex('tag', 'tag', { unique: false });
+                const clientStore = db.createObjectStore('clients', { keyPath: 'id' });
+                clientStore.createIndex('email', 'email', { unique: false });
+                clientStore.createIndex('tag', 'tag', { unique: false });
             }
             if (!db.objectStoreNames.contains('settings')) {
                 db.createObjectStore('settings', { keyPath: 'id' });
@@ -92,7 +83,7 @@ document.addEventListener('DOMContentLoaded', () => {
         store.put({ id: 'config', ...currentSettings });
         transaction.oncomplete = () => {
             showToast('Configurações salvas!', 'success');
-            settingsModal.classList.add('hidden');
+            closeModal('settings-modal');
             renderClients();
         };
     }
@@ -108,6 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
             statusRiscoDaysInput.value = currentSettings.statusRiscoDays;
             renderClients();
         };
+        request.onerror = renderClients; // Renderiza mesmo se não houver configurações salvas
     }
 
     function getClientStatus(client) {
@@ -128,6 +120,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const transaction = db.transaction('clients', 'readonly');
         const request = transaction.objectStore('clients').getAll();
 
+        request.onerror = (e) => console.error("Erro ao ler clientes do DB:", e.target.error);
         request.onsuccess = (event) => {
             const clients = event.target.result;
             clientCardsContainer.innerHTML = '';
@@ -139,18 +132,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const filteredClients = clients.filter(client => {
                 const status = getClientStatus(client).text.toLowerCase().replace(' ', '-');
                 const tag = getClientTag(client)?.text.toLowerCase().replace(' ', '-') || 'sem-tag';
-                
                 const matchesStatus = statusFilter === 'todos' || status === statusFilter;
                 const matchesTag = tagFilter === 'todos' || tag === tagFilter;
                 const matchesSearch = !searchTerm ||
                     (client.name && client.name.toLowerCase().includes(searchTerm)) ||
                     (client.email && client.email.toLowerCase().includes(searchTerm));
-                
                 return matchesStatus && matchesTag && matchesSearch;
             });
             
             clientCountDisplay.textContent = `Exibindo ${filteredClients.length} de ${clients.length} clientes`;
-
             noClientsMessage.classList.toggle('hidden', filteredClients.length > 0);
             clientCardsContainer.classList.toggle('hidden', filteredClients.length === 0);
 
@@ -280,7 +270,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    function deleteClient(id) {
+    function openDeleteConfirmation(id) {
         clientIdToDelete = id;
         openModal('confirm-modal');
     }
@@ -293,14 +283,11 @@ document.addEventListener('DOMContentLoaded', () => {
         tx.oncomplete = () => {
             renderClients();
             showToast('Cliente excluído.', 'success');
-            closeModal('confirm-modal');
-            clientIdToDelete = null;
         };
-        tx.onerror = () => {
-            showToast('Erro ao excluir cliente.', 'error');
-            closeModal('confirm-modal');
-            clientIdToDelete = null;
-        }
+        tx.onerror = () => showToast('Erro ao excluir cliente.', 'error');
+
+        closeModal('confirm-modal');
+        clientIdToDelete = null;
     }
 
     function openModal(modalId) {
@@ -329,10 +316,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const { clients: apiClients, orders: apiOrders } = await response.json(); 
-            
-            if (!apiClients || !apiOrders) {
-                 throw new Error("Resposta da API inválida. Faltam clientes ou pedidos.");
-            }
+            if (!apiClients || !apiOrders) throw new Error("Resposta da API inválida.");
             
             const clientsData = new Map();
 
@@ -342,23 +326,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
                 clientsData.set(c.id, {
-                    id: c.id,
-                    name: c.nome,
-                    email: c.email,
-                    phone: c.whatsapp,
-                    birthday: c.data_nascimento,
-                    cpf: c.cpf,
-                    address: c.endereco,
-                    address_number: c.numero,
-                    address_complement: c.complemento,
-                    address_neighborhood: c.bairro,
-                    city: c.cidade,
-                    state: c.estado,
+                    id: c.id, name: c.nome, email: c.email, phone: c.whatsapp,
+                    birthday: c.data_nascimento, cpf: c.cpf, address: c.endereco,
+                    address_number: c.numero, address_complement: c.complemento,
+                    address_neighborhood: c.bairro, city: c.cidade, state: c.estado,
                     zip_code: c.cep,
                     lastPurchaseDate: c.ultima_compra ? new Date(c.ultima_compra) : null,
-                    totalSpent: 0,
-                    orderCount: 0,
-                    products: new Map()
+                    totalSpent: 0, orderCount: 0, products: new Map()
                 });
             });
 
@@ -398,53 +372,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const tx = db.transaction('clients', 'readwrite');
             const store = tx.objectStore('clients');
-            let updatedCount = 0;
-            let newCount = 0;
             
-            const promises = Array.from(clientsData.values()).map(processedClient => {
-                 return new Promise((resolve) => {
-                    const request = store.get(processedClient.id);
-                    request.onsuccess = () => {
-                        const existingClient = request.result;
-                        
-                        const validDate = processedClient.lastPurchaseDate && !isNaN(processedClient.lastPurchaseDate);
-                        const lastPurchaseDateISO = validDate ? processedClient.lastPurchaseDate.toISOString().split('T')[0] : null;
-
-                        const finalClientData = {
-                            ...existingClient,
-                            ...processedClient,
-                            products: Array.from(processedClient.products.values()),
-                            lastPurchaseDate: lastPurchaseDateISO
-                        };
-                        
-                        store.put(finalClientData);
-                        existingClient ? updatedCount++ : newCount++;
-                        resolve();
-                    };
-                    request.onerror = (e) => {
-                        console.error("Erro ao buscar cliente no DB:", e);
-                        resolve();
-                    };
+            const promises = Array.from(clientsData.values()).map(client => {
+                return new Promise((resolve, reject) => {
+                    const request = store.put({
+                        ...client,
+                        products: Array.from(client.products.values()),
+                        lastPurchaseDate: client.lastPurchaseDate?.toISOString().split('T')[0] || null
+                    });
+                    request.onsuccess = resolve;
+                    request.onerror = reject;
                 });
             });
 
             await Promise.all(promises);
             
             tx.oncomplete = () => {
-                showToast(`Sincronização concluída! ${newCount} clientes novos, ${updatedCount} atualizados.`, 'success');
+                showToast(`Sincronização concluída! ${clientsData.size} clientes processados.`, 'success');
                 renderClients();
             };
-            tx.onerror = (e) => {
-                const error = e.target.error;
-                console.error("Erro na transação final:", error);
-                let userMessage = "Erro ao salvar os dados no banco de dados local.";
-                if (error.name === 'ConstraintError') {
-                    userMessage = "Erro: A base de dados local encontrou um problema de chave duplicada. Tente limpar os dados do site no navegador e sincronizar novamente.";
-                } else if (error.name === 'QuotaExceededError') {
-                    userMessage = "Erro: Espaço de armazenamento local insuficiente.";
-                }
-                showToast(userMessage, "error");
-            }
+            tx.onerror = (e) => showToast(`Erro ao salvar dados: ${e.target.error}`, "error");
 
         } catch (error) {
             console.error('Erro na sincronização:', error);
@@ -455,44 +402,46 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- Event Listeners ---
-    addClientButton.addEventListener('click', () => openModal('client-modal'));
-    cancelButton.addEventListener('click', () => closeModal('client-modal'));
-    clientForm.addEventListener('submit', handleFormSubmit);
-    
-    // **A PONTE CONSERTADA**
-    // Este listener único no container pai garante que o clique funcione para qualquer botão.
-    clientCardsContainer.addEventListener('click', (event) => {
-        const target = event.target.closest('button');
-        if (!target) return;
+    // --- LISTENER DE EVENTOS CENTRALIZADO E CORRIGIDO ---
+    function setupEventListeners() {
+        addClientButton.addEventListener('click', () => openModal('client-modal'));
+        cancelButton.addEventListener('click', () => closeModal('client-modal'));
+        clientForm.addEventListener('submit', handleFormSubmit);
+        
+        // **A PONTE CONSERTADA E GARANTIDA**
+        // Este listener único no container pai garante que os cliques sempre funcionem.
+        clientCardsContainer.addEventListener('click', (event) => {
+            const target = event.target.closest('button');
+            if (!target) return;
 
-        const id = target.dataset.id;
-        if (!id) return;
+            const id = target.dataset.id;
+            if (!id) return;
 
-        if (target.classList.contains('view-details-button')) {
-            viewClientDetails(id);
-        } else if (target.classList.contains('edit-client-button')) {
-            editClient(id);
-        } else if (target.classList.contains('delete-client-button')) {
-            deleteClient(id);
-        }
-    });
-    
-    closeDetailsButton.addEventListener('click', () => closeModal('details-modal'));
-    openSettingsButton.addEventListener('click', () => openModal('settings-modal'));
-    cancelSettingsButton.addEventListener('click', () => closeModal('settings-modal'));
-    settingsForm.addEventListener('submit', (e) => { e.preventDefault(); saveSettings(); });
-    
-    // Listeners para o modal de confirmação
-    confirmDeleteButton.addEventListener('click', confirmDeletion);
-    cancelDeleteButton.addEventListener('click', () => closeModal('confirm-modal'));
+            if (target.classList.contains('view-details-button')) {
+                viewClientDetails(id);
+            } else if (target.classList.contains('edit-client-button')) {
+                editClient(id);
+            } else if (target.classList.contains('delete-client-button')) {
+                openDeleteConfirmation(id);
+            }
+        });
+        
+        closeDetailsButton.addEventListener('click', () => closeModal('details-modal'));
+        openSettingsButton.addEventListener('click', () => openModal('settings-modal'));
+        cancelSettingsButton.addEventListener('click', () => closeModal('settings-modal'));
+        settingsForm.addEventListener('submit', (e) => { e.preventDefault(); saveSettings(); });
+        
+        confirmDeleteButton.addEventListener('click', confirmDeletion);
+        cancelDeleteButton.addEventListener('click', () => closeModal('confirm-modal'));
 
-    searchInput.addEventListener('input', renderClients);
-    filterStatusSelect.addEventListener('change', renderClients);
-    filterTagSelect.addEventListener('change', renderClients);
-    
-    syncButton.addEventListener('click', syncData);
+        searchInput.addEventListener('input', renderClients);
+        filterStatusSelect.addEventListener('change', renderClients);
+        filterTagSelect.addEventListener('change', renderClients);
+        
+        syncButton.addEventListener('click', syncData);
+    }
 
+    // --- INICIALIZAÇÃO ---
     initDB();
+    setupEventListeners();
 });
-
