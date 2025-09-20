@@ -335,14 +335,22 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const ordersToSave = [];
             
-            // --- INÍCIO DO NOVO LOG DE DEPURAÇÃO ---
-            console.log("--- INICIANDO ANÁLISE DE PEDIDOS ---");
+            // --- NOVA LÓGICA: VISÃO TOTAL DE PEDIDOS ---
             apiOrders.forEach(order => {
                 const clientId = order.cliente?.id ? String(order.cliente.id) : null;
-                console.log(`- Processando Pedido ID: ${order.id}, Cliente ID: ${clientId}`);
                 
+                // Passo 1: SEMPRE salvar o pedido para a página de "Pedidos"
+                ordersToSave.push({
+                    id: order.id,
+                    codigo: order.codigo,
+                    data: order.data,
+                    total: parseFloat(order.total || 0),
+                    clientId: clientId,
+                    clientName: order.cliente?.nome || 'Cliente não identificado'
+                });
+
+                // Passo 2: Se o pedido pertencer a um cliente registado, atualizar as métricas dele
                 if (clientId && clientsData.has(clientId)) {
-                    console.log(`  -> VÁLIDO. Cliente ${clientId} encontrado. Adicionando pedido e atualizando métricas.`);
                     const client = clientsData.get(clientId);
                     client.totalSpent += parseFloat(order.total || 0);
                     client.orderCount++;
@@ -364,21 +372,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             productMap.set(item.codigo, { name: item.nome, quantity: quantity, price: price });
                         }
                     });
-
-                    ordersToSave.push({
-                        id: order.id,
-                        codigo: order.codigo,
-                        data: order.data,
-                        total: parseFloat(order.total || 0),
-                        clientId: clientId,
-                        clientName: order.cliente?.nome
-                    });
-                } else {
-                    console.log(`  -> INVÁLIDO/PDV. Cliente ID: ${clientId} não encontrado na lista principal. Pedido ignorado conforme regra de negócio.`);
                 }
             });
-            console.log("--- ANÁLISE DE PEDIDOS CONCLUÍDA ---");
-            // --- FIM DO NOVO LOG DE DEPURAÇÃO ---
+            // --- FIM DA NOVA LÓGICA ---
 
             // Transações
             const clientTx = db.transaction('clients', 'readwrite');
@@ -405,7 +401,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             await Promise.all([clientTx.complete, productTx.complete, orderTx.complete]);
 
-            showToast(`Sincronização concluída! ${ordersToSave.length} pedidos de clientes foram importados.`, 'success');
+            showToast(`Sincronização concluída! ${ordersToSave.length} pedidos foram importados.`, 'success');
             loadSettingsAndRenderAll();
 
         } catch (error) {
