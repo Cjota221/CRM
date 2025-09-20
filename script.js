@@ -218,7 +218,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     ? { text: 'Ativado', class: 'status-ativo' }
                     : { text: 'Desativado', class: 'status-inativo' };
                 
-                // CORREÇÃO: Codifica a URL da imagem para garantir que o proxy a receba corretamente
                 const imageUrl = product.image 
                     ? `/facilzap-images/${encodeURIComponent(product.image)}`
                     : 'https://placehold.co/400x400/f3f4f6/cbd5e0?text=Sem+Imagem';
@@ -269,6 +268,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     totalSpent: 0, orderCount: 0, products: new Map()
                 });
             });
+            
             apiOrders.forEach(order => {
                 const clientId = order.cliente?.id;
                 if (!clientId || !clientsData.has(clientId)) return;
@@ -277,11 +277,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 client.orderCount++;
                 const orderDate = order.data ? new Date(order.data) : null;
                 if (orderDate && (!client.lastPurchaseDate || client.lastPurchaseDate < orderDate)) client.lastPurchaseDate = orderDate;
-                (order.produtos || order.itens)?.forEach(item => {
+                
+                // CORREÇÃO: Lógica robusta para encontrar a lista de produtos
+                const productList = order.produtos || order.itens || order.products || order.items || [];
+                
+                productList.forEach(item => {
                     const productMap = client.products;
                     if (!item.codigo || !item.nome) return;
-                    if (productMap.has(item.codigo)) productMap.get(item.codigo).quantity += (parseInt(item.quantidade) || 1);
-                    else productMap.set(item.codigo, { name: item.nome, quantity: (parseInt(item.quantidade) || 1), price: (parseFloat(item.subtotal || item.valor || 0) / (parseInt(item.quantidade) || 1)) });
+                    const quantity = parseInt(item.quantidade) || 1;
+                    const price = (parseFloat(item.subtotal || item.valor || 0) / quantity);
+
+                    if (productMap.has(item.codigo)) {
+                        productMap.get(item.codigo).quantity += quantity;
+                    } else {
+                        productMap.set(item.codigo, { 
+                            name: item.nome, 
+                            quantity: quantity, 
+                            price: price 
+                        });
+                    }
                 });
             });
 
@@ -353,7 +367,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function saveSettings() { if (!db) return; const tx = db.transaction('settings', 'readwrite'); tx.objectStore('settings').put({ id: 'config', statusAtivoDays: parseInt(statusAtivoDaysInput.value,10)||30, statusRiscoDays: parseInt(statusRiscoDaysInput.value,10)||90 }); tx.oncomplete = () => { showToast('Configurações salvas!', 'success'); closeModal('settings-modal'); loadSettingsAndRenderAll(); }; }
     function handleFormSubmit(e) { e.preventDefault(); const id = clientIdInput.value; const data={ name: document.getElementById('name').value, email: document.getElementById('email').value, phone: document.getElementById('phone').value, birthday: document.getElementById('birthday').value }; const tx = db.transaction('clients', 'readwrite'); if (id) { const req = tx.objectStore('clients').get(id); req.onsuccess = () => tx.objectStore('clients').put({ ...req.result, ...data, id: id }); } else { tx.objectStore('clients').add({ ...data, id: `manual_${Date.now()}` }); } tx.oncomplete = () => { renderClients(); closeModal('client-modal'); showToast(`Cliente ${id ? 'atualizado' : 'adicionado'}!`, 'success'); }; }
     function editClient(id) { const req = db.transaction('clients', 'readonly').objectStore('clients').get(id); req.onsuccess = (e) => { const c = e.target.result; modalTitle.textContent = 'Editar Cliente'; clientIdInput.value = c.id; document.getElementById('name').value = c.name; document.getElementById('email').value = c.email; document.getElementById('phone').value = c.phone; document.getElementById('birthday').value = c.birthday; openModal('client-modal'); }; }
-    function viewClientDetails(id) { const req = db.transaction('clients', 'readonly').objectStore('clients').get(id); req.onsuccess = (e) => { const c = e.target.result; detailsModalTitle.textContent = `Detalhes de ${c.name}`; let phtml='<p class="text-sm text-gray-500">Nenhum produto comprado.</p>'; if(c.products&&c.products.length>0){phtml=`<table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Produto</th><th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Qtd</th><th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Total</th></tr></thead><tbody class="bg-white divide-y divide-gray-200">${c.products.map(p=>`<tr><td class="px-4 py-2 whitespace-nowrap">${p.name}</td><td class="px-4 py-2 text-center">${p.quantity}</td><td class="px-4 py-2 text-right font-medium">R$ ${(p.price*p.quantity).toFixed(2)}</td></tr>`).join('')}</tbody></table>`;} const addr=[c.address,c.address_number,c.address_complement].filter(Boolean).join(', ')+(c.address_neighborhood?` - ${c.address_neighborhood}`:'')+(c.city?`<br>${c.city}`:'')+(c.state?`/${c.state}`:'')+(c.zip_code?` - CEP: ${c.zip_code}`:''); detailsModalContent.innerHTML=`<div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 text-sm mb-6 pb-4 border-b"><div><strong class="text-gray-600 block"><i class="fas fa-envelope fa-fw mr-2 text-gray-400"></i>E-mail:</strong> ${c.email||'N/A'}</div><div><strong class="text-gray-600 block"><i class="fas fa-phone fa-fw mr-2 text-gray-400"></i>Telefone:</strong> ${c.phone||'N/A'}</div><div><strong class="text-gray-600 block"><i class="fas fa-id-card fa-fw mr-2 text-gray-400"></i>CPF:</strong> ${c.cpf||'N/A'}</div><div><strong class="text-gray-600 block"><i class="fas fa-gift fa-fw mr-2 text-gray-400"></i>Aniversário:</strong> ${c.birthday?new Date(c.birthday).toLocaleDateString():'N/A'}</div><div class="md:col-span-2"><strong class="text-gray-600 block"><i class="fas fa-map-marker-alt fa-fw mr-2 text-gray-400"></i>Endereço:</strong> ${addr||'N/A'}</div></div><div class="mt-4"><h3 class="text-lg font-semibold mb-2">Histórico de Compras</h3>${phtml}</div>`; openModal('details-modal'); }; }
+    function viewClientDetails(id) { const req = db.transaction('clients', 'readonly').objectStore('clients').get(id); req.onsuccess = (e) => { const c = e.target.result; detailsModalTitle.textContent = `Detalhes de ${c.name}`; let phtml='<p class="text-sm text-gray-500">Nenhum produto comprado.</p>'; if(c.products&&c.products.length>0){phtml=`<table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Produto</th><th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Qtd</th><th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Preço Un.</th></tr></thead><tbody class="bg-white divide-y divide-gray-200">${c.products.map(p=>`<tr><td class="px-4 py-2 whitespace-nowrap">${p.name}</td><td class="px-4 py-2 text-center">${p.quantity}</td><td class="px-4 py-2 text-right font-medium">R$ ${p.price.toFixed(2)}</td></tr>`).join('')}</tbody></table>`;} const addr=[c.address,c.address_number,c.address_complement].filter(Boolean).join(', ')+(c.address_neighborhood?` - ${c.address_neighborhood}`:'')+(c.city?`<br>${c.city}`:'')+(c.state?`/${c.state}`:'')+(c.zip_code?` - CEP: ${c.zip_code}`:''); detailsModalContent.innerHTML=`<div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 text-sm mb-6 pb-4 border-b"><div><strong class="text-gray-600 block"><i class="fas fa-envelope fa-fw mr-2 text-gray-400"></i>E-mail:</strong> ${c.email||'N/A'}</div><div><strong class="text-gray-600 block"><i class="fas fa-phone fa-fw mr-2 text-gray-400"></i>Telefone:</strong> ${c.phone||'N/A'}</div><div><strong class="text-gray-600 block"><i class="fas fa-id-card fa-fw mr-2 text-gray-400"></i>CPF:</strong> ${c.cpf||'N/A'}</div><div><strong class="text-gray-600 block"><i class="fas fa-gift fa-fw mr-2 text-gray-400"></i>Aniversário:</strong> ${c.birthday?new Date(c.birthday).toLocaleDateString():'N/A'}</div><div class="md:col-span-2"><strong class="text-gray-600 block"><i class="fas fa-map-marker-alt fa-fw mr-2 text-gray-400"></i>Endereço:</strong> ${addr||'N/A'}</div></div><div class="mt-4"><h3 class="text-lg font-semibold mb-2">Histórico de Compras</h3>${phtml}</div>`; openModal('details-modal'); }; }
     function confirmDeletion() { if (!clientIdToDelete) return; const tx = db.transaction('clients', 'readwrite'); tx.objectStore('clients').delete(clientIdToDelete).onsuccess=()=>{renderClients();showToast('Cliente excluído.', 'success');}; closeModal('confirm-modal'); clientIdToDelete=null; }
     function openModal(modalId) { if(modalId==='client-modal'){clientForm.reset();clientIdInput.value='';modalTitle.textContent='Adicionar Novo Cliente';} document.getElementById(modalId).classList.remove('hidden'); }
     function closeModal(modalId) { document.getElementById(modalId).classList.add('hidden'); }
