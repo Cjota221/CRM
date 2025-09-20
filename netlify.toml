@@ -6,6 +6,7 @@ from = "/api/facilzap-proxy"
 to = "/.netlify/functions/facilzap-proxy"
 status = 200
 force = true
+
 [[redirects]]
 from = "/facilzap-images/*"
 to = "/.netlify/functions/image-proxy?url=:splat"
