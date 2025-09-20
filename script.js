@@ -301,8 +301,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${new Date(order.data).toLocaleDateString()}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 text-right font-semibold">R$ ${order.total.toFixed(2)}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
-                        <button class="text-indigo-600 hover:text-indigo-900 view-client-from-order" data-client-id="${order.clientId}" title="Ver Cliente">
-                            <i class="fas fa-user"></i>
+                        <button class="text-indigo-600 hover:text-indigo-900 view-client-from-order" data-client-id="${order.clientId}" title="Ver Cliente" ${!order.clientId ? 'disabled' : ''}>
+                            <i class="fas fa-user ${!order.clientId ? 'text-gray-300' : ''}"></i>
                         </button>
                     </td>
                 `;
@@ -339,35 +339,38 @@ document.addEventListener('DOMContentLoaded', () => {
             const ordersToSave = [];
             apiOrders.forEach(order => {
                 const clientId = order.cliente?.id ? String(order.cliente.id) : null;
-                if (!clientId || !clientsData.has(clientId)) return;
-
-                const client = clientsData.get(clientId);
-                client.totalSpent += parseFloat(order.total || 0);
-                client.orderCount++;
-                const orderDate = order.data ? new Date(order.data) : null;
-                if (orderDate && (!client.lastPurchaseDate || client.lastPurchaseDate < orderDate)) client.lastPurchaseDate = orderDate;
                 
-                const productList = order.produtos || order.itens || order.products || order.items || [];
-                productList.forEach(item => {
-                    const productMap = client.products;
-                    if (!item.codigo || !item.nome) return;
-                    const quantity = parseInt(item.quantidade) || 1;
-                    const price = (parseFloat(item.subtotal || item.valor || 0) / quantity);
+                // Atualiza os dados do cliente se ele existir
+                if (clientId && clientsData.has(clientId)) {
+                    const client = clientsData.get(clientId);
+                    client.totalSpent += parseFloat(order.total || 0);
+                    client.orderCount++;
+                    const orderDate = order.data ? new Date(order.data) : null;
+                    if (orderDate && (!client.lastPurchaseDate || client.lastPurchaseDate < orderDate)) client.lastPurchaseDate = orderDate;
+                    
+                    const productList = order.produtos || order.itens || order.products || order.items || [];
+                    productList.forEach(item => {
+                        const productMap = client.products;
+                        if (!item.codigo || !item.nome) return;
+                        const quantity = parseInt(item.quantidade) || 1;
+                        const price = (parseFloat(item.subtotal || item.valor || 0) / quantity);
 
-                    if (productMap.has(item.codigo)) {
-                        productMap.get(item.codigo).quantity += quantity;
-                    } else {
-                        productMap.set(item.codigo, { name: item.nome, quantity: quantity, price: price });
-                    }
-                });
+                        if (productMap.has(item.codigo)) {
+                            productMap.get(item.codigo).quantity += quantity;
+                        } else {
+                            productMap.set(item.codigo, { name: item.nome, quantity: quantity, price: price });
+                        }
+                    });
+                }
 
+                // Salva o pedido SEMPRE, mesmo que não tenha um cliente correspondente
                 ordersToSave.push({
                     id: order.id,
                     codigo: order.codigo,
                     data: order.data,
                     total: parseFloat(order.total || 0),
                     clientId: clientId,
-                    clientName: order.cliente?.nome
+                    clientName: order.cliente?.nome || 'Cliente não identificado'
                 });
             });
 
@@ -440,7 +443,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const button = event.target.closest('button.view-client-from-order');
             if (button) {
                 const clientId = button.dataset.clientId;
-                if (clientId) viewClientDetails(clientId);
+                if (clientId && clientId !== 'null') viewClientDetails(clientId);
             }
         });
 
