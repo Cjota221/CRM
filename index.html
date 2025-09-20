@@ -54,6 +54,9 @@
                 <a href="#" id="nav-products" class="nav-link flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
                     <i class="fas fa-box-open w-6 text-center"></i><span class="ml-4">Produtos</span>
                 </a>
+                <a href="#" id="nav-orders" class="nav-link flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
+                    <i class="fas fa-receipt w-6 text-center"></i><span class="ml-4">Pedidos</span>
+                </a>
                 <div class="border-t border-gray-700 pt-4 mt-4 space-y-2">
                     <a href="#" id="sync-button" class="flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
                         <i class="fas fa-sync-alt w-6 text-center"></i><span class="ml-4">Sincronizar Dados</span>
@@ -66,10 +69,9 @@
         </div>
 
         <!-- Main content -->
-        <!-- CORREÇÃO: A classe 'overflow-hidden' foi removida desta div -->
-        <div class="flex-1 flex flex-col">
+        <div class="flex-1 flex flex-col overflow-hidden">
             <!-- PÁGINA DE CLIENTES -->
-            <div id="clients-page" class="page-content flex flex-col">
+            <div id="clients-page" class="page-content flex flex-col h-full">
                 <header class="bg-white shadow-sm">
                     <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
                         <div class="flex items-baseline">
@@ -81,12 +83,21 @@
                         </button>
                     </div>
                 </header>
-                <main class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-6">
+                <main class="flex-1 overflow-y-auto bg-gray-100 p-6">
                     <div class="container mx-auto">
                         <div class="bg-white p-4 rounded-lg shadow mb-6 flex items-center space-x-4 flex-wrap gap-4">
                            <div class="flex-1 min-w-[250px]"><div class="relative"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i class="fas fa-search text-gray-400"></i></div><input type="text" id="search-input" class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md" placeholder="Buscar por nome, e-mail..."></div></div>
                             <div><select id="filter-status" class="rounded-md border-gray-300 shadow-sm"><option value="todos">Todos os Status</option><option value="ativo">Ativo</option><option value="em-risco">Em Risco</option><option value="inativo">Inativo</option><option value="sem-historico">Sem Histórico</option></select></div>
                             <div><select id="filter-tag" class="rounded-md border-gray-300 shadow-sm"><option value="todos">Todas as Tags</option><option value="cliente-fiel">Cliente Fiel</option></select></div>
+                            <div>
+                                <select id="sort-clients" class="rounded-md border-gray-300 shadow-sm">
+                                    <option value="default">Ordenar por Padrão</option>
+                                    <option value="most-orders">Mais Pedidos</option>
+                                    <option value="least-orders">Menos Pedidos</option>
+                                    <option value="highest-spent">Maior Valor Gasto</option>
+                                    <option value="lowest-spent">Menor Valor Gasto</option>
+                                </select>
+                            </div>
                         </div>
                         <div id="client-cards-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"></div>
                         <div id="no-clients-message" class="hidden text-center py-12 px-4 bg-white rounded-lg shadow"><i class="fas fa-user-friends fa-3x text-gray-300"></i><h3 class="mt-2 text-sm font-medium text-gray-900">Nenhum cliente encontrado</h3><p class="mt-1 text-sm text-gray-500">Clique em "Sincronizar Dados" ou adicione um novo cliente.</p></div>
@@ -95,7 +106,7 @@
             </div>
             
             <!-- PÁGINA DE PRODUTOS -->
-            <div id="products-page" class="page-content hidden flex-col">
+            <div id="products-page" class="page-content hidden flex-col h-full">
                 <header class="bg-white shadow-sm">
                     <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
                         <div class="flex items-baseline">
@@ -104,7 +115,7 @@
                         </div>
                     </div>
                 </header>
-                <main class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-6">
+                <main class="flex-1 overflow-y-auto bg-gray-100 p-6">
                     <div class="container mx-auto">
                         <div class="bg-white p-4 rounded-lg shadow mb-6 flex items-center space-x-4 flex-wrap gap-4">
                            <div class="flex-1 min-w-[250px]"><div class="relative"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i class="fas fa-search text-gray-400"></i></div><input type="text" id="product-search-input" class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md" placeholder="Buscar por nome, SKU..."></div></div>
@@ -116,6 +127,43 @@
                     </div>
                 </main>
             </div>
+
+            <!-- PÁGINA DE PEDIDOS -->
+            <div id="orders-page" class="page-content hidden flex-col h-full">
+                <header class="bg-white shadow-sm">
+                    <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
+                        <div class="flex items-baseline">
+                            <h1 class="text-xl font-semibold text-gray-900">Painel de Pedidos</h1>
+                            <span id="order-count-display" class="ml-4 text-sm font-normal text-gray-500"></span>
+                        </div>
+                    </div>
+                </header>
+                <main class="flex-1 overflow-y-auto bg-gray-100 p-6">
+                    <div class="container mx-auto">
+                        <div class="bg-white p-4 rounded-lg shadow mb-6 flex items-center space-x-4 flex-wrap gap-4">
+                           <div class="flex-1 min-w-[250px]"><div class="relative"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i class="fas fa-search text-gray-400"></i></div><input type="text" id="order-search-input" class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md" placeholder="Buscar por Cód. do Pedido ou Nome do Cliente..."></div></div>
+                        </div>
+                        <div class="bg-white rounded-lg shadow overflow-hidden">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cód. Pedido</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data</th>
+                                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                                        <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="order-list-container" class="bg-white divide-y divide-gray-200">
+                                    <!-- Linhas da tabela de pedidos serão inseridas aqui -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div id="no-orders-message" class="hidden text-center py-12 px-4 bg-white rounded-lg shadow"><i class="fas fa-receipt fa-3x text-gray-300"></i><h3 class="mt-2 text-sm font-medium text-gray-900">Nenhum pedido encontrado</h3><p class="mt-1 text-sm text-gray-500">Clique em "Sincronizar Dados" para carregar os pedidos.</p></div>
+                    </div>
+                </main>
+            </div>
+
         </div>
     </div>
 
