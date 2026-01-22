@@ -8,6 +8,12 @@ status = 200
 force = true
 
 [[redirects]]
+from = "/api/supabase-sync"
+to = "/.netlify/functions/supabase-sync"
+status = 200
+force = true
+
+[[redirects]]
 from = "/facilzap-images/*"
 to = "/.netlify/functions/image-proxy?url=:splat"
 status = 200
@@ -18,6 +24,9 @@ node_bundler = "esbuild"
 
 [functions."facilzap-proxy"]
 timeout = 60
+
+[functions."supabase-sync"]
+timeout = 30
 
 [functions."image-proxy"]
 timeout = 10
