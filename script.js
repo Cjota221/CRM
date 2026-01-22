@@ -804,6 +804,25 @@ function setupModals() {
         }
         openModal('settings-modal');
     });
+
+    // Copiar URL do Webhook
+    document.getElementById('copy-webhook-url')?.addEventListener('click', () => {
+        const webhookUrl = document.getElementById('webhook-url-display')?.textContent;
+        if (webhookUrl) {
+            navigator.clipboard.writeText(webhookUrl).then(() => {
+                showToast('URL do Webhook copiada!', 'success');
+            }).catch(() => {
+                // Fallback para navegadores antigos
+                const textarea = document.createElement('textarea');
+                textarea.value = webhookUrl;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                showToast('URL do Webhook copiada!', 'success');
+            });
+        }
+    });
 }
 
 // ============================================================================
