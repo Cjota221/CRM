@@ -83,10 +83,10 @@ exports.handler = async (event) => {
   try {
     const startTime = Date.now();
     
-    // Calcular datas para filtro de pedidos (1 ano para reduzir tamanho)
-    const oneYearAgo = new Date();
-    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-    const dataInicial = oneYearAgo.toISOString().split('T')[0];
+    // Calcular datas para filtro de pedidos (1 ano e 6 meses)
+    const eighteenMonthsAgo = new Date();
+    eighteenMonthsAgo.setMonth(eighteenMonthsAgo.getMonth() - 18);
+    const dataInicial = eighteenMonthsAgo.toISOString().split('T')[0];
     const dataFinal = new Date().toISOString().split('T')[0];
     // Removido incluir_produtos=1 para reduzir tamanho da resposta
     const pedidosParams = `&filtros[data_inicial]=${dataInicial}&filtros[data_final]=${dataFinal}`;
