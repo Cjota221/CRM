@@ -991,10 +991,16 @@ function processarProdutoAPI(p) {
     const preco = extrairPreco(p);
     const imagem = extrairImagemPrincipal(p);
     
-    // Debug: logar alguns produtos para verificar
-    if (Math.random() < 0.1) {
-        console.log('[DEBUG Produto]', p.nome, '- Preço:', preco, '- Imagem:', imagem);
-    }
+    // Debug detalhado
+    console.log('[DEBUG Produto]', {
+        nome: p.nome,
+        preco_extraido: preco,
+        imagem_extraida: imagem,
+        tem_imagens: !!(p.imagens && p.imagens.length > 0),
+        tem_catalogos: !!(p.catalogos && p.catalogos.length > 0),
+        preco_catalogo: p.catalogos?.[0]?.precos?.preco,
+        url_imagem: p.imagens?.[0]?.url
+    });
     
     return {
         id: String(p.id ?? p.codigo),
@@ -1034,6 +1040,19 @@ async function syncData() {
             orders: apiOrders?.length || 0,
             products: apiProducts?.length || 0
         });
+        
+        // Debug: mostrar primeiro produto RAW da API
+        if (apiProducts && apiProducts.length > 0) {
+            const sample = apiProducts[0];
+            console.log('[DEBUG] Primeiro produto RAW:', {
+                nome: sample.nome,
+                preco: sample.preco,
+                tem_imagens: !!(sample.imagens && sample.imagens.length),
+                primeira_imagem: sample.imagens?.[0],
+                tem_catalogos: !!(sample.catalogos && sample.catalogos.length),
+                primeiro_catalogo_preco: sample.catalogos?.[0]?.precos?.preco
+            });
+        }
         
         if (!apiClients || !apiProducts) {
             throw new Error("Resposta da API inválida.");
