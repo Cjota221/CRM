@@ -131,6 +131,57 @@ const Storage = {
 };
 
 // ============================================================================
+// GEMINI API COM RETRY AUTOMÁTICO
+// ============================================================================
+
+async function callGeminiWithRetry(apiKey, prompt, maxRetries = 3) {
+    let lastError = null;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: { temperature: 0.7, maxOutputTokens: 1500 }
+                })
+            });
+
+            if (response.status === 429) {
+                // Rate limit - extrair tempo de espera ou usar 30s
+                const errorData = await response.json();
+                const errorMsg = errorData.error?.message || '';
+                const waitMatch = errorMsg.match(/retry in (\d+(?:\.\d+)?)/i);
+                const waitTime = waitMatch ? Math.ceil(parseFloat(waitMatch[1])) + 2 : 30;
+                
+                if (attempt < maxRetries) {
+                    showToast(`Limite da API atingido. Aguardando ${waitTime}s... (tentativa ${attempt}/${maxRetries})`, 'info', waitTime * 1000);
+                    await new Promise(r => setTimeout(r, waitTime * 1000));
+                    continue;
+                }
+                throw new Error(`Limite de uso da API Gemini excedido. Tente novamente em alguns minutos.`);
+            }
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error?.message || 'Erro na API do Gemini');
+            }
+
+            return await response.json();
+        } catch (error) {
+            lastError = error;
+            if (attempt < maxRetries && error.message?.includes('rate') || error.message?.includes('quota')) {
+                showToast(`Erro na API. Tentando novamente em 30s... (tentativa ${attempt}/${maxRetries})`, 'info', 30000);
+                await new Promise(r => setTimeout(r, 30000));
+            }
+        }
+    }
+    
+    throw lastError || new Error('Erro ao chamar API Gemini após múltiplas tentativas');
+}
+
+// ============================================================================
 // INTEGRAÇÃO COM IA (Google Gemini - GRATUITO)
 // ============================================================================
 
@@ -160,26 +211,7 @@ Responda em JSON com o formato:
   ]
 }`;
 
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${settings.geminiApiKey}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: {
-                    temperature: 0.7,
-                    maxOutputTokens: 1500
-                }
-            })
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error?.message || 'Erro na API do Gemini');
-        }
-
-        const data = await response.json();
+        const data = await callGeminiWithRetry(settings.geminiApiKey, prompt);
         const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
         
         // Tentar parsear JSON da resposta
@@ -229,26 +261,7 @@ REGRAS:
 
 Responda APENAS com a mensagem, sem explicações.`;
 
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${settings.geminiApiKey}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: {
-                    temperature: 0.8,
-                    maxOutputTokens: 200
-                }
-            })
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error?.message || 'Erro na API do Gemini');
-        }
-
-        const data = await response.json();
+        const data = await callGeminiWithRetry(settings.geminiApiKey, prompt);
         return (data.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
     },
 
@@ -362,26 +375,7 @@ Responda em JSON:
   }
 }`;
 
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${settings.geminiApiKey}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: {
-                    temperature: 0.5,
-                    maxOutputTokens: 1500
-                }
-            })
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error?.message || 'Erro na API do Gemini');
-        }
-
-        const data = await response.json();
+        const data = await callGeminiWithRetry(settings.geminiApiKey, prompt);
         const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
         
         try {
