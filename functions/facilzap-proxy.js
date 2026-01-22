@@ -1,12 +1,8 @@
 const fetch = require('node-fetch');
 
 // Buscar uma página específica
-async function fetchPage(endpoint, token, page) {
-  const oneYearAgo = new Date();
-  oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-  const dataInicial = oneYearAgo.toISOString().split('T')[0];
-  
-  const url = `${endpoint}?page=${page}&length=100&data_inicial=${dataInicial}&incluir_produtos=1`;
+async function fetchPage(endpoint, token, page, extraParams = '') {
+  const url = `${endpoint}?page=${page}&length=100${extraParams}`;
   
   const response = await fetch(url, {
     method: 'GET',
@@ -18,6 +14,7 @@ async function fetchPage(endpoint, token, page) {
 
   if (!response.ok) {
     if (response.status === 401) throw new Error("401 - Token inválido");
+    console.log(`[WARN] Página ${page} de ${endpoint} falhou: ${response.status}`);
     return []; // Retorna vazio em caso de erro
   }
   
@@ -26,11 +23,11 @@ async function fetchPage(endpoint, token, page) {
 }
 
 // Buscar todas as páginas em paralelo (até um limite)
-async function fetchAllParallel(endpoint, token, maxPages = 20) {
+async function fetchAllParallel(endpoint, token, maxPages = 20, extraParams = '') {
   // Buscar todas as páginas em paralelo de uma vez
   const pagePromises = [];
   for (let p = 1; p <= maxPages; p++) {
-    pagePromises.push(fetchPage(endpoint, token, p));
+    pagePromises.push(fetchPage(endpoint, token, p, extraParams));
   }
   
   const results = await Promise.all(pagePromises);
@@ -66,11 +63,18 @@ exports.handler = async (event) => {
   try {
     console.log("[INFO] Buscando dados em paralelo...");
     
+    // Calcular datas para filtro de pedidos (igual ao server.js)
+    const twoYearsAgo = new Date();
+    twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+    const dataInicial = twoYearsAgo.toISOString().split('T')[0];
+    const dataFinal = new Date().toISOString().split('T')[0];
+    const pedidosParams = `&filtros[data_inicial]=${dataInicial}&filtros[data_final]=${dataFinal}&filtros[incluir_produtos]=1`;
+    
     // Buscar tudo em paralelo com limite de páginas para caber no timeout
     const [clients, orders, products] = await Promise.all([
-      fetchAllParallel('https://api.facilzap.app.br/clientes', FACILZAP_TOKEN, 15),
-      fetchAllParallel('https://api.facilzap.app.br/pedidos', FACILZAP_TOKEN, 20),
-      fetchAllParallel('https://api.facilzap.app.br/produtos', FACILZAP_TOKEN, 5)
+      fetchAllParallel('https://api.facilzap.app.br/clientes', FACILZAP_TOKEN, 15, ''),
+      fetchAllParallel('https://api.facilzap.app.br/pedidos', FACILZAP_TOKEN, 20, pedidosParams),
+      fetchAllParallel('https://api.facilzap.app.br/produtos', FACILZAP_TOKEN, 5, '')
     ]);
     
     console.log(`[INFO] Resultado: ${clients.length} clientes, ${orders.length} pedidos, ${products.length} produtos`);
