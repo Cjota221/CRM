@@ -3,28 +3,40 @@ const fetch = require('node-fetch');
 // Buscar uma página específica
 async function fetchPage(endpoint, token, page, extraParams = '') {
   const url = `${endpoint}?page=${page}&length=100${extraParams}`;
+  console.log(`[DEBUG] Buscando: ${url.substring(0, 80)}...`);
   
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    }
-  });
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
 
-  if (!response.ok) {
-    if (response.status === 401) throw new Error("401 - Token inválido");
-    console.log(`[WARN] Página ${page} de ${endpoint} falhou: ${response.status}`);
-    return []; // Retorna vazio em caso de erro
+    console.log(`[DEBUG] ${endpoint} página ${page} - Status: ${response.status}`);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.log(`[ERROR] ${endpoint} página ${page} falhou: ${response.status} - ${errorText.substring(0, 200)}`);
+      if (response.status === 401) throw new Error("401 - Token inválido");
+      return [];
+    }
+    
+    const data = await response.json();
+    const items = data.data || [];
+    console.log(`[DEBUG] ${endpoint} página ${page} - Retornou ${items.length} itens`);
+    return items;
+  } catch (err) {
+    console.log(`[ERROR] Exceção em ${endpoint} página ${page}: ${err.message}`);
+    return [];
   }
-  
-  const data = await response.json();
-  return data.data || [];
 }
 
 // Buscar todas as páginas em paralelo (até um limite)
 async function fetchAllParallel(endpoint, token, maxPages = 20, extraParams = '') {
-  // Buscar todas as páginas em paralelo de uma vez
+  console.log(`[DEBUG] Iniciando busca paralela de ${endpoint} (${maxPages} páginas)`);
+  
   const pagePromises = [];
   for (let p = 1; p <= maxPages; p++) {
     pagePromises.push(fetchPage(endpoint, token, p, extraParams));
@@ -33,16 +45,21 @@ async function fetchAllParallel(endpoint, token, maxPages = 20, extraParams = ''
   const results = await Promise.all(pagePromises);
   let allData = [];
   
-  for (const pageData of results) {
-    if (pageData.length > 0) {
-      allData = allData.concat(pageData);
+  for (let i = 0; i < results.length; i++) {
+    if (results[i].length > 0) {
+      allData = allData.concat(results[i]);
     }
   }
   
+  console.log(`[DEBUG] ${endpoint} - Total coletado: ${allData.length} itens`);
   return allData;
 }
 
 exports.handler = async (event) => {
+  console.log("[DEBUG] ========== INÍCIO DA FUNÇÃO ==========");
+  console.log("[DEBUG] Método:", event.httpMethod);
+  console.log("[DEBUG] Path:", event.path);
+  
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
@@ -55,42 +72,69 @@ exports.handler = async (event) => {
 
   const FACILZAP_TOKEN = process.env.FACILZAP_TOKEN;
   
+  console.log("[DEBUG] Token presente:", !!FACILZAP_TOKEN);
+  console.log("[DEBUG] Token (primeiros 10 chars):", FACILZAP_TOKEN ? FACILZAP_TOKEN.substring(0, 10) + '...' : 'VAZIO');
+  
   if (!FACILZAP_TOKEN) {
-    console.error("[ERRO] Variável de ambiente FACILZAP_TOKEN não configurada.");
-    return { statusCode: 500, headers, body: JSON.stringify({ error: "FACILZAP_TOKEN não configurado no servidor." }) };
+    console.error("[ERRO] FACILZAP_TOKEN não configurado!");
+    return { statusCode: 500, headers, body: JSON.stringify({ error: "FACILZAP_TOKEN não configurado." }) };
   }
   
   try {
-    console.log("[INFO] Buscando dados em paralelo...");
+    const startTime = Date.now();
     
-    // Calcular datas para filtro de pedidos (igual ao server.js)
+    // Calcular datas para filtro de pedidos
     const twoYearsAgo = new Date();
     twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
     const dataInicial = twoYearsAgo.toISOString().split('T')[0];
     const dataFinal = new Date().toISOString().split('T')[0];
     const pedidosParams = `&filtros[data_inicial]=${dataInicial}&filtros[data_final]=${dataFinal}&filtros[incluir_produtos]=1`;
     
-    // Buscar tudo em paralelo com limite de páginas para caber no timeout
+    console.log("[DEBUG] Data inicial:", dataInicial);
+    console.log("[DEBUG] Data final:", dataFinal);
+    console.log("[DEBUG] Params pedidos:", pedidosParams);
+    
+    // Buscar tudo em paralelo
+    console.log("[DEBUG] Iniciando Promise.all para buscar dados...");
+    
     const [clients, orders, products] = await Promise.all([
       fetchAllParallel('https://api.facilzap.app.br/clientes', FACILZAP_TOKEN, 15, ''),
       fetchAllParallel('https://api.facilzap.app.br/pedidos', FACILZAP_TOKEN, 20, pedidosParams),
       fetchAllParallel('https://api.facilzap.app.br/produtos', FACILZAP_TOKEN, 5, '')
     ]);
     
-    console.log(`[INFO] Resultado: ${clients.length} clientes, ${orders.length} pedidos, ${products.length} produtos`);
+    const elapsed = Date.now() - startTime;
+    
+    console.log("[DEBUG] ========== RESULTADO FINAL ==========");
+    console.log(`[DEBUG] Clientes: ${clients.length}`);
+    console.log(`[DEBUG] Pedidos: ${orders.length}`);
+    console.log(`[DEBUG] Produtos: ${products.length}`);
+    console.log(`[DEBUG] Tempo total: ${elapsed}ms`);
+    
+    // Verificar amostra de pedido
+    if (orders.length > 0) {
+      console.log("[DEBUG] Primeiro pedido ID:", orders[0].id);
+      console.log("[DEBUG] Primeiro pedido data:", orders[0].data);
+    } else {
+      console.log("[DEBUG] NENHUM PEDIDO RETORNADO!");
+    }
+    
+    const responseBody = JSON.stringify({ clients, orders, products });
+    console.log(`[DEBUG] Tamanho da resposta: ${responseBody.length} bytes`);
     
     return {
       statusCode: 200,
       headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clients, orders, products })
+      body: responseBody
     };
 
   } catch (error) {
-    console.error("[ERRO]", error.message);
+    console.error("[ERRO FATAL]", error.message);
+    console.error("[ERRO STACK]", error.stack);
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({ error: error.message })
+      body: JSON.stringify({ error: error.message, stack: error.stack })
     };
   }
 };
