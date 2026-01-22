@@ -33,6 +33,58 @@ async function fetchPage(endpoint, token, page, extraParams = '') {
   }
 }
 
+// Buscar detalhes de um pedido específico (com itens)
+async function fetchOrderDetails(orderId, token) {
+  const url = `https://api.facilzap.app.br/pedidos/${orderId}`;
+  
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+    
+    const data = await response.json();
+    // A API pode retornar { data: {...} } ou direto o objeto
+    return data.data || data;
+  } catch (err) {
+    console.log(`[ERROR] Erro ao buscar pedido ${orderId}: ${err.message}`);
+    return null;
+  }
+}
+
+// Buscar detalhes de múltiplos pedidos em paralelo (batches de 10)
+async function fetchOrdersDetails(orderIds, token) {
+  console.log(`[DEBUG] Buscando detalhes de ${orderIds.length} pedidos...`);
+  const results = new Map();
+  const batchSize = 10; // Limitar requisições paralelas
+  
+  for (let i = 0; i < orderIds.length; i += batchSize) {
+    const batch = orderIds.slice(i, i + batchSize);
+    const promises = batch.map(id => fetchOrderDetails(id, token));
+    const batchResults = await Promise.all(promises);
+    
+    batch.forEach((id, idx) => {
+      if (batchResults[idx]) {
+        results.set(id, batchResults[idx]);
+      }
+    });
+    
+    if (i % 50 === 0 && i > 0) {
+      console.log(`[DEBUG] Progresso: ${i}/${orderIds.length} pedidos processados`);
+    }
+  }
+  
+  console.log(`[DEBUG] Detalhes obtidos para ${results.size} pedidos`);
+  return results;
+}
+
 // Buscar todas as páginas em paralelo (até um limite)
 async function fetchAllParallel(endpoint, token, maxPages = 20, extraParams = '') {
   console.log(`[DEBUG] Iniciando busca paralela de ${endpoint} (${maxPages} páginas)`);
@@ -104,6 +156,16 @@ exports.handler = async (event) => {
       fetchAllParallel('https://api.facilzap.app.br/produtos', FACILZAP_TOKEN, 5, '')
     ]);
     
+    // SOLUÇÃO: Buscar detalhes dos pedidos individualmente para obter os itens
+    // Pegar os últimos 500 pedidos (mais recentes) para buscar detalhes
+    const recentOrderIds = ordersRaw
+      .sort((a, b) => new Date(b.data || b.created_at) - new Date(a.data || a.created_at))
+      .slice(0, 500)
+      .map(o => o.id);
+    
+    console.log(`[DEBUG] Buscando detalhes de ${recentOrderIds.length} pedidos recentes...`);
+    const orderDetails = await fetchOrdersDetails(recentOrderIds, FACILZAP_TOKEN);
+    
     // Simplificar dados para reduzir tamanho da resposta (limite Netlify: 6MB)
     // MANTENDO TODOS OS CAMPOS IMPORTANTES
     const clients = clientsRaw.map(c => ({
@@ -125,33 +187,40 @@ exports.handler = async (event) => {
       created_at: c.created_at
     }));
     
-    const orders = ordersRaw.map(o => ({
-      id: o.id,
-      codigo: o.codigo || o.id,
-      cliente_id: o.cliente_id,
-      cliente: o.cliente ? { 
-        id: o.cliente.id, 
-        nome: o.cliente.nome,
-        telefone: o.cliente.telefone || o.cliente.whatsapp || o.cliente.celular || '',
-        email: o.cliente.email || '',
-        cpf_cnpj: o.cliente.cpf_cnpj || o.cliente.cpf || ''
-      } : null,
-      data: o.data || o.created_at,
-      status: o.status || o.status_pedido || '',
-      status_pedido: o.status_pedido || o.status || '',
-      total: o.total || o.valor_total || 0,
-      forma_pagamento: o.forma_pagamento || '',
-      origem: o.origem || '',
-      // Pegar itens de qualquer campo possível
-      itens: (o.itens || o.produtos || o.items || []).map(i => ({
-        produto_id: i.produto_id || i.id || i.codigo,
-        nome: i.nome || i.produto?.nome || i.descricao || 'Produto',
-        quantidade: i.quantidade || i.qty || 1,
-        valor: i.valor || i.subtotal || i.preco || 0,
-        preco_unitario: i.preco_unitario || i.preco || (i.valor / (i.quantidade || 1)) || 0,
-        imagem: i.produto?.imagens?.[0]?.url || i.imagem || null
-      }))
-    }));
+    const orders = ordersRaw.map(o => {
+      // Tentar obter itens do detalhe individual ou do pedido original
+      const detail = orderDetails.get(o.id);
+      const rawItems = detail?.itens || detail?.produtos || detail?.items || 
+                       o.itens || o.produtos || o.items || [];
+      
+      return {
+        id: o.id,
+        codigo: o.codigo || o.id,
+        cliente_id: o.cliente_id,
+        cliente: o.cliente ? { 
+          id: o.cliente.id, 
+          nome: o.cliente.nome,
+          telefone: o.cliente.telefone || o.cliente.whatsapp || o.cliente.celular || '',
+          email: o.cliente.email || '',
+          cpf_cnpj: o.cliente.cpf_cnpj || o.cliente.cpf || ''
+        } : null,
+        data: o.data || o.created_at,
+        status: o.status || o.status_pedido || '',
+        status_pedido: o.status_pedido || o.status || '',
+        total: o.total || o.valor_total || 0,
+        forma_pagamento: o.forma_pagamento || '',
+        origem: o.origem || '',
+        // Pegar itens do detalhe individual
+        itens: rawItems.map(i => ({
+          produto_id: i.produto_id || i.id || i.codigo,
+          nome: i.nome || i.produto?.nome || i.descricao || 'Produto',
+          quantidade: i.quantidade || i.qty || 1,
+          valor: i.valor || i.subtotal || i.preco || 0,
+          preco_unitario: i.preco_unitario || i.preco || (i.valor / (i.quantidade || 1)) || 0,
+          imagem: i.produto?.imagens?.[0]?.url || i.imagem || null
+        }))
+      };
+    });
     
     // Passar produtos completos para não perder nenhum campo
     const products = productsRaw;
