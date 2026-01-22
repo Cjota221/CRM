@@ -1,7 +1,12 @@
 {
   "name": "crm-facilzap-integration",
   "version": "1.0.0",
-  "description": "Proxy para a integração do CRM com a API da FacilZap",
+  "description": "CRM integrado com a API da FacilZap - Versão Local",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
   "dependencies": {
     "node-fetch": "^2.7.0"
   }
