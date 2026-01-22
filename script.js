@@ -1264,6 +1264,18 @@ async function syncData() {
             products: apiProducts?.length || 0
         });
         
+        // DEBUG: Verificar estrutura do primeiro pedido RAW
+        if (apiOrders && apiOrders.length > 0) {
+            const sampleOrder = apiOrders[0];
+            console.log('[DEBUG RAW] Primeiro pedido da API:', sampleOrder);
+            console.log('[DEBUG RAW] Campos do pedido:', Object.keys(sampleOrder));
+            console.log('[DEBUG RAW] tem itens?', !!sampleOrder.itens, 'length:', sampleOrder.itens?.length);
+            console.log('[DEBUG RAW] tem produtos?', !!sampleOrder.produtos, 'length:', sampleOrder.produtos?.length);
+            if (sampleOrder.itens && sampleOrder.itens.length > 0) {
+                console.log('[DEBUG RAW] Primeiro item:', sampleOrder.itens[0]);
+            }
+        }
+        
         // Debug: mostrar primeiro produto RAW da API
         if (apiProducts && apiProducts.length > 0) {
             const sample = apiProducts[0];
