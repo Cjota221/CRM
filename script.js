@@ -108,7 +108,8 @@ const Storage = {
     getSettings() {
         return this.load(this.KEYS.SETTINGS, {
             activeDays: 30,
-            riskDays: 60
+            riskDays: 60,
+            geminiApiKey: ''
         });
     },
 
@@ -126,6 +127,273 @@ const Storage = {
 
     clearAll() {
         Object.values(this.KEYS).forEach(key => localStorage.removeItem(key));
+    }
+};
+
+// ============================================================================
+// INTEGRAÇÃO COM IA (Google Gemini - GRATUITO)
+// ============================================================================
+
+const AIAssistant = {
+    async generateStrategy(segmentData) {
+        const settings = Storage.getSettings();
+        if (!settings.geminiApiKey) {
+            throw new Error('API Key do Gemini não configurada. Vá em Configurações.');
+        }
+
+        const prompt = `Você é um especialista em Growth e CRM para e-commerce. Analise os dados abaixo e me dê:
+1. Uma análise breve do cenário (2-3 frases)
+2. Uma estratégia de ação específica
+3. Três opções de copy (texto) para mensagem de WhatsApp
+
+DADOS DO SEGMENTO:
+${JSON.stringify(segmentData, null, 2)}
+
+Responda em JSON com o formato:
+{
+  "analise": "texto da análise",
+  "estrategia": "texto da estratégia",
+  "copies": [
+    {"titulo": "Título 1", "mensagem": "Mensagem completa 1"},
+    {"titulo": "Título 2", "mensagem": "Mensagem completa 2"},
+    {"titulo": "Título 3", "mensagem": "Mensagem completa 3"}
+  ]
+}`;
+
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${settings.geminiApiKey}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: {
+                    temperature: 0.7,
+                    maxOutputTokens: 1500
+                }
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error?.message || 'Erro na API do Gemini');
+        }
+
+        const data = await response.json();
+        const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        
+        // Tentar parsear JSON da resposta
+        try {
+            const jsonMatch = content.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                return JSON.parse(jsonMatch[0]);
+            }
+        } catch (e) {
+            console.error('Erro ao parsear resposta da IA:', e);
+        }
+        
+        return { analise: content, estrategia: '', copies: [] };
+    },
+
+    async generatePersonalizedMessage(client, context = '') {
+        const settings = Storage.getSettings();
+        if (!settings.geminiApiKey) {
+            throw new Error('API Key do Gemini não configurada. Vá em Configurações.');
+        }
+
+        const clientInfo = {
+            nome: client.name.split(' ')[0], // Primeiro nome
+            diasSemComprar: getDaysSinceLastPurchase(client),
+            totalGasto: client.totalSpent,
+            numeroPedidos: client.orderCount,
+            produtosComprados: client.products?.slice(0, 5).map(p => p.name) || [],
+            estado: getClientState(client).uf
+        };
+
+        const prompt = `Crie uma mensagem curta e personalizada de WhatsApp para reativar este cliente:
+
+CLIENTE:
+- Nome: ${clientInfo.nome}
+- Dias sem comprar: ${clientInfo.diasSemComprar}
+- Total já gasto: R$ ${clientInfo.totalGasto.toFixed(2)}
+- Produtos que já comprou: ${clientInfo.produtosComprados.join(', ') || 'Não identificado'}
+- Estado: ${clientInfo.estado}
+${context ? `\nCONTEXTO ADICIONAL: ${context}` : ''}
+
+REGRAS:
+- Máximo 300 caracteres
+- Tom amigável e pessoal
+- Mencione um produto que ele já comprou se possível
+- Inclua um benefício ou promoção fictícia
+- Use emojis com moderação
+
+Responda APENAS com a mensagem, sem explicações.`;
+
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${settings.geminiApiKey}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: {
+                    temperature: 0.8,
+                    maxOutputTokens: 200
+                }
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error?.message || 'Erro na API do Gemini');
+        }
+
+        const data = await response.json();
+        return (data.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
+    },
+
+    // Gerar mensagem sem IA (template básico)
+    generateBasicMessage(client) {
+        const firstName = client.name.split(' ')[0];
+        const days = getDaysSinceLastPurchase(client);
+        const product = client.products?.[0]?.name || 'nossos produtos';
+        
+        const templates = [
+            `Oi ${firstName}! 😊 Faz ${days} dias que não te vemos por aqui. Sentimos sua falta! Que tal conferir as novidades? Temos condições especiais para você! 🎁`,
+            `${firstName}, tudo bem? Vi que faz um tempinho que você não compra ${product}. Chegou reposição e separei um cupom especial pra você! 💝`,
+            `Olá ${firstName}! 👋 Lembrei de você hoje! Temos novidades incríveis e um desconto exclusivo esperando por você. Vem conferir! ✨`
+        ];
+        
+        return templates[Math.floor(Math.random() * templates.length)];
+    },
+
+    // IA sugere parâmetros ideais de classificação
+    async suggestClassificationParams() {
+        const settings = Storage.getSettings();
+        if (!settings.geminiApiKey) {
+            throw new Error('API Key do Gemini não configurada. Vá em Configurações.');
+        }
+
+        const clients = Storage.getClients();
+        const orders = Storage.getOrders();
+        
+        // Calcular estatísticas dos dados
+        const clientsWithOrders = clients.filter(c => c.orderCount > 0);
+        const daysSinceLastPurchase = clientsWithOrders.map(c => {
+            if (!c.lastPurchaseDate) return 999;
+            const days = Math.ceil((new Date() - new Date(c.lastPurchaseDate)) / (1000 * 60 * 60 * 24));
+            return days;
+        }).sort((a, b) => a - b);
+        
+        const totalSpentValues = clientsWithOrders.map(c => c.totalSpent).sort((a, b) => a - b);
+        const orderCounts = clientsWithOrders.map(c => c.orderCount).sort((a, b) => a - b);
+        
+        // Calcular percentis
+        const percentile = (arr, p) => arr[Math.floor(arr.length * p)] || 0;
+        
+        const stats = {
+            totalClientes: clients.length,
+            clientesComPedidos: clientsWithOrders.length,
+            diasSemComprar: {
+                minimo: daysSinceLastPurchase[0] || 0,
+                percentil25: percentile(daysSinceLastPurchase, 0.25),
+                mediana: percentile(daysSinceLastPurchase, 0.5),
+                percentil75: percentile(daysSinceLastPurchase, 0.75),
+                maximo: daysSinceLastPurchase[daysSinceLastPurchase.length - 1] || 0
+            },
+            valorGasto: {
+                minimo: totalSpentValues[0] || 0,
+                percentil25: percentile(totalSpentValues, 0.25),
+                mediana: percentile(totalSpentValues, 0.5),
+                percentil75: percentile(totalSpentValues, 0.75),
+                percentil90: percentile(totalSpentValues, 0.9),
+                maximo: totalSpentValues[totalSpentValues.length - 1] || 0
+            },
+            pedidos: {
+                media: clientsWithOrders.reduce((s, c) => s + c.orderCount, 0) / clientsWithOrders.length || 0,
+                mediana: percentile(orderCounts, 0.5),
+                percentil75: percentile(orderCounts, 0.75)
+            },
+            totalPedidos: orders.length,
+            ticketMedioGeral: orders.reduce((s, o) => s + o.total, 0) / orders.length || 0
+        };
+
+        const prompt = `Você é um especialista em CRM e análise de dados de e-commerce. 
+Analise as estatísticas abaixo da base de clientes e sugira os PARÂMETROS IDEAIS para classificação.
+
+ESTATÍSTICAS DA BASE:
+${JSON.stringify(stats, null, 2)}
+
+Com base nesses dados, sugira:
+
+1. **TERMÔMETRO DE CLIENTES** (dias sem comprar):
+   - Até quantos dias = Cliente QUENTE (engajado, recente)
+   - Até quantos dias = Cliente MORNO (precisa de atenção)
+   - Acima de quantos dias = Cliente FRIO (risco de churn)
+
+2. **CLASSIFICAÇÃO VIP**:
+   - A partir de quanto gasto total = VIP
+   - A partir de quanto gasto = SUPER VIP
+   - OU: a partir de quantos pedidos = Cliente Fiel
+
+3. **ANÁLISE E RECOMENDAÇÕES**:
+   - O que você observa nessa base?
+   - Qual o maior risco/oportunidade?
+   - Uma ação prioritária sugerida
+
+Responda em JSON:
+{
+  "termometro": {
+    "quente_ate_dias": número,
+    "morno_ate_dias": número,
+    "justificativa": "explicação"
+  },
+  "vip": {
+    "vip_valor_minimo": número,
+    "super_vip_valor_minimo": número,
+    "fiel_pedidos_minimo": número,
+    "justificativa": "explicação"
+  },
+  "analise": {
+    "observacoes": "texto",
+    "maior_risco": "texto",
+    "maior_oportunidade": "texto",
+    "acao_prioritaria": "texto"
+  }
+}`;
+
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${settings.geminiApiKey}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: {
+                    temperature: 0.5,
+                    maxOutputTokens: 1500
+                }
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error?.message || 'Erro na API do Gemini');
+        }
+
+        const data = await response.json();
+        const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        
+        try {
+            const jsonMatch = content.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                return JSON.parse(jsonMatch[0]);
+            }
+        } catch (e) {
+            console.error('Erro ao parsear resposta da IA:', e);
+        }
+        
+        return { error: 'Não foi possível processar a resposta', raw: content };
     }
 };
 
@@ -269,6 +537,10 @@ function setupModals() {
         const settings = Storage.getSettings();
         statusAtivoDaysInput.value = settings.activeDays;
         statusRiscoDaysInput.value = settings.riskDays;
+        const geminiKeyInput = document.getElementById('gemini-api-key');
+        if (geminiKeyInput) {
+            geminiKeyInput.value = settings.geminiApiKey || '';
+        }
         openModal('settings-modal');
     });
 }
@@ -276,6 +548,141 @@ function setupModals() {
 // ============================================================================
 // SINCRONIZAÇÃO COM API
 // ============================================================================
+
+// Funções auxiliares para processamento de produtos (baseado na documentação FácilZap)
+function extrairPreco(produto) {
+    // Prioridade: preco direto > valor > catalogo > variação
+    if (typeof produto.preco === 'number' && produto.preco > 0) return produto.preco;
+    if (typeof produto.preco === 'string' && parseFloat(produto.preco) > 0) return parseFloat(produto.preco);
+    
+    // Campo "valor" também é comum
+    if (typeof produto.valor === 'number' && produto.valor > 0) return produto.valor;
+    if (typeof produto.valor === 'string' && parseFloat(produto.valor) > 0) return parseFloat(produto.valor);
+    
+    // Tentar pegar do catálogo
+    if (produto.catalogos && produto.catalogos.length > 0) {
+        const catalogo = produto.catalogos[0];
+        const precoCatalogo = catalogo.precos?.preco || catalogo.preco || catalogo.valor;
+        if (precoCatalogo) return Number(precoCatalogo);
+    }
+    
+    // Tentar pegar da primeira variação
+    if (produto.variacoes && produto.variacoes.length > 0) {
+        const precoVariacao = produto.variacoes[0].preco || produto.variacoes[0].valor;
+        if (precoVariacao) return Number(precoVariacao);
+    }
+    
+    return 0;
+}
+
+function extrairEstoqueVariacao(variacao) {
+    if (!variacao) return 0;
+    const est = variacao.estoque;
+    
+    if (typeof est === 'number') return est;
+    if (typeof est === 'string') return parseInt(est) || 0;
+    if (typeof est === 'object' && est !== null) {
+        return Number(est.estoque ?? est.disponivel ?? est.quantidade ?? 0);
+    }
+    return 0;
+}
+
+function extrairEstoqueProduto(produto) {
+    const est = produto.estoque;
+    
+    if (typeof est === 'number') return est;
+    if (typeof est === 'string') return parseInt(est) || 0;
+    if (typeof est === 'object' && est !== null) {
+        return Number(est.disponivel ?? est.estoque ?? est.quantidade ?? 0);
+    }
+    return 0;
+}
+
+function calcularEstoqueTotal(produto) {
+    // Se tem variações, somar o estoque de todas
+    if (Array.isArray(produto.variacoes) && produto.variacoes.length > 0) {
+        return produto.variacoes.reduce((total, variacao) => {
+            return total + extrairEstoqueVariacao(variacao);
+        }, 0);
+    }
+    // Produto sem variações - estoque direto
+    return extrairEstoqueProduto(produto);
+}
+
+function extrairImagemPrincipal(produto) {
+    const imagens = produto.imagens || produto.fotos || produto.images || [];
+    if (imagens.length === 0) return null;
+    
+    const primeira = imagens[0];
+    
+    if (typeof primeira === 'string') return primeira;
+    if (typeof primeira === 'object' && primeira !== null) {
+        // Tentar várias propriedades possíveis
+        const url = primeira.url || primeira.path || primeira.src || 
+                   primeira.link || primeira.arquivo || primeira.file ||
+                   primeira.imagem || primeira.foto || primeira.image ||
+                   primeira.thumbnail || primeira.thumb;
+        return url || null;
+    }
+    return null;
+}
+
+function extrairTodasImagens(produto) {
+    const imagens = produto.imagens || produto.fotos || produto.images || [];
+    return imagens.map(img => {
+        if (typeof img === 'string') return img;
+        if (typeof img === 'object' && img !== null) {
+            return img.url || img.path || img.src || 
+                   img.link || img.arquivo || img.file ||
+                   img.imagem || img.foto || img.image ||
+                   img.thumbnail || img.thumb || null;
+        }
+        return null;
+    }).filter(Boolean);
+}
+
+function extrairCodigoBarras(produto) {
+    const codBarras = produto.cod_barras;
+    if (Array.isArray(codBarras) && codBarras.length > 0) {
+        const primeiro = codBarras[0];
+        if (typeof primeiro === 'string') return primeiro;
+        if (primeiro?.numero) return String(primeiro.numero);
+    }
+    if (typeof codBarras === 'string') return codBarras;
+    return null;
+}
+
+function processarVariacoes(produto) {
+    const variacoes = produto.variacoes || [];
+    return variacoes.map(v => ({
+        id: String(v.id ?? v.codigo ?? ''),
+        sku: v.sku ?? v.codigo ?? null,
+        nome: v.nome ?? v.name ?? null,
+        preco: Number(v.preco ?? 0),
+        estoque: extrairEstoqueVariacao(v),
+        ativo: Boolean(v.ativada ?? v.ativo ?? true)
+    }));
+}
+
+function processarProdutoAPI(p) {
+    const variacoes = processarVariacoes(p);
+    return {
+        id: String(p.id ?? p.codigo),
+        codigo: p.codigo || p.id,
+        name: p.nome ?? 'Sem nome',
+        description: p.descricao || '',
+        sku: p.sku || p.codigo || '',
+        price: extrairPreco(p),
+        stock: calcularEstoqueTotal(p),
+        isActive: Boolean(p.ativado ?? p.ativo ?? true),
+        managesStock: Boolean(p.estoque?.controlar_estoque),
+        image: extrairImagemPrincipal(p),
+        images: extrairTodasImagens(p),
+        barcode: extrairCodigoBarras(p),
+        variacoes: variacoes,
+        hasVariacoes: variacoes.length > 0
+    };
+}
 
 async function syncData() {
     showToast('Buscando dados na FacilZap... Isso pode levar um momento.', 'info');
@@ -296,23 +703,15 @@ async function syncData() {
             throw new Error("Resposta da API inválida.");
         }
 
-        // Processar e salvar produtos
+        // Processar e salvar produtos com funções melhoradas
         const productsMap = new Map();
         const processedProducts = apiProducts.map(p => {
-            const product = {
-                id: String(p.id),
-                name: p.nome || 'Produto sem nome',
-                description: p.descricao || '',
-                sku: p.sku || '',
-                image: p.imagens?.[0] || null,
-                isActive: p.ativado || false,
-                managesStock: p.estoque?.controlar_estoque || false,
-                price: 0 // Será atualizado dos pedidos
-            };
+            const product = processarProdutoAPI(p);
             productsMap.set(product.id, product);
             return product;
         });
         Storage.saveProducts(processedProducts);
+        console.log(`[INFO] ${processedProducts.length} produtos processados`);
 
         // Processar clientes
         const clientsMap = new Map();
@@ -469,6 +868,234 @@ function getClientStatus(client) {
     } else {
         return { text: 'Inativo', class: 'status-inativo', days: diffDays };
     }
+}
+
+// ============================================================================
+// MOTOR DE CLASSIFICAÇÃO AUTOMÁTICA (TERMÔMETRO)
+// ============================================================================
+
+/**
+ * Classificação por Temperatura (estilo ZUP/Salesforce)
+ * Usa parâmetros customizáveis (podem ser sugeridos pela IA)
+ */
+function getClientTemperature(client) {
+    const days = getDaysSinceLastPurchase(client);
+    const params = classificationParams || { hotDays: 30, warmDays: 90 };
+    
+    if (days === Infinity) {
+        return { temp: 'sem-dados', label: 'Sem Dados', emoji: '❓', color: 'gray', days: null };
+    }
+    if (days <= params.hotDays) {
+        return { temp: 'quente', label: 'Quente', emoji: '🔥', color: 'red', days };
+    }
+    if (days <= params.warmDays) {
+        return { temp: 'morno', label: 'Morno', emoji: '🌡️', color: 'yellow', days };
+    }
+    return { temp: 'frio', label: 'Frio', emoji: '❄️', color: 'blue', days };
+}
+
+/**
+ * Classificação VIP - Usa parâmetros customizáveis
+ */
+function getClientVIPStatus(client, allClients) {
+    const params = classificationParams || { vipMinValue: 500, loyalMinOrders: 5 };
+    
+    const ticketMedio = client.orderCount > 0 ? client.totalSpent / client.orderCount : 0;
+    
+    // Super VIP: 3x o valor mínimo VIP
+    const isSuperVIP = client.totalSpent > params.vipMinValue * 3;
+    // VIP: acima do valor mínimo
+    const isVIP = client.totalSpent > params.vipMinValue;
+    
+    if (isSuperVIP) {
+        return { vip: 'super-vip', label: 'Super VIP', emoji: '💎', ticketMedio };
+    }
+    if (isVIP) {
+        return { vip: 'vip', label: 'VIP', emoji: '⭐', ticketMedio };
+    }
+    return { vip: 'regular', label: 'Regular', emoji: '', ticketMedio };
+    
+    if (isSuperVIP) {
+        return { vip: 'super-vip', label: 'Super VIP', emoji: '💎', ticketMedio };
+    }
+    if (isVIP) {
+        return { vip: 'vip', label: 'VIP', emoji: '⭐', ticketMedio };
+    }
+    return { vip: 'regular', label: 'Regular', emoji: '', ticketMedio };
+}
+
+/**
+ * Extrair Estado (UF) do telefone ou endereço
+ */
+function getClientState(client) {
+    // Tentar extrair do DDD do telefone
+    const phone = (client.phone || '').replace(/\D/g, '');
+    if (phone.length >= 10) {
+        const ddd = phone.substring(0, 2);
+        const dddToState = {
+            '11': 'SP', '12': 'SP', '13': 'SP', '14': 'SP', '15': 'SP', '16': 'SP', '17': 'SP', '18': 'SP', '19': 'SP',
+            '21': 'RJ', '22': 'RJ', '24': 'RJ',
+            '27': 'ES', '28': 'ES',
+            '31': 'MG', '32': 'MG', '33': 'MG', '34': 'MG', '35': 'MG', '37': 'MG', '38': 'MG',
+            '41': 'PR', '42': 'PR', '43': 'PR', '44': 'PR', '45': 'PR', '46': 'PR',
+            '47': 'SC', '48': 'SC', '49': 'SC',
+            '51': 'RS', '53': 'RS', '54': 'RS', '55': 'RS',
+            '61': 'DF',
+            '62': 'GO', '64': 'GO',
+            '63': 'TO',
+            '65': 'MT', '66': 'MT',
+            '67': 'MS',
+            '68': 'AC',
+            '69': 'RO',
+            '71': 'BA', '73': 'BA', '74': 'BA', '75': 'BA', '77': 'BA',
+            '79': 'SE',
+            '81': 'PE', '87': 'PE',
+            '82': 'AL',
+            '83': 'PB',
+            '84': 'RN',
+            '85': 'CE', '88': 'CE',
+            '86': 'PI', '89': 'PI',
+            '91': 'PA', '93': 'PA', '94': 'PA',
+            '92': 'AM', '97': 'AM',
+            '95': 'RR',
+            '96': 'AP',
+            '98': 'MA', '99': 'MA'
+        };
+        if (dddToState[ddd]) {
+            return { uf: dddToState[ddd], source: 'ddd' };
+        }
+    }
+    
+    // Tentar do endereço
+    if (client.state) {
+        return { uf: client.state.toUpperCase(), source: 'address' };
+    }
+    
+    return { uf: 'N/A', source: 'unknown' };
+}
+
+/**
+ * Gerar todas as tags de um cliente
+ */
+function getClientTags(client, allClients) {
+    const temperature = getClientTemperature(client);
+    const vipStatus = getClientVIPStatus(client, allClients);
+    const state = getClientState(client);
+    
+    const tags = [];
+    
+    // Tag de temperatura
+    tags.push({
+        type: 'temperature',
+        value: temperature.temp,
+        label: temperature.label,
+        emoji: temperature.emoji,
+        color: temperature.color
+    });
+    
+    // Tag VIP
+    if (vipStatus.vip !== 'regular') {
+        tags.push({
+            type: 'vip',
+            value: vipStatus.vip,
+            label: vipStatus.label,
+            emoji: vipStatus.emoji
+        });
+    }
+    
+    // Tag de fidelidade
+    if (client.orderCount >= 10) {
+        tags.push({ type: 'loyalty', value: 'super-fiel', label: 'Super Fiel', emoji: '🏆' });
+    } else if (client.orderCount >= 5) {
+        tags.push({ type: 'loyalty', value: 'fiel', label: 'Fiel', emoji: '🌟' });
+    }
+    
+    // Tag de geografia
+    if (state.uf !== 'N/A') {
+        tags.push({
+            type: 'geography',
+            value: state.uf,
+            label: state.uf,
+            emoji: '📍'
+        });
+    }
+    
+    return {
+        tags,
+        temperature,
+        vipStatus,
+        state,
+        ticketMedio: vipStatus.ticketMedio
+    };
+}
+
+/**
+ * Gerar análise de segmentos para a IA
+ */
+function generateSegmentAnalysis() {
+    const clients = Storage.getClients();
+    const orders = Storage.getOrders();
+    const products = Storage.getProducts();
+    
+    // Classificar todos os clientes
+    const clientsWithTags = clients.map(c => ({
+        ...c,
+        ...getClientTags(c, clients)
+    }));
+    
+    // Agrupar por temperatura
+    const byTemperature = {
+        quente: clientsWithTags.filter(c => c.temperature.temp === 'quente'),
+        morno: clientsWithTags.filter(c => c.temperature.temp === 'morno'),
+        frio: clientsWithTags.filter(c => c.temperature.temp === 'frio'),
+        semDados: clientsWithTags.filter(c => c.temperature.temp === 'sem-dados')
+    };
+    
+    // Agrupar por estado
+    const byState = {};
+    clientsWithTags.forEach(c => {
+        const uf = c.state.uf;
+        if (!byState[uf]) byState[uf] = [];
+        byState[uf].push(c);
+    });
+    
+    // Agrupar VIPs
+    const vips = clientsWithTags.filter(c => c.vipStatus.vip !== 'regular');
+    
+    // Clientes em risco (frios com alto LTV)
+    const churnRisk = byTemperature.frio.filter(c => c.totalSpent > 500);
+    
+    // Produtos mais vendidos
+    const productSales = {};
+    orders.forEach(order => {
+        (order.products || []).forEach(p => {
+            if (!productSales[p.productName]) {
+                productSales[p.productName] = { name: p.productName, quantity: 0, revenue: 0 };
+            }
+            productSales[p.productName].quantity += p.quantity;
+            productSales[p.productName].revenue += p.total;
+        });
+    });
+    const topProducts = Object.values(productSales)
+        .sort((a, b) => b.revenue - a.revenue)
+        .slice(0, 10);
+    
+    return {
+        totalClients: clients.length,
+        totalOrders: orders.length,
+        totalProducts: products.length,
+        totalRevenue: clients.reduce((sum, c) => sum + c.totalSpent, 0),
+        byTemperature: {
+            quente: { count: byTemperature.quente.length, clients: byTemperature.quente },
+            morno: { count: byTemperature.morno.length, clients: byTemperature.morno },
+            frio: { count: byTemperature.frio.length, clients: byTemperature.frio },
+            semDados: { count: byTemperature.semDados.length, clients: byTemperature.semDados }
+        },
+        byState,
+        vips: { count: vips.length, clients: vips },
+        churnRisk: { count: churnRisk.length, clients: churnRisk },
+        topProducts
+    };
 }
 
 function getDaysSinceLastPurchase(client) {
@@ -873,11 +1500,15 @@ function renderProducts() {
     let filteredProducts = products.filter(product => {
         const matchesSearch = !searchTerm ||
             (product.name && product.name.toLowerCase().includes(searchTerm)) ||
-            (product.sku && product.sku.toLowerCase().includes(searchTerm));
+            (product.sku && product.sku.toLowerCase().includes(searchTerm)) ||
+            (product.barcode && product.barcode.includes(searchTerm));
 
         const matchesStock = stockFilter === 'todos' ||
             (stockFilter === 'gerenciado' && product.managesStock) ||
-            (stockFilter === 'nao-gerenciado' && !product.managesStock);
+            (stockFilter === 'nao-gerenciado' && !product.managesStock) ||
+            (stockFilter === 'em-estoque' && product.managesStock && product.stock > 0) ||
+            (stockFilter === 'sem-estoque' && product.managesStock && product.stock <= 0) ||
+            (stockFilter === 'com-variacoes' && product.hasVariacoes);
 
         const matchesActive = activeFilter === 'todos' ||
             (activeFilter === 'ativado' && product.isActive) ||
@@ -885,6 +1516,9 @@ function renderProducts() {
 
         return matchesSearch && matchesStock && matchesActive;
     });
+
+    // Ordenar por nome
+    filteredProducts.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
     productCountDisplay.textContent = `Exibindo ${filteredProducts.length} de ${products.length} produtos`;
     noProductsMessage?.classList.toggle('hidden', filteredProducts.length > 0);
@@ -897,19 +1531,47 @@ function renderProducts() {
             `/api/image-proxy?url=${encodeURIComponent(product.image)}` : 
             'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%23f3f4f6" width="100" height="100"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="%239ca3af" font-size="12">Sem Imagem</text></svg>';
 
+        // Determinar classe de estoque
+        const stockClass = product.managesStock 
+            ? (product.stock > 0 ? 'stock-in' : 'stock-out')
+            : 'stock-unmanaged';
+        const stockLabel = product.managesStock 
+            ? (product.stock > 0 ? `${product.stock} un.` : 'Sem estoque')
+            : 'Sem controle';
+
         card.innerHTML = `
             <div class="aspect-square bg-gray-100 relative">
                 <img src="${imageUrl}" alt="${escapeHtml(product.name)}" class="w-full h-full object-cover" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23f3f4f6%22 width=%22100%22 height=%22100%22/><text x=%2250%%22 y=%2250%%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22%239ca3af%22 font-size=%2212%22>Sem Imagem</text></svg>'">
                 <span class="absolute top-2 right-2 stock-badge ${product.isActive ? 'stock-in' : 'stock-out'}">
                     ${product.isActive ? 'Ativo' : 'Inativo'}
                 </span>
+                ${product.hasVariacoes ? `
+                    <span class="absolute top-2 left-2 bg-purple-600 text-white text-xs px-2 py-1 rounded-full">
+                        ${product.variacoes.length} variações
+                    </span>
+                ` : ''}
             </div>
             <div class="p-4">
                 <h3 class="font-semibold text-gray-800 truncate" title="${escapeHtml(product.name)}">${escapeHtml(product.name)}</h3>
-                <p class="text-sm text-gray-500 mb-2">SKU: ${escapeHtml(product.sku || 'N/A')}</p>
-                <span class="stock-badge ${product.managesStock ? 'stock-in' : 'stock-unmanaged'}">
-                    ${product.managesStock ? 'Estoque Gerenciado' : 'Sem Controle'}
-                </span>
+                <p class="text-sm text-gray-500 mb-1">SKU: ${escapeHtml(product.sku || 'N/A')}</p>
+                ${product.barcode ? `<p class="text-sm text-gray-400 mb-1"><i class="fas fa-barcode mr-1"></i>${escapeHtml(product.barcode)}</p>` : ''}
+                
+                <div class="flex justify-between items-center mt-3 mb-2">
+                    <span class="text-lg font-bold text-green-600">${formatCurrency(product.price)}</span>
+                    <span class="stock-badge ${stockClass}">${stockLabel}</span>
+                </div>
+                
+                ${product.hasVariacoes ? `
+                    <div class="mt-2 pt-2 border-t">
+                        <p class="text-xs text-gray-500 mb-1">Variações:</p>
+                        <div class="flex flex-wrap gap-1">
+                            ${product.variacoes.slice(0, 3).map(v => `
+                                <span class="text-xs bg-gray-100 px-2 py-1 rounded">${escapeHtml(v.nome || v.sku || 'Var')}</span>
+                            `).join('')}
+                            ${product.variacoes.length > 3 ? `<span class="text-xs text-gray-400">+${product.variacoes.length - 3}</span>` : ''}
+                        </div>
+                    </div>
+                ` : ''}
             </div>
         `;
 
@@ -1038,9 +1700,11 @@ function viewOrderDetails(orderId) {
 function saveSettings(e) {
     e.preventDefault();
 
+    const geminiKeyInput = document.getElementById('gemini-api-key');
     const settings = {
         activeDays: parseInt(statusAtivoDaysInput.value) || 30,
-        riskDays: parseInt(statusRiscoDaysInput.value) || 60
+        riskDays: parseInt(statusRiscoDaysInput.value) || 60,
+        geminiApiKey: geminiKeyInput?.value || ''
     };
 
     if (settings.riskDays <= settings.activeDays) {
@@ -1055,6 +1719,495 @@ function saveSettings(e) {
 }
 
 // ============================================================================
+// GROWTH DASHBOARD - ANÁLISE ESTRATÉGICA
+// ============================================================================
+
+let selectedSegment = null;
+let selectedClients = [];
+
+function renderGrowthDashboard() {
+    const analysis = generateSegmentAnalysis();
+    
+    // Atualizar contadores do termômetro
+    document.getElementById('count-quente').textContent = analysis.byTemperature.quente.count;
+    document.getElementById('count-morno').textContent = analysis.byTemperature.morno.count;
+    document.getElementById('count-frio').textContent = analysis.byTemperature.frio.count;
+    
+    // KPIs
+    const kpisContainer = document.getElementById('growth-kpis');
+    kpisContainer.innerHTML = `
+        <div class="bg-white rounded-lg shadow p-4">
+            <p class="text-sm text-gray-500">Total de Clientes</p>
+            <p class="text-2xl font-bold text-gray-800">${analysis.totalClients}</p>
+        </div>
+        <div class="bg-white rounded-lg shadow p-4">
+            <p class="text-sm text-gray-500">Receita Total</p>
+            <p class="text-2xl font-bold text-green-600">${formatCurrency(analysis.totalRevenue)}</p>
+        </div>
+        <div class="bg-white rounded-lg shadow p-4">
+            <p class="text-sm text-gray-500">Pedidos</p>
+            <p class="text-2xl font-bold text-indigo-600">${analysis.totalOrders}</p>
+        </div>
+        <div class="bg-white rounded-lg shadow p-4">
+            <p class="text-sm text-gray-500">Risco de Churn</p>
+            <p class="text-2xl font-bold text-red-600">${analysis.churnRisk.count}</p>
+            <p class="text-xs text-gray-400">Clientes frios com alto LTV</p>
+        </div>
+    `;
+    
+    // Lista de VIPs
+    const vipList = document.getElementById('vip-list');
+    if (analysis.vips.count > 0) {
+        vipList.innerHTML = analysis.vips.clients.slice(0, 10).map(c => `
+            <div class="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                <div>
+                    <p class="font-medium text-gray-800">${escapeHtml(c.name)}</p>
+                    <p class="text-xs text-gray-500">${c.orderCount} pedidos • ${formatCurrency(c.totalSpent)}</p>
+                </div>
+                <div class="flex gap-2">
+                    <span class="text-sm">${c.vipStatus.emoji}</span>
+                    <button onclick="openWhatsAppModal('${c.id}')" class="text-green-600 hover:text-green-800">
+                        <i class="fab fa-whatsapp"></i>
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    } else {
+        vipList.innerHTML = '<p class="text-sm text-gray-500">Nenhum cliente VIP encontrado</p>';
+    }
+    
+    // Distribuição por estado
+    const stateContainer = document.getElementById('state-distribution');
+    const sortedStates = Object.entries(analysis.byState)
+        .filter(([uf]) => uf !== 'N/A')
+        .sort((a, b) => b[1].length - a[1].length);
+    
+    if (sortedStates.length > 0) {
+        stateContainer.innerHTML = sortedStates.map(([uf, clients]) => `
+            <div class="bg-gray-50 rounded-lg p-3 text-center cursor-pointer hover:bg-gray-100 transition-colors"
+                 onclick="showSegmentClients('state', '${uf}')">
+                <p class="text-lg font-bold text-indigo-600">${clients.length}</p>
+                <p class="text-xs text-gray-500">${uf}</p>
+            </div>
+        `).join('');
+    } else {
+        stateContainer.innerHTML = '<p class="text-sm text-gray-500 col-span-3">Sem dados de localização</p>';
+    }
+}
+
+function showSegmentClients(type, value) {
+    const analysis = generateSegmentAnalysis();
+    let clients = [];
+    let title = '';
+    
+    switch(type) {
+        case 'quente':
+            clients = analysis.byTemperature.quente.clients;
+            title = '🔥 Clientes Quentes';
+            break;
+        case 'morno':
+            clients = analysis.byTemperature.morno.clients;
+            title = '🌡️ Clientes Mornos';
+            break;
+        case 'frio':
+            clients = analysis.byTemperature.frio.clients;
+            title = '❄️ Clientes Frios (Risco de Churn)';
+            break;
+        case 'state':
+            clients = analysis.byState[value] || [];
+            title = `📍 Clientes de ${value}`;
+            break;
+        case 'vip':
+            clients = analysis.vips.clients;
+            title = '⭐ Clientes VIP';
+            break;
+        case 'churn':
+            clients = analysis.churnRisk.clients;
+            title = '⚠️ Alto Risco de Churn';
+            break;
+    }
+    
+    selectedSegment = { type, value, title };
+    selectedClients = clients;
+    
+    const container = document.getElementById('segment-clients');
+    const titleEl = document.getElementById('segment-title');
+    const listEl = document.getElementById('segment-client-list');
+    
+    titleEl.textContent = `${title} (${clients.length} clientes)`;
+    
+    listEl.innerHTML = clients.map(c => {
+        const temp = c.temperature || getClientTemperature(c);
+        return `
+            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100">
+                <div class="flex-1">
+                    <div class="flex items-center gap-2">
+                        <span class="font-medium text-gray-800">${escapeHtml(c.name)}</span>
+                        <span class="text-sm">${temp.emoji}</span>
+                        ${c.vipStatus?.emoji ? `<span class="text-sm">${c.vipStatus.emoji}</span>` : ''}
+                    </div>
+                    <p class="text-xs text-gray-500">
+                        ${c.phone || 'Sem telefone'} • ${c.orderCount} pedidos • ${formatCurrency(c.totalSpent)}
+                        ${temp.days ? ` • ${temp.days} dias` : ''}
+                    </p>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="openWhatsAppModal('${c.id}')" class="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700">
+                        <i class="fab fa-whatsapp mr-1"></i> Mensagem
+                    </button>
+                    <button onclick="viewClientDetails('${c.id}')" class="bg-indigo-600 text-white px-3 py-1 rounded text-sm hover:bg-indigo-700">
+                        <i class="fas fa-eye mr-1"></i> Ver
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    container.classList.remove('hidden');
+}
+
+// ============================================================================
+// MÓDULO DE WHATSAPP
+// ============================================================================
+
+let currentWhatsAppClient = null;
+
+function openWhatsAppModal(clientId) {
+    const clients = Storage.getClients();
+    const client = clients.find(c => c.id === clientId);
+    
+    if (!client) {
+        showToast('Cliente não encontrado', 'error');
+        return;
+    }
+    
+    currentWhatsAppClient = client;
+    
+    document.getElementById('whatsapp-client-name').textContent = client.name;
+    document.getElementById('whatsapp-client-phone').textContent = client.phone || 'Sem telefone cadastrado';
+    document.getElementById('whatsapp-message').value = '';
+    
+    openModal('whatsapp-modal');
+}
+
+async function generateAIMessage() {
+    if (!currentWhatsAppClient) return;
+    
+    const messageInput = document.getElementById('whatsapp-message');
+    const settings = Storage.getSettings();
+    
+    if (!settings.geminiApiKey) {
+        showToast('Configure sua API Key do Gemini nas Configurações', 'error');
+        return;
+    }
+    
+    messageInput.value = 'Gerando mensagem com IA...';
+    messageInput.disabled = true;
+    
+    try {
+        const message = await AIAssistant.generatePersonalizedMessage(currentWhatsAppClient);
+        messageInput.value = message;
+    } catch (error) {
+        showToast(`Erro: ${error.message}`, 'error');
+        messageInput.value = '';
+    } finally {
+        messageInput.disabled = false;
+    }
+}
+
+function generateBasicMessage() {
+    if (!currentWhatsAppClient) return;
+    
+    const message = AIAssistant.generateBasicMessage(currentWhatsAppClient);
+    document.getElementById('whatsapp-message').value = message;
+}
+
+function sendWhatsApp() {
+    if (!currentWhatsAppClient) return;
+    
+    const phone = (currentWhatsAppClient.phone || '').replace(/\D/g, '');
+    const message = document.getElementById('whatsapp-message').value;
+    
+    if (!phone) {
+        showToast('Cliente não possui telefone cadastrado', 'error');
+        return;
+    }
+    
+    if (!message) {
+        showToast('Digite uma mensagem', 'error');
+        return;
+    }
+    
+    // Formatar número para WhatsApp (adicionar 55 se necessário)
+    let formattedPhone = phone;
+    if (phone.length === 10 || phone.length === 11) {
+        formattedPhone = '55' + phone;
+    }
+    
+    const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
+    window.open(whatsappUrl, '_blank');
+    
+    closeModal('whatsapp-modal');
+    showToast('Abrindo WhatsApp...', 'success');
+}
+
+// ============================================================================
+// ESTRATÉGIAS COM IA
+// ============================================================================
+
+async function generateReactivationStrategy() {
+    const settings = Storage.getSettings();
+    
+    if (!settings.geminiApiKey) {
+        showToast('Configure sua API Key do Gemini nas Configurações', 'error');
+        return;
+    }
+    
+    if (!selectedClients || selectedClients.length === 0) {
+        showToast('Selecione um segmento primeiro (clique em Quentes, Mornos ou Frios)', 'error');
+        return;
+    }
+    
+    const responseDiv = document.getElementById('ai-response');
+    responseDiv.classList.remove('hidden');
+    responseDiv.innerHTML = '<p class="text-white"><i class="fas fa-spinner fa-spin mr-2"></i> Analisando dados e gerando estratégia...</p>';
+    
+    // Preparar dados anonimizados do segmento
+    const segmentData = {
+        segmento: selectedSegment?.title || 'Clientes selecionados',
+        totalClientes: selectedClients.length,
+        estatisticas: {
+            receitaTotal: selectedClients.reduce((sum, c) => sum + c.totalSpent, 0),
+            mediaPedidos: selectedClients.reduce((sum, c) => sum + c.orderCount, 0) / selectedClients.length,
+            ticketMedio: selectedClients.reduce((sum, c) => sum + (c.totalSpent / (c.orderCount || 1)), 0) / selectedClients.length
+        },
+        estados: [...new Set(selectedClients.map(c => c.state?.uf).filter(Boolean))],
+        produtosMaisComprados: getTopProductsFromClients(selectedClients).slice(0, 5)
+    };
+    
+    try {
+        const result = await AIAssistant.generateStrategy(segmentData);
+        
+        responseDiv.innerHTML = `
+            <div class="space-y-4">
+                <div>
+                    <h4 class="font-semibold text-white mb-2">📊 Análise</h4>
+                    <p class="text-white/90">${escapeHtml(result.analise)}</p>
+                </div>
+                <div>
+                    <h4 class="font-semibold text-white mb-2">🎯 Estratégia Recomendada</h4>
+                    <p class="text-white/90">${escapeHtml(result.estrategia)}</p>
+                </div>
+                ${result.copies && result.copies.length > 0 ? `
+                    <div>
+                        <h4 class="font-semibold text-white mb-2">📝 Sugestões de Copy</h4>
+                        <div class="space-y-2">
+                            ${result.copies.map((copy, i) => `
+                                <div class="bg-white/10 rounded p-3">
+                                    <p class="font-medium text-white text-sm">${i + 1}. ${escapeHtml(copy.titulo)}</p>
+                                    <p class="text-white/80 text-sm mt-1">${escapeHtml(copy.mensagem)}</p>
+                                    <button onclick="copyToClipboard('${escapeHtml(copy.mensagem).replace(/'/g, "\\'")}')" class="text-xs text-indigo-200 hover:text-white mt-2">
+                                        <i class="fas fa-copy mr-1"></i> Copiar
+                                    </button>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    } catch (error) {
+        responseDiv.innerHTML = `<p class="text-red-200"><i class="fas fa-exclamation-circle mr-2"></i> Erro: ${escapeHtml(error.message)}</p>`;
+    }
+}
+
+function getTopProductsFromClients(clients) {
+    const productMap = {};
+    clients.forEach(c => {
+        (c.products || []).forEach(p => {
+            if (!productMap[p.name]) {
+                productMap[p.name] = { name: p.name, quantity: 0 };
+            }
+            productMap[p.name].quantity += p.quantity;
+        });
+    });
+    return Object.values(productMap).sort((a, b) => b.quantity - a.quantity);
+}
+
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        showToast('Texto copiado!', 'success');
+    }).catch(() => {
+        showToast('Erro ao copiar', 'error');
+    });
+}
+
+// ============================================================================
+// IA SUGERE PARÂMETROS DE CLASSIFICAÇÃO
+// ============================================================================
+
+async function aiSuggestParameters() {
+    const settings = Storage.getSettings();
+    
+    if (!settings.geminiApiKey) {
+        showToast('Configure sua API Key do Gemini nas Configurações', 'error');
+        return;
+    }
+    
+    const responseDiv = document.getElementById('ai-response');
+    responseDiv.classList.remove('hidden');
+    responseDiv.innerHTML = '<p class="text-white"><i class="fas fa-spinner fa-spin mr-2"></i> Analisando sua base de dados... A IA está calculando os parâmetros ideais...</p>';
+    
+    try {
+        const result = await AIAssistant.suggestClassificationParams();
+        
+        if (result.error) {
+            throw new Error(result.error);
+        }
+        
+        responseDiv.innerHTML = `
+            <div class="space-y-6">
+                <!-- Termômetro -->
+                <div class="bg-white/20 rounded-lg p-4">
+                    <h4 class="font-bold text-white text-lg mb-3">🌡️ Termômetro de Clientes - Parâmetros Sugeridos</h4>
+                    <div class="grid grid-cols-3 gap-4 mb-3">
+                        <div class="text-center">
+                            <span class="text-3xl">🔥</span>
+                            <p class="font-bold text-xl text-yellow-300">${result.termometro?.quente_ate_dias || 30} dias</p>
+                            <p class="text-sm text-white/80">QUENTE</p>
+                        </div>
+                        <div class="text-center">
+                            <span class="text-3xl">🌡️</span>
+                            <p class="font-bold text-xl text-yellow-300">${result.termometro?.morno_ate_dias || 90} dias</p>
+                            <p class="text-sm text-white/80">MORNO</p>
+                        </div>
+                        <div class="text-center">
+                            <span class="text-3xl">❄️</span>
+                            <p class="font-bold text-xl text-yellow-300">+${result.termometro?.morno_ate_dias || 90} dias</p>
+                            <p class="text-sm text-white/80">FRIO</p>
+                        </div>
+                    </div>
+                    <p class="text-sm text-white/90 italic">${escapeHtml(result.termometro?.justificativa || '')}</p>
+                </div>
+                
+                <!-- VIP -->
+                <div class="bg-white/20 rounded-lg p-4">
+                    <h4 class="font-bold text-white text-lg mb-3">⭐ Classificação VIP - Parâmetros Sugeridos</h4>
+                    <div class="grid grid-cols-3 gap-4 mb-3">
+                        <div class="text-center">
+                            <span class="text-3xl">⭐</span>
+                            <p class="font-bold text-xl text-yellow-300">${formatCurrency(result.vip?.vip_valor_minimo || 500)}</p>
+                            <p class="text-sm text-white/80">VIP</p>
+                        </div>
+                        <div class="text-center">
+                            <span class="text-3xl">💎</span>
+                            <p class="font-bold text-xl text-yellow-300">${formatCurrency(result.vip?.super_vip_valor_minimo || 1500)}</p>
+                            <p class="text-sm text-white/80">SUPER VIP</p>
+                        </div>
+                        <div class="text-center">
+                            <span class="text-3xl">🏆</span>
+                            <p class="font-bold text-xl text-yellow-300">${result.vip?.fiel_pedidos_minimo || 5} pedidos</p>
+                            <p class="text-sm text-white/80">CLIENTE FIEL</p>
+                        </div>
+                    </div>
+                    <p class="text-sm text-white/90 italic">${escapeHtml(result.vip?.justificativa || '')}</p>
+                </div>
+                
+                <!-- Análise -->
+                <div class="bg-white/20 rounded-lg p-4">
+                    <h4 class="font-bold text-white text-lg mb-3">📊 Análise da IA</h4>
+                    <div class="space-y-3">
+                        <div>
+                            <p class="text-sm text-white/70 uppercase">Observações:</p>
+                            <p class="text-white">${escapeHtml(result.analise?.observacoes || '')}</p>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="bg-red-500/30 rounded p-3">
+                                <p class="text-sm text-white/70 uppercase">⚠️ Maior Risco:</p>
+                                <p class="text-white text-sm">${escapeHtml(result.analise?.maior_risco || '')}</p>
+                            </div>
+                            <div class="bg-green-500/30 rounded p-3">
+                                <p class="text-sm text-white/70 uppercase">💡 Maior Oportunidade:</p>
+                                <p class="text-white text-sm">${escapeHtml(result.analise?.maior_oportunidade || '')}</p>
+                            </div>
+                        </div>
+                        <div class="bg-yellow-500/30 rounded p-3">
+                            <p class="text-sm text-white/70 uppercase">🎯 Ação Prioritária Recomendada:</p>
+                            <p class="text-white font-medium">${escapeHtml(result.analise?.acao_prioritaria || '')}</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Botão Aplicar -->
+                <div class="flex justify-center gap-4">
+                    <button onclick="applyAISuggestedParams(${result.termometro?.quente_ate_dias || 30}, ${result.termometro?.morno_ate_dias || 90}, ${result.vip?.vip_valor_minimo || 500}, ${result.vip?.fiel_pedidos_minimo || 5})" 
+                            class="bg-yellow-400 text-gray-900 px-6 py-3 rounded-lg font-bold hover:bg-yellow-300 transition-colors">
+                        <i class="fas fa-check mr-2"></i> Aplicar Esses Parâmetros
+                    </button>
+                </div>
+            </div>
+        `;
+    } catch (error) {
+        responseDiv.innerHTML = `<p class="text-red-200"><i class="fas fa-exclamation-circle mr-2"></i> Erro: ${escapeHtml(error.message)}</p>`;
+    }
+}
+
+// Variáveis globais para parâmetros customizáveis
+let classificationParams = {
+    hotDays: 30,
+    warmDays: 90,
+    vipMinValue: 500,
+    loyalMinOrders: 5
+};
+
+function applyAISuggestedParams(hotDays, warmDays, vipMinValue, loyalMinOrders) {
+    classificationParams = { hotDays, warmDays, vipMinValue, loyalMinOrders };
+    
+    // Salvar nas configurações
+    const settings = Storage.getSettings();
+    settings.classificationParams = classificationParams;
+    Storage.saveSettings(settings);
+    
+    showToast('Parâmetros aplicados com sucesso! Atualizando dashboard...', 'success');
+    
+    // Recarregar dashboard
+    renderGrowthDashboard();
+}
+
+// Carregar parâmetros salvos
+function loadClassificationParams() {
+    const settings = Storage.getSettings();
+    if (settings.classificationParams) {
+        classificationParams = settings.classificationParams;
+    }
+}
+
+function setupGrowthEvents() {
+    // Cliques nos cards de temperatura
+    document.getElementById('temp-quente')?.addEventListener('click', () => showSegmentClients('quente'));
+    document.getElementById('temp-morno')?.addEventListener('click', () => showSegmentClients('morno'));
+    document.getElementById('temp-frio')?.addEventListener('click', () => showSegmentClients('frio'));
+    
+    // Botão atualizar análise
+    document.getElementById('refresh-analysis-btn')?.addEventListener('click', renderGrowthDashboard);
+    
+    // Botões de IA
+    document.getElementById('ai-suggest-params-btn')?.addEventListener('click', aiSuggestParameters);
+    document.getElementById('ai-reactivation-btn')?.addEventListener('click', generateReactivationStrategy);
+    document.getElementById('ai-vip-btn')?.addEventListener('click', () => {
+        showSegmentClients('vip');
+        generateReactivationStrategy();
+    });
+    
+    // Modal WhatsApp
+    document.getElementById('close-whatsapp-modal')?.addEventListener('click', () => closeModal('whatsapp-modal'));
+    document.getElementById('cancel-whatsapp-btn')?.addEventListener('click', () => closeModal('whatsapp-modal'));
+    document.getElementById('generate-ai-message')?.addEventListener('click', generateAIMessage);
+    document.getElementById('generate-basic-message')?.addEventListener('click', generateBasicMessage);
+    document.getElementById('send-whatsapp-btn')?.addEventListener('click', sendWhatsApp);
+}
+
+// ============================================================================
 // RENDERIZAÇÃO GERAL
 // ============================================================================
 
@@ -1062,6 +2215,7 @@ function renderAll() {
     renderClients();
     renderProducts();
     renderOrders();
+    renderGrowthDashboard();
 }
 
 // ============================================================================
@@ -1095,6 +2249,9 @@ function setupEventListeners() {
 
     // Filtros de pedidos
     orderSearchInput?.addEventListener('input', renderOrders);
+    
+    // Setup Growth Dashboard
+    setupGrowthEvents();
 }
 
 // Inicialização quando o DOM estiver pronto
@@ -1105,6 +2262,16 @@ document.addEventListener('DOMContentLoaded', () => {
     setupNavigation();
     setupModals();
     setupEventListeners();
+    
+    // Carregar parâmetros de classificação salvos
+    loadClassificationParams();
+    
+    // Carregar API Key nas configurações
+    const settings = Storage.getSettings();
+    const geminiKeyInput = document.getElementById('gemini-api-key');
+    if (geminiKeyInput && settings.geminiApiKey) {
+        geminiKeyInput.value = settings.geminiApiKey;
+    }
     
     // Verificar última sincronização
     const lastSync = Storage.getLastSync();
@@ -1118,5 +2285,10 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('CRM FacilZap - Pronto!');
 });
 
-// Expor função para uso global (para onclick no HTML)
+// Expor funções para uso global (para onclick no HTML)
 window.viewOrderDetails = viewOrderDetails;
+window.viewClientDetails = viewClientDetails;
+window.openWhatsAppModal = openWhatsAppModal;
+window.showSegmentClients = showSegmentClients;
+window.copyToClipboard = copyToClipboard;
+window.applyAISuggestedParams = applyAISuggestedParams;

@@ -6,7 +6,7 @@ const https = require('https');
 const PORT = 3000;
 
 // Configuração do Token - COLOQUE SEU TOKEN AQUI
-const FACILZAP_TOKEN = process.env.FACILZAP_TOKEN || 'SEU_TOKEN_AQUI';
+const FACILZAP_TOKEN = process.env.FACILZAP_TOKEN || '18984snBHqwS7ACgukUyeqadAYzE8E6ch2k27Qavj1vheckRVXKjJAMZfvcu8aS7MIanmBsnxOjyqPXpEcwT4';
 
 // Função para fazer requisições HTTPS
 function fetchAPI(url, token) {
@@ -114,6 +114,18 @@ async function handleAPIProxy(res) {
 
         console.log(`[INFO] Sincronização concluída: ${clients.length} clientes, ${orders.length} pedidos, ${products.length} produtos`);
 
+        // Log de debug para verificar estrutura dos produtos
+        if (products.length > 0) {
+            const sample = products[0];
+            console.log('[DEBUG] Exemplo de produto da API:');
+            console.log('  - id:', sample.id);
+            console.log('  - nome:', sample.nome);
+            console.log('  - preco:', sample.preco);
+            console.log('  - catalogos:', JSON.stringify(sample.catalogos)?.substring(0, 200));
+            console.log('  - imagens:', JSON.stringify(sample.imagens)?.substring(0, 200));
+            console.log('  - variacoes:', sample.variacoes?.length || 0, 'variações');
+        }
+
         res.writeHead(200, headers);
         res.end(JSON.stringify({ clients, orders, products }));
 
@@ -140,7 +152,8 @@ const mimeTypes = {
 
 // Criar servidor HTTP
 const server = http.createServer(async (req, res) => {
-    const url = req.url.split('?')[0];
+    const parsedUrl = new URL(req.url, `http://localhost:${PORT}`);
+    const url = parsedUrl.pathname;
     
     // CORS preflight
     if (req.method === 'OPTIONS') {
@@ -156,6 +169,12 @@ const server = http.createServer(async (req, res) => {
     // Endpoint do proxy da API
     if (url === '/api/facilzap-proxy') {
         await handleAPIProxy(res);
+        return;
+    }
+
+    // Endpoint do proxy de imagens
+    if (url === '/api/image-proxy') {
+        await handleImageProxy(req, res, parsedUrl);
         return;
     }
 
@@ -179,6 +198,85 @@ const server = http.createServer(async (req, res) => {
         }
     });
 });
+
+// Handler do proxy de imagens (para evitar CORS)
+async function handleImageProxy(req, res, parsedUrl) {
+    const headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=86400' // Cache de 24h
+    };
+
+    const imageUrl = parsedUrl.searchParams.get('url');
+    
+    if (!imageUrl) {
+        res.writeHead(400, headers);
+        res.end('URL da imagem não fornecida');
+        return;
+    }
+
+    // Validar se é URL do FácilZap
+    if (!imageUrl.includes('facilzap.app.br') && !imageUrl.includes('facilzap.com.br')) {
+        res.writeHead(403, headers);
+        res.end('URL não permitida');
+        return;
+    }
+
+    try {
+        const imageData = await fetchImage(imageUrl);
+        
+        // Determinar content-type pela extensão
+        const ext = path.extname(new URL(imageUrl).pathname).toLowerCase();
+        const contentTypes = {
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.gif': 'image/gif',
+            '.webp': 'image/webp',
+            '.svg': 'image/svg+xml'
+        };
+        
+        res.writeHead(200, {
+            ...headers,
+            'Content-Type': contentTypes[ext] || 'image/jpeg'
+        });
+        res.end(imageData);
+        
+    } catch (error) {
+        console.error('[ERRO] Falha ao buscar imagem:', error.message);
+        res.writeHead(500, headers);
+        res.end('Erro ao buscar imagem');
+    }
+}
+
+// Função para buscar imagem via HTTPS
+function fetchImage(url) {
+    return new Promise((resolve, reject) => {
+        const urlObj = new URL(url);
+        const options = {
+            hostname: urlObj.hostname,
+            path: urlObj.pathname + urlObj.search,
+            method: 'GET',
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+        };
+
+        const req = https.request(options, (res) => {
+            const chunks = [];
+            res.on('data', chunk => chunks.push(chunk));
+            res.on('end', () => {
+                if (res.statusCode === 200) {
+                    resolve(Buffer.concat(chunks));
+                } else {
+                    reject(new Error(`HTTP ${res.statusCode}`));
+                }
+            });
+        });
+
+        req.on('error', reject);
+        req.end();
+    });
+}
 
 server.listen(PORT, () => {
     console.log('');
