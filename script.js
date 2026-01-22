@@ -1595,6 +1595,8 @@ function renderProducts() {
 
 function renderOrders() {
     const orders = Storage.getOrders();
+    console.log('[DEBUG renderOrders] Total de pedidos no Storage:', orders.length);
+    
     orderListContainer.innerHTML = '';
 
     const searchTerm = orderSearchInput?.value?.toLowerCase() || '';
