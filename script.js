@@ -3997,30 +3997,99 @@ const AIVigilante = {
     run() {
         console.log('[IA Vigilante] Analisando...');
         const clients = Storage.getClients();
+        const orders = Storage.getOrders();
         this.alerts = [];
         
-        // Urgentes (300+ dias, ticket alto)
-        const urgent = clients.filter(c => (c.stats?.daysSinceLastPurchase || 0) >= 300 && (c.stats?.averageTicket || 0) >= 200);
-        urgent.forEach(c => this.alerts.push({ type: 'urgent', priority: 1, client: c, title: `${c.name} - ${c.stats?.daysSinceLastPurchase} dias`,
-            reason: `Ticket: ${formatCurrency(c.stats?.averageTicket || 0)}`, suggestedCoupon: CouponManager.suggestCoupon(c) }));
-        
-        // Upsell
-        const upsell = clients.filter(c => (c.stats?.daysSinceLastPurchase || 999) <= 30 && (c.stats?.totalOrders || 0) >= 3).slice(0, 10);
-        upsell.forEach(c => this.alerts.push({ type: 'upsell', priority: 3, client: c, title: c.name, reason: `${c.stats?.totalOrders} ped, ${formatCurrency(c.stats?.averageTicket || 0)}` }));
-        
-        // Atrasados
-        const late = clients.filter(c => {
-            const avg = c.stats?.avgPurchaseInterval || 0;
-            const days = c.stats?.daysSinceLastPurchase || 0;
-            return avg > 0 && days > avg * 1.5 && (c.stats?.totalOrders || 0) >= 3;
+        // Calcular stats para cada cliente baseado nos pedidos
+        const clientsWithStats = clients.map(client => {
+            const clientOrders = orders.filter(o => 
+                o.clientId == client.id || 
+                o.cliente_id == client.id ||
+                (o.clientName && client.name && o.clientName.toLowerCase().includes(client.name.toLowerCase().split(' ')[0]))
+            );
+            
+            const totalSpent = clientOrders.reduce((sum, o) => sum + (parseFloat(o.total) || 0), 0);
+            const totalOrders = clientOrders.length;
+            const averageTicket = totalOrders > 0 ? totalSpent / totalOrders : 0;
+            
+            // Calcular dias desde última compra
+            let daysSinceLastPurchase = 9999;
+            if (clientOrders.length > 0) {
+                const dates = clientOrders.map(o => new Date(o.data || o.date)).filter(d => !isNaN(d));
+                if (dates.length > 0) {
+                    const lastDate = new Date(Math.max(...dates));
+                    daysSinceLastPurchase = Math.ceil((new Date() - lastDate) / (1000 * 60 * 60 * 24));
+                }
+            } else if (client.lastPurchaseDate) {
+                daysSinceLastPurchase = Math.ceil((new Date() - new Date(client.lastPurchaseDate)) / (1000 * 60 * 60 * 24));
+            }
+            
+            // Calcular intervalo médio entre compras
+            let avgPurchaseInterval = 0;
+            if (clientOrders.length >= 2) {
+                const dates = clientOrders.map(o => new Date(o.data || o.date)).filter(d => !isNaN(d)).sort((a,b) => a-b);
+                if (dates.length >= 2) {
+                    let totalDays = 0;
+                    for (let i = 1; i < dates.length; i++) {
+                        totalDays += (dates[i] - dates[i-1]) / (1000 * 60 * 60 * 24);
+                    }
+                    avgPurchaseInterval = totalDays / (dates.length - 1);
+                }
+            }
+            
+            return {
+                ...client,
+                stats: { daysSinceLastPurchase, totalOrders, averageTicket, totalSpent, avgPurchaseInterval }
+            };
         });
-        late.forEach(c => this.alerts.push({ type: 'late', priority: 2, client: c, title: c.name, reason: `Comprava a cada ${Math.round(c.stats?.avgPurchaseInterval || 0)}d, há ${c.stats?.daysSinceLastPurchase}d` }));
+        
+        console.log('[IA Vigilante] Clientes com stats:', clientsWithStats.length);
+        console.log('[IA Vigilante] Exemplo:', clientsWithStats[0]?.stats);
+        
+        // Urgentes (300+ dias, ticket alto OU muitos pedidos)
+        const urgent = clientsWithStats.filter(c => 
+            c.stats.daysSinceLastPurchase >= 300 && 
+            (c.stats.averageTicket >= 200 || c.stats.totalOrders >= 3)
+        );
+        urgent.forEach(c => this.alerts.push({ 
+            type: 'urgent', priority: 1, client: c, 
+            title: `${c.name} - ${c.stats.daysSinceLastPurchase} dias`,
+            reason: `Ticket: ${formatCurrency(c.stats.averageTicket)} • ${c.stats.totalOrders} pedidos`,
+            suggestedCoupon: CouponManager.suggestCoupon(c) 
+        }));
+        
+        // Também pegar inativos com menos dias mas com histórico relevante
+        const atRisk = clientsWithStats.filter(c => 
+            c.stats.daysSinceLastPurchase >= 90 && 
+            c.stats.daysSinceLastPurchase < 300 &&
+            c.stats.totalOrders >= 2
+        );
+        atRisk.slice(0, 10).forEach(c => this.alerts.push({ 
+            type: 'urgent', priority: 2, client: c, 
+            title: `${c.name} - ${c.stats.daysSinceLastPurchase} dias`,
+            reason: `Em risco • ${formatCurrency(c.stats.averageTicket)} • ${c.stats.totalOrders} ped`,
+            suggestedCoupon: CouponManager.suggestCoupon(c) 
+        }));
+        
+        // Upsell - clientes ativos com bom histórico
+        const upsell = clientsWithStats.filter(c => c.stats.daysSinceLastPurchase <= 30 && c.stats.totalOrders >= 3).slice(0, 10);
+        upsell.forEach(c => this.alerts.push({ type: 'upsell', priority: 3, client: c, title: c.name, reason: `${c.stats.totalOrders} ped, ${formatCurrency(c.stats.averageTicket)}` }));
+        
+        // Atrasados - passaram do intervalo normal de compra
+        const late = clientsWithStats.filter(c => {
+            const avg = c.stats.avgPurchaseInterval || 0;
+            const days = c.stats.daysSinceLastPurchase || 0;
+            return avg > 0 && days > avg * 1.5 && c.stats.totalOrders >= 3;
+        });
+        late.forEach(c => this.alerts.push({ type: 'late', priority: 2, client: c, title: c.name, reason: `Comprava a cada ${Math.round(c.stats.avgPurchaseInterval)}d, há ${c.stats.daysSinceLastPurchase}d` }));
         
         this.alerts.sort((a, b) => a.priority - b.priority);
-        const riskValue = urgent.reduce((s, c) => s + (c.stats?.totalSpent || 0), 0);
+        const totalUrgent = urgent.length + atRisk.length;
+        const riskValue = [...urgent, ...atRisk].reduce((s, c) => s + (c.stats.totalSpent || 0), 0);
         
-        this.updateDashboard({ urgentCount: urgent.length, riskValue, upsellCount: upsell.length, lateCount: late.length });
-        showToast(`IA: ${urgent.length} urgências!`, 'info');
+        this.updateDashboard({ urgentCount: totalUrgent, riskValue, upsellCount: upsell.length, lateCount: late.length });
+        console.log(`[IA Vigilante] Resultado: ${totalUrgent} urgentes, ${upsell.length} upsell, ${late.length} atrasados`);
+        showToast(`IA: ${totalUrgent} clientes precisam de ação!`, totalUrgent > 0 ? 'warning' : 'info');
     },
     
     updateDashboard(stats) {

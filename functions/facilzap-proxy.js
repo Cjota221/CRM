@@ -135,10 +135,29 @@ exports.handler = async (event) => {
     
     const products = productsRaw.map(p => ({
       id: p.id,
+      codigo: p.codigo,
       nome: p.nome,
+      descricao: p.descricao,
+      sku: p.sku,
       preco: p.preco,
+      valor: p.valor,
+      ativado: p.ativado,
+      ativo: p.ativo,
+      estoque: p.estoque,
       categoria: p.categoria,
-      ativo: p.ativo
+      catalogos: p.catalogos,
+      imagens: p.imagens || p.fotos || [],
+      variacoes: p.variacoes ? p.variacoes.map(v => ({
+        id: v.id,
+        codigo: v.codigo,
+        sku: v.sku,
+        nome: v.nome,
+        preco: v.preco,
+        valor: v.valor,
+        estoque: v.estoque,
+        ativada: v.ativada
+      })) : [],
+      cod_barras: p.cod_barras
     }));
     
     const elapsed = Date.now() - startTime;
