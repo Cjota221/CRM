@@ -1341,7 +1341,7 @@ async function syncData() {
                 state: c.estado || c.uf || '',
                 zip_code: c.cep || '',
                 origin: c.origem || '',
-                lastPurchaseDate: c.ultima_compra || null,
+                lastPurchaseDate: null,  // SERÁ PREENCHIDO APENAS PELOS PEDIDOS VÁLIDOS
                 totalSpent: 0,
                 orderCount: 0,
                 products: new Map(), // Map de produto_id -> {name, quantity, price, lastPurchase}
@@ -1353,15 +1353,19 @@ async function syncData() {
         const processedOrders = [];
         console.log('[DEBUG] Processando pedidos:', ordersToProcess.length);
         
+        // Contadores para debug
+        let pedidosValidos = 0;
+        let pedidosCancelados = 0;
+        let pedidosSemCliente = 0;
+        
         // Lista de status que indicam pedido CANCELADO ou NÃO PAGO (não conta como compra)
         const statusCancelado = [
             'cancelado', 'cancelada', 'cancelled', 'canceled',
             'recusado', 'recusada', 'refused',
-            'não pago', 'nao pago', 'unpaid',
             'expirado', 'expired',
             'estornado', 'refunded',
-            'devolvido', 'returned',
-            'aguardando', 'pendente', 'pending'  // Aguardando pagamento também não conta
+            'devolvido', 'returned'
+            // REMOVIDO: 'aguardando', 'pendente', 'pending' - muitos pedidos válidos podem ter esses status
         ];
         
         ordersToProcess.forEach(order => {
@@ -1386,28 +1390,33 @@ async function syncData() {
             const statusPago = order.status_pago;
             const statusEntregue = order.status_entregue;
             
-            // Um pedido é considerado VÁLIDO (pago) se:
-            // - status_pago === true ou === "1" ou === 1
-            // - OU status_entregue === true (se entregou, foi pago)
-            // - OU status contém "pago", "entregue", "concluido", "finalizado"
-            const isPaid = statusPago === true || statusPago === "1" || statusPago === 1 ||
-                          statusEntregue === true || statusEntregue === "1" || statusEntregue === 1 ||
-                          orderStatus.includes('pago') || 
-                          orderStatus.includes('entregue') || 
-                          orderStatus.includes('concluido') || 
-                          orderStatus.includes('finalizado');
-            
-            // Verificar se o pedido foi cancelado/não pago pelo texto do status
+            // Verificar se o pedido foi cancelado pelo texto do status
             const hasCancelledStatus = statusCancelado.some(s => orderStatus.includes(s));
             
-            // Pedido é válido se: foi pago E não tem status de cancelado
-            // OU se não podemos determinar (status_pago undefined) mas não tem status cancelado
-            const isValidOrder = (isPaid && !hasCancelledStatus) || 
-                                 (statusPago === undefined && !hasCancelledStatus && orderTotal > 0);
+            // NOVA LÓGICA SIMPLIFICADA:
+            // Um pedido é INVÁLIDO (cancelado) APENAS se:
+            // 1. Tem status de cancelado no texto
+            // 2. OU status_pago é explicitamente false/0/"0"
+            const isExplicitlyUnpaid = statusPago === false || statusPago === 0 || statusPago === "0";
+            const isCancelled = hasCancelledStatus || isExplicitlyUnpaid;
             
-            const isCancelled = !isValidOrder;
+            // Se não está cancelado, é válido
+            const isValidOrder = !isCancelled;
             
-            console.log(`[DEBUG] Pedido ${order.id} - Status: "${orderStatus}" - status_pago: ${statusPago} - Válido: ${isValidOrder}`);
+            if (isCancelled) {
+                pedidosCancelados++;
+            } else {
+                pedidosValidos++;
+            }
+            
+            if (!clientId || !clientsMap.has(clientId)) {
+                pedidosSemCliente++;
+            }
+            
+            // Log apenas para os primeiros 10 pedidos para não poluir o console
+            if (processedOrders.length < 10) {
+                console.log(`[DEBUG] Pedido ${order.id} - Data: ${order.data} - Status: "${orderStatus}" - status_pago: ${statusPago} - Cancelado: ${isCancelled}`);
+            }
 
             // Extrair produtos do pedido - tentar TODOS os campos possíveis
             const orderProducts = [];
@@ -1485,6 +1494,18 @@ async function syncData() {
                 }
             }
         });
+        
+        // LOG DE RESUMO
+        console.log(`[RESUMO PEDIDOS] Total: ${ordersToProcess.length} | Válidos: ${pedidosValidos} | Cancelados: ${pedidosCancelados} | Sem cliente: ${pedidosSemCliente}`);
+        
+        // Contar clientes com data de última compra
+        let clientesComData = 0;
+        let clientesSemData = 0;
+        clientsMap.forEach(c => {
+            if (c.lastPurchaseDate) clientesComData++;
+            else clientesSemData++;
+        });
+        console.log(`[RESUMO CLIENTES] Com data última compra: ${clientesComData} | Sem data: ${clientesSemData}`);
 
         // Converter Map de produtos de cada cliente para Array
         const processedClients = Array.from(clientsMap.values()).map(client => ({
