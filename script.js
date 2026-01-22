@@ -1373,7 +1373,10 @@ async function syncData() {
                 
             const orderDate = order.data ? new Date(order.data) : new Date();
             const orderTotal = parseFloat(order.total) || parseFloat(order.valor_total) || 0;
-            const orderStatus = (order.status || order.status_pedido || '').toLowerCase().trim();
+            
+            // Converter status para string de forma segura (pode vir como número ou objeto)
+            const rawStatus = order.status || order.status_pedido || '';
+            const orderStatus = String(rawStatus).toLowerCase().trim();
             
             // Verificar se o pedido foi cancelado/não pago
             const isCancelled = statusCancelado.some(s => orderStatus.includes(s));
