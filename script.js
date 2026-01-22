@@ -1864,6 +1864,22 @@ function saveClient(e) {
 
 function renderProducts() {
     const products = Storage.getProducts();
+    
+    // DEBUG: Verificar o que está vindo do localStorage
+    console.log('[RENDER] Total produtos:', products.length);
+    if (products.length > 0) {
+        const sample = products[0];
+        console.log('[RENDER] Primeiro produto do Storage:', {
+            name: sample.name,
+            price: sample.price,
+            image: sample.image,
+            stock: sample.stock
+        });
+        const comPreco = products.filter(p => p.price > 0).length;
+        const comImagem = products.filter(p => p.image).length;
+        console.log(`[RENDER] Com preço: ${comPreco}/${products.length}, Com imagem: ${comImagem}/${products.length}`);
+    }
+    
     productCardsContainer.innerHTML = '';
 
     const searchTerm = productSearchInput?.value?.toLowerCase() || '';
