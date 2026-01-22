@@ -988,17 +988,25 @@ function processarVariacoes(produto) {
 
 function processarProdutoAPI(p) {
     const variacoes = processarVariacoes(p);
+    const preco = extrairPreco(p);
+    const imagem = extrairImagemPrincipal(p);
+    
+    // Debug: logar alguns produtos para verificar
+    if (Math.random() < 0.1) {
+        console.log('[DEBUG Produto]', p.nome, '- Preço:', preco, '- Imagem:', imagem);
+    }
+    
     return {
         id: String(p.id ?? p.codigo),
         codigo: p.codigo || p.id,
         name: p.nome ?? 'Sem nome',
         description: p.descricao || '',
         sku: p.sku || p.codigo || '',
-        price: extrairPreco(p),
+        price: preco,
         stock: calcularEstoqueTotal(p),
         isActive: Boolean(p.ativado ?? p.ativo ?? true),
         managesStock: Boolean(p.estoque?.controlar_estoque),
-        image: extrairImagemPrincipal(p),
+        image: imagem,
         images: extrairTodasImagens(p),
         barcode: extrairCodigoBarras(p),
         variacoes: variacoes,
@@ -1859,9 +1867,9 @@ function renderProducts() {
         const card = document.createElement('div');
         card.className = 'bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow';
 
-        // Usar URL direta da imagem (sem proxy)
-        const imageUrl = product.image || 
-            'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%23f3f4f6" width="100" height="100"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="%239ca3af" font-size="12">Sem Imagem</text></svg>';
+        // Usar URL direta da imagem ou placeholder simples
+        const placeholderImg = 'https://via.placeholder.com/200x200?text=Sem+Foto';
+        const imageUrl = product.image || placeholderImg;
 
         // Determinar classe de estoque
         const stockClass = product.managesStock 
@@ -1873,7 +1881,7 @@ function renderProducts() {
 
         card.innerHTML = `
             <div class="aspect-square bg-gray-100 relative">
-                <img src="${imageUrl}" alt="${escapeHtml(product.name)}" class="w-full h-full object-cover" onerror="this.onerror=null;this.src='data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27%3E%3Crect fill=%27%23f3f4f6%27 width=%27100%27 height=%27100%27/%3E%3Ctext x=%2750%25%27 y=%2750%25%27 dominant-baseline=%27middle%27 text-anchor=%27middle%27 fill=%27%239ca3af%27 font-size=%2712%27%3ESem Imagem%3C/text%3E%3C/svg%3E'">
+                <img src="${imageUrl}" alt="${escapeHtml(product.name)}" class="w-full h-full object-cover" onerror="this.onerror=null;this.src='https://via.placeholder.com/200x200?text=Sem+Foto'">
                 <span class="absolute top-2 right-2 stock-badge ${product.isActive ? 'stock-in' : 'stock-out'}">${product.isActive ? 'Ativo' : 'Inativo'}</span>
                 ${product.hasVariacoes ? `
                     <span class="absolute top-2 left-2 bg-purple-600 text-white text-xs px-2 py-1 rounded-full">
