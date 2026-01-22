@@ -554,9 +554,9 @@ FORMATO DE RESPOSTA (JSON):
         const product = client.products?.[0]?.name || 'nossos produtos';
         
         const templates = [
-            `Oi ${firstName}! 😊 Faz ${days} dias que não te vemos por aqui. Sentimos sua falta! Que tal conferir as novidades? Temos condições especiais para você! 🎁`,
+            `Oi ${firstName}! Faz ${days} dias que não te vemos por aqui. Sentimos sua falta! Que tal conferir as novidades? Temos condições especiais para você!`,
             `${firstName}, tudo bem? Vi que faz um tempinho que você não compra ${product}. Chegou reposição e separei um cupom especial pra você! 💝`,
-            `Olá ${firstName}! 👋 Lembrei de você hoje! Temos novidades incríveis e um desconto exclusivo esperando por você. Vem conferir! ✨`
+            `Olá ${firstName}! Lembrei de você hoje! Temos novidades incríveis e um desconto exclusivo esperando por você. Vem conferir!`
         ];
         
         return templates[Math.floor(Math.random() * templates.length)];
@@ -1052,15 +1052,15 @@ async function syncData() {
                 id: String(c.id),
                 name: c.nome || 'Cliente sem nome',
                 email: c.email || '',
-                phone: c.whatsapp || '',
+                phone: c.telefone || c.whatsapp || c.celular || '',
                 birthday: c.data_nascimento || null,
                 cpf: c.cpf_cnpj || '',
-                address: '',
+                address: c.endereco || '',
                 address_number: '',
                 address_complement: '',
-                address_neighborhood: '',
-                city: '',
-                state: '',
+                address_neighborhood: c.bairro || '',
+                city: c.cidade || '',
+                state: c.estado || '',
                 zip_code: '',
                 origin: c.origem || '',
                 lastPurchaseDate: c.ultima_compra || null,
@@ -1218,7 +1218,7 @@ function getClientTemperature(client) {
         return { temp: 'sem-dados', label: 'Sem Dados', emoji: '❓', color: 'gray', days: null };
     }
     if (days <= params.hotDays) {
-        return { temp: 'quente', label: 'Quente', emoji: '🔥', color: 'red', days };
+        return { temp: 'quente', label: 'Quente', emoji: '', icon: 'fa-fire-alt', color: 'red', days };
     }
     if (days <= params.warmDays) {
         return { temp: 'morno', label: 'Morno', emoji: '🌡️', color: 'yellow', days };
@@ -2135,7 +2135,7 @@ function showSegmentClients(type, value) {
     switch(type) {
         case 'quente':
             clients = analysis.byTemperature.quente.clients;
-            title = '🔥 Clientes Quentes';
+            title = 'Clientes Quentes';
             break;
         case 'morno':
             clients = analysis.byTemperature.morno.clients;
@@ -2404,7 +2404,7 @@ async function aiSuggestParameters() {
                     <h4 class="font-bold text-white text-lg mb-3">🌡️ Termômetro de Clientes - Parâmetros Sugeridos</h4>
                     <div class="grid grid-cols-3 gap-4 mb-3">
                         <div class="text-center">
-                            <span class="text-3xl">🔥</span>
+                            <span class="text-3xl text-red-500"><i class="fas fa-fire-alt"></i></span>
                             <p class="font-bold text-xl text-yellow-300">${result.termometro?.quente_ate_dias || 30} dias</p>
                             <p class="text-sm text-white/80">QUENTE</p>
                         </div>
@@ -3626,7 +3626,7 @@ const WebhookManager = {
         }
         
         const produtos = (cart.produtos || []).map(p => p.nome).join(', ');
-        const message = `Olá ${cart.cliente?.nome || ''}! 👋
+        const message = `Olá ${cart.cliente?.nome || ''}!
 
 Vi que você deixou alguns itens no carrinho:
 ${produtos}
@@ -3869,7 +3869,7 @@ const CouponManager = {
     resendCoupon(clientId, couponCode) {
         const client = Storage.getClients().find(c => c.id == clientId);
         if (!client?.phone) { showToast('Sem telefone', 'error'); return; }
-        const msg = `Olá ${client.name}! Você ainda não usou seu cupom: ${couponCode} 🎁`;
+        const msg = `Olá ${client.name}! Você ainda não usou seu cupom: ${couponCode}`;
         window.open(`https://wa.me/55${client.phone.replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
     }
 };
@@ -4170,7 +4170,7 @@ const AIVigilante = {
         const client = Storage.getClients().find(c => c.id == clientId);
         if (!client?.phone) { showToast('Sem telefone', 'error'); return; }
         CouponManager.assignCoupon(clientId, couponCode, client.name);
-        const msg = `Olá ${client.name?.split(' ')[0]}! 👋\n\nSentimos sua falta!\n\n🎁 Cupom EXCLUSIVO: ${couponCode}\n\nAproveite!`;
+        const msg = `Olá ${client.name?.split(' ')[0]}!\n\nSentimos sua falta!\n\nCupom EXCLUSIVO: ${couponCode}\n\nAproveite!`;
         window.open(`https://wa.me/55${client.phone.replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
         showToast(`Cupom enviado!`, 'success');
     },
@@ -4178,7 +4178,7 @@ const AIVigilante = {
     sendReminder(clientId) {
         const client = Storage.getClients().find(c => c.id == clientId);
         if (!client?.phone) { showToast('Sem telefone', 'error'); return; }
-        const msg = `Olá ${client.name?.split(' ')[0]}! 👋\n\nTudo bem? Faz um tempinho que não te vemos por aqui! 😊\n\nPosso te ajudar com algo?`;
+        const msg = `Olá ${client.name?.split(' ')[0]}!\n\nTudo bem? Faz um tempinho que não te vemos por aqui!\n\nPosso te ajudar com algo?`;
         window.open(`https://wa.me/55${client.phone.replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
     },
     

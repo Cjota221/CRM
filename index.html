@@ -112,7 +112,7 @@
                 <header class="bg-white shadow-sm">
                     <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
                         <div>
-                            <h1 class="text-xl font-semibold text-gray-900">🚀 Dashboard - Central de Ação</h1>
+                            <h1 class="text-xl font-semibold text-gray-900"><i class="fas fa-tachometer-alt mr-2 text-indigo-600"></i>Dashboard - Central de Ação</h1>
                             <p class="text-sm text-gray-500">Oportunidades identificadas pela IA Vigilante</p>
                         </div>
                         <button id="run-vigilante-btn" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">
@@ -127,7 +127,7 @@
                             <div class="bg-gradient-to-br from-red-500 to-red-600 rounded-lg shadow p-4 text-white">
                                 <div class="flex items-center justify-between">
                                     <div>
-                                        <p class="text-sm opacity-90">🔥 Urgentes Hoje</p>
+                                        <p class="text-sm opacity-90"><i class="fas fa-fire-alt mr-1"></i>Urgentes Hoje</p>
                                         <p class="text-3xl font-bold" id="dash-urgent-count">0</p>
                                         <p class="text-xs opacity-75">Clientes precisam de ação</p>
                                     </div>
@@ -137,7 +137,7 @@
                             <div class="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow p-4 text-white">
                                 <div class="flex items-center justify-between">
                                     <div>
-                                        <p class="text-sm opacity-90">💰 Valor em Risco</p>
+                                        <p class="text-sm opacity-90"><i class="fas fa-dollar-sign mr-1"></i>Valor em Risco</p>
                                         <p class="text-3xl font-bold" id="dash-risk-value">R$ 0</p>
                                         <p class="text-xs opacity-75">Ticket dos inativos</p>
                                     </div>
@@ -147,7 +147,7 @@
                             <div class="bg-gradient-to-br from-green-500 to-green-600 rounded-lg shadow p-4 text-white">
                                 <div class="flex items-center justify-between">
                                     <div>
-                                        <p class="text-sm opacity-90">✅ Recuperados (Mês)</p>
+                                        <p class="text-sm opacity-90"><i class="fas fa-check-circle mr-1"></i>Recuperados (Mês)</p>
                                         <p class="text-3xl font-bold" id="dash-recovered-count">0</p>
                                         <p class="text-xs opacity-75">Usaram cupons</p>
                                     </div>
@@ -157,7 +157,7 @@
                             <div class="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow p-4 text-white">
                                 <div class="flex items-center justify-between">
                                     <div>
-                                        <p class="text-sm opacity-90">📊 ROI Cupons</p>
+                                        <p class="text-sm opacity-90"><i class="fas fa-chart-line mr-1"></i>ROI Cupons</p>
                                         <p class="text-3xl font-bold" id="dash-coupon-roi">0%</p>
                                         <p class="text-xs opacity-75">Taxa de conversão</p>
                                     </div>
@@ -350,7 +350,7 @@
                     <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
                         <div class="flex items-baseline justify-between">
                             <div>
-                                <h1 class="text-xl font-semibold text-gray-900">🚀 Análise Estratégica</h1>
+                                <h1 class="text-xl font-semibold text-gray-900"><i class="fas fa-chart-bar mr-2 text-indigo-600"></i>Análise Estratégica</h1>
                                 <p class="text-sm text-gray-500">Seu assistente de Growth com IA</p>
                             </div>
                             <button id="refresh-analysis-btn" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
@@ -371,11 +371,11 @@
                             <div id="temp-quente" class="bg-white rounded-lg shadow p-6 cursor-pointer hover:shadow-lg transition-shadow border-l-4 border-red-500">
                                 <div class="flex items-center justify-between">
                                     <div>
-                                        <p class="text-sm text-gray-500">🔥 Clientes Quentes</p>
+                                        <p class="text-sm text-gray-500"><i class="fas fa-fire text-red-500 mr-1"></i>Clientes Quentes</p>
                                         <p class="text-3xl font-bold text-red-600" id="count-quente">0</p>
                                         <p class="text-xs text-gray-400">Compraram nos últimos 30 dias</p>
                                     </div>
-                                    <div class="text-4xl">🔥</div>
+                                    <div class="text-4xl text-red-500"><i class="fas fa-fire-alt"></i></div>
                                 </div>
                             </div>
                             <div id="temp-morno" class="bg-white rounded-lg shadow p-6 cursor-pointer hover:shadow-lg transition-shadow border-l-4 border-yellow-500">
@@ -759,7 +759,7 @@
                                     <p class="text-xs mt-1">pedido_atualizado</p>
                                 </div>
                                 <div class="bg-white/10 rounded-lg p-2 text-center">
-                                    <span class="text-2xl">💰</span>
+                                    <span class="text-2xl text-green-500"><i class="fas fa-dollar-sign"></i></span>
                                     <p class="text-xs mt-1">pedido_pago</p>
                                 </div>
                                 <div class="bg-white/10 rounded-lg p-2 text-center">
@@ -1253,7 +1253,7 @@
                     </div>
                     <div class="mb-4">
                         <label class="block text-sm font-medium text-gray-700 mb-2">Mensagem</label>
-                        <textarea id="bulk-message-text" rows="6" class="w-full border border-gray-300 rounded-md p-3 text-sm" placeholder="Use {nome} para personalizar com o nome do cliente e {cupom} para inserir o código do cupom">Olá {nome}! 👋
+                        <textarea id="bulk-message-text" rows="6" class="w-full border border-gray-300 rounded-md p-3 text-sm" placeholder="Use {nome} para personalizar com o nome do cliente e {cupom} para inserir o código do cupom">Olá {nome}!
 
 Sentimos sua falta! 💚
 
