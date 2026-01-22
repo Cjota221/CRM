@@ -83,12 +83,13 @@ exports.handler = async (event) => {
   try {
     const startTime = Date.now();
     
-    // Calcular datas para filtro de pedidos
-    const twoYearsAgo = new Date();
-    twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
-    const dataInicial = twoYearsAgo.toISOString().split('T')[0];
+    // Calcular datas para filtro de pedidos (1 ano para reduzir tamanho)
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    const dataInicial = oneYearAgo.toISOString().split('T')[0];
     const dataFinal = new Date().toISOString().split('T')[0];
-    const pedidosParams = `&filtros[data_inicial]=${dataInicial}&filtros[data_final]=${dataFinal}&filtros[incluir_produtos]=1`;
+    // Removido incluir_produtos=1 para reduzir tamanho da resposta
+    const pedidosParams = `&filtros[data_inicial]=${dataInicial}&filtros[data_final]=${dataFinal}`;
     
     console.log("[DEBUG] Data inicial:", dataInicial);
     console.log("[DEBUG] Data final:", dataFinal);
@@ -97,11 +98,48 @@ exports.handler = async (event) => {
     // Buscar tudo em paralelo
     console.log("[DEBUG] Iniciando Promise.all para buscar dados...");
     
-    const [clients, orders, products] = await Promise.all([
+    const [clientsRaw, ordersRaw, productsRaw] = await Promise.all([
       fetchAllParallel('https://api.facilzap.app.br/clientes', FACILZAP_TOKEN, 15, ''),
       fetchAllParallel('https://api.facilzap.app.br/pedidos', FACILZAP_TOKEN, 20, pedidosParams),
       fetchAllParallel('https://api.facilzap.app.br/produtos', FACILZAP_TOKEN, 5, '')
     ]);
+    
+    // Simplificar dados para reduzir tamanho da resposta (limite Netlify: 6MB)
+    const clients = clientsRaw.map(c => ({
+      id: c.id,
+      nome: c.nome,
+      telefone: c.telefone,
+      email: c.email,
+      endereco: c.endereco,
+      bairro: c.bairro,
+      cidade: c.cidade,
+      estado: c.estado,
+      created_at: c.created_at
+    }));
+    
+    const orders = ordersRaw.map(o => ({
+      id: o.id,
+      cliente_id: o.cliente_id,
+      cliente: o.cliente ? { id: o.cliente.id, nome: o.cliente.nome } : null,
+      data: o.data,
+      status: o.status,
+      total: o.total,
+      forma_pagamento: o.forma_pagamento,
+      itens: o.itens ? o.itens.map(i => ({
+        produto_id: i.produto_id,
+        nome: i.nome || i.produto?.nome,
+        quantidade: i.quantidade,
+        valor: i.valor
+      })) : []
+    }));
+    
+    const products = productsRaw.map(p => ({
+      id: p.id,
+      nome: p.nome,
+      preco: p.preco,
+      categoria: p.categoria,
+      ativo: p.ativo
+    }));
     
     const elapsed = Date.now() - startTime;
     
@@ -120,7 +158,7 @@ exports.handler = async (event) => {
     }
     
     const responseBody = JSON.stringify({ clients, orders, products });
-    console.log(`[DEBUG] Tamanho da resposta: ${responseBody.length} bytes`);
+    console.log(`[DEBUG] Tamanho da resposta: ${responseBody.length} bytes (limite: 6291556)`);
     
     return {
       statusCode: 200,
