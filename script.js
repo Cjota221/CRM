@@ -4529,9 +4529,11 @@ const CampaignManager = {
     exportCSV() {
         const selected = this.getSelectedClients();
         if (selected.length === 0) { showToast('Selecione clientes', 'error'); return; }
-        const rows = [['Nome', 'Telefone', 'Email', 'Ticket', 'Dias', 'Cupom']];
+        // Header modificado conforme solicitado: Nome, Números
+        const rows = [['Nome', 'Números', 'Email', 'Ticket', 'Dias', 'Cupom']];
         selected.forEach(c => {
             const s = c.stats || {};
+            // Garantir que o telefone esteja limpo (somente números) se necessário, ou manter formato
             rows.push([c.name, c.phone || '', c.email || '', s.averageTicket || 0, s.daysSinceLastPurchase || '', CouponManager.suggestCoupon(c).code]);
         });
         const csv = rows.map(r => r.map(x => `"${x}"`).join(',')).join('\n');
@@ -4884,7 +4886,8 @@ const AIVigilante = {
         const urgent = this.alerts.filter(a => a.type === 'urgent' || a.type === 'at_risk');
         if (urgent.length === 0) { showToast('Nenhum cliente urgente para exportar', 'info'); return; }
         
-        const headers = ['Nome', 'Telefone', 'Email', 'Último Pedido', 'Total Gasto', 'Qtd Pedidos', 'Dias Inativo', 'Motivo'];
+        // Coluna 'Números' em vez de 'Telefone'
+        const headers = ['Nome', 'Números', 'Email', 'Último Pedido', 'Total Gasto', 'Qtd Pedidos', 'Dias Inativo', 'Motivo'];
         const rows = urgent.map(a => {
             const c = a.client;
             const stats = a.stats || {};
@@ -4914,7 +4917,8 @@ const AIVigilante = {
         const clients = Storage.getClients().filter(c => c.phone);
         if (clients.length === 0) { showToast('Nenhum cliente com telefone', 'info'); return; }
         
-        const headers = ['Nome', 'Telefone', 'Email', 'Cidade', 'Último Pedido', 'Total Gasto', 'Qtd Pedidos', 'Status'];
+        // Coluna 'Números' em vez de 'Telefone'
+        const headers = ['Nome', 'Números', 'Email', 'Cidade', 'Último Pedido', 'Total Gasto', 'Qtd Pedidos', 'Status'];
         const rows = clients.map(c => [
             c.name || '',
             c.phone || '',
