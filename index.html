@@ -6,6 +6,9 @@
     <title>CRM Inteligente - FacilZap</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <!-- Bibliotecas para importação de planilhas -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -63,6 +66,9 @@
                 <div class="border-t border-gray-700 pt-4 mt-4 space-y-2">
                     <a href="#" id="sync-button" class="flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
                         <i class="fas fa-sync-alt w-6 text-center"></i><span class="ml-4">Sincronizar Dados</span>
+                    </a>
+                    <a href="#" id="import-legacy-button" class="flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
+                        <i class="fas fa-file-import w-6 text-center"></i><span class="ml-4">Importar Legado</span>
                     </a>
                      <a href="#" id="open-settings-button" class="flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
                         <i class="fas fa-cog w-6 text-center"></i><span class="ml-4">Configurações</span>
@@ -290,6 +296,164 @@
     
     <!-- Modal de Mensagem WhatsApp -->
     <div id="whatsapp-modal" class="fixed z-30 inset-0 overflow-y-auto hidden"><div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0"><div class="fixed inset-0 transition-opacity" aria-hidden="true"><div class="absolute inset-0 bg-gray-500 opacity-75 modal-bg"></div></div><span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span><div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full"><div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4"><div class="flex justify-between items-start mb-4"><h3 class="text-lg leading-6 font-medium text-gray-900"><i class="fab fa-whatsapp text-green-600 mr-2"></i>Enviar Mensagem</h3><button id="close-whatsapp-modal" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button></div><div class="mb-4"><label class="block text-sm font-medium text-gray-700 mb-2">Cliente</label><p id="whatsapp-client-name" class="font-semibold"></p><p id="whatsapp-client-phone" class="text-sm text-gray-500"></p></div><div class="mb-4"><label class="block text-sm font-medium text-gray-700 mb-2">Mensagem</label><textarea id="whatsapp-message" rows="5" class="w-full border border-gray-300 rounded-md p-3 text-sm"></textarea><div class="flex justify-between mt-2"><button id="generate-ai-message" class="text-indigo-600 text-sm hover:text-indigo-800"><i class="fas fa-magic mr-1"></i> Gerar com IA</button><button id="generate-basic-message" class="text-gray-600 text-sm hover:text-gray-800"><i class="fas fa-file-alt mr-1"></i> Template Básico</button></div></div></div><div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse"><button id="send-whatsapp-btn" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-green-600 text-base font-medium text-white hover:bg-green-700 sm:ml-3 sm:w-auto sm:text-sm"><i class="fab fa-whatsapp mr-2"></i> Abrir WhatsApp</button><button type="button" id="cancel-whatsapp-btn" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:w-auto sm:text-sm">Cancelar</button></div></div></div></div>
+
+    <!-- Modal de Importação de Legado -->
+    <div id="import-modal" class="fixed z-40 inset-0 overflow-y-auto hidden">
+        <div class="flex items-center justify-center min-h-screen p-4">
+            <div class="fixed inset-0 bg-gray-500 opacity-75 modal-bg"></div>
+            <div class="relative bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+                <!-- Header -->
+                <div class="bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-4 flex justify-between items-center">
+                    <h3 class="text-xl font-semibold text-white"><i class="fas fa-file-import mr-2"></i>Importar Dados de Legado</h3>
+                    <button id="close-import-modal" class="text-white hover:text-gray-200"><i class="fas fa-times fa-lg"></i></button>
+                </div>
+                
+                <!-- Steps Indicator -->
+                <div class="px-6 py-4 bg-gray-50 border-b">
+                    <div class="flex items-center justify-center space-x-4">
+                        <div id="step1-indicator" class="flex items-center">
+                            <span class="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center text-sm font-medium">1</span>
+                            <span class="ml-2 text-sm font-medium text-indigo-600">Upload</span>
+                        </div>
+                        <div class="w-16 h-1 bg-gray-300" id="step1-line"></div>
+                        <div id="step2-indicator" class="flex items-center opacity-50">
+                            <span class="w-8 h-8 rounded-full bg-gray-300 text-gray-600 flex items-center justify-center text-sm font-medium">2</span>
+                            <span class="ml-2 text-sm font-medium text-gray-500">Mapear Colunas</span>
+                        </div>
+                        <div class="w-16 h-1 bg-gray-300" id="step2-line"></div>
+                        <div id="step3-indicator" class="flex items-center opacity-50">
+                            <span class="w-8 h-8 rounded-full bg-gray-300 text-gray-600 flex items-center justify-center text-sm font-medium">3</span>
+                            <span class="ml-2 text-sm font-medium text-gray-500">Importar</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Content -->
+                <div class="px-6 py-6 overflow-y-auto" style="max-height: 60vh;">
+                    <!-- Step 1: Upload -->
+                    <div id="import-step-1">
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Tipo de dados a importar:</label>
+                            <div class="flex space-x-4">
+                                <label class="flex items-center">
+                                    <input type="radio" name="import-type" value="clientes" class="mr-2" checked>
+                                    <span class="text-sm">Clientes</span>
+                                </label>
+                                <label class="flex items-center">
+                                    <input type="radio" name="import-type" value="pedidos" class="mr-2">
+                                    <span class="text-sm">Pedidos</span>
+                                </label>
+                                <label class="flex items-center">
+                                    <input type="radio" name="import-type" value="produtos" class="mr-2">
+                                    <span class="text-sm">Produtos</span>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div id="dropzone" class="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center hover:border-indigo-500 hover:bg-indigo-50 transition-colors cursor-pointer">
+                            <i class="fas fa-cloud-upload-alt text-5xl text-gray-400 mb-4"></i>
+                            <p class="text-lg font-medium text-gray-700">Arraste seu arquivo aqui</p>
+                            <p class="text-sm text-gray-500 mt-2">ou clique para selecionar</p>
+                            <p class="text-xs text-gray-400 mt-4">Formatos aceitos: CSV, XLSX, XLS</p>
+                            <input type="file" id="file-input" accept=".csv,.xlsx,.xls" class="hidden">
+                        </div>
+                        
+                        <div id="file-info" class="mt-4 hidden">
+                            <div class="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center justify-between">
+                                <div class="flex items-center">
+                                    <i class="fas fa-file-excel text-green-600 text-2xl mr-3"></i>
+                                    <div>
+                                        <p id="file-name" class="font-medium text-gray-800"></p>
+                                        <p id="file-rows" class="text-sm text-gray-500"></p>
+                                    </div>
+                                </div>
+                                <button id="remove-file" class="text-red-500 hover:text-red-700"><i class="fas fa-times"></i></button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Step 2: Mapeamento de Colunas -->
+                    <div id="import-step-2" class="hidden">
+                        <div class="mb-4">
+                            <p class="text-sm text-gray-600 mb-4">
+                                <i class="fas fa-info-circle text-indigo-500 mr-1"></i>
+                                Mapeie as colunas do seu arquivo para os campos do sistema. Campos com <span class="text-red-500">*</span> são obrigatórios.
+                            </p>
+                        </div>
+                        
+                        <div id="mapping-container" class="space-y-3">
+                            <!-- Campos de mapeamento serão inseridos aqui via JS -->
+                        </div>
+                        
+                        <div class="mt-6 bg-gray-50 rounded-lg p-4">
+                            <h4 class="font-medium text-gray-800 mb-2"><i class="fas fa-eye mr-2"></i>Prévia dos Dados (primeiras 3 linhas)</h4>
+                            <div id="data-preview" class="overflow-x-auto">
+                                <table class="min-w-full text-xs">
+                                    <thead id="preview-header"></thead>
+                                    <tbody id="preview-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Step 3: Resultado da Importação -->
+                    <div id="import-step-3" class="hidden">
+                        <div id="import-progress" class="mb-6">
+                            <div class="flex items-center justify-center mb-4">
+                                <i class="fas fa-spinner fa-spin text-4xl text-indigo-600"></i>
+                            </div>
+                            <p class="text-center text-gray-600">Processando importação...</p>
+                            <div class="w-full bg-gray-200 rounded-full h-2.5 mt-4">
+                                <div id="progress-bar" class="bg-indigo-600 h-2.5 rounded-full transition-all" style="width: 0%"></div>
+                            </div>
+                            <p id="progress-text" class="text-center text-sm text-gray-500 mt-2">0%</p>
+                        </div>
+                        
+                        <div id="import-result" class="hidden">
+                            <div class="text-center mb-6">
+                                <i class="fas fa-check-circle text-6xl text-green-500 mb-4"></i>
+                                <h4 class="text-xl font-semibold text-gray-800">Importação Concluída!</h4>
+                            </div>
+                            
+                            <div class="grid grid-cols-3 gap-4 mb-6">
+                                <div class="bg-green-50 rounded-lg p-4 text-center">
+                                    <p class="text-2xl font-bold text-green-600" id="result-new">0</p>
+                                    <p class="text-sm text-gray-600">Novos Registros</p>
+                                </div>
+                                <div class="bg-blue-50 rounded-lg p-4 text-center">
+                                    <p class="text-2xl font-bold text-blue-600" id="result-merged">0</p>
+                                    <p class="text-sm text-gray-600">Registros Mesclados</p>
+                                </div>
+                                <div class="bg-yellow-50 rounded-lg p-4 text-center">
+                                    <p class="text-2xl font-bold text-yellow-600" id="result-skipped">0</p>
+                                    <p class="text-sm text-gray-600">Ignorados (duplicados)</p>
+                                </div>
+                            </div>
+                            
+                            <div id="import-warnings" class="hidden bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                                <h5 class="font-medium text-yellow-800 mb-2"><i class="fas fa-exclamation-triangle mr-2"></i>Avisos</h5>
+                                <ul id="warnings-list" class="text-sm text-yellow-700 list-disc list-inside"></ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Footer -->
+                <div class="bg-gray-50 px-6 py-4 flex justify-between items-center border-t">
+                    <button id="import-back-btn" class="px-4 py-2 text-gray-600 hover:text-gray-800 hidden">
+                        <i class="fas fa-arrow-left mr-2"></i>Voltar
+                    </button>
+                    <div class="flex-1"></div>
+                    <button id="import-next-btn" class="px-6 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                        Próximo <i class="fas fa-arrow-right ml-2"></i>
+                    </button>
+                    <button id="import-finish-btn" class="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 hidden">
+                        <i class="fas fa-check mr-2"></i>Concluir
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div id="toast-container" class="toast-container"></div>
     

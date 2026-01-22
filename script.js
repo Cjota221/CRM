@@ -2553,8 +2553,734 @@ document.addEventListener('DOMContentLoaded', () => {
     // Renderizar dados existentes
     renderAll();
     
+    // Inicializar importador de legado
+    initLegacyImporter();
+    
     console.log('CRM FacilZap - Pronto!');
 });
+
+// ============================================================================
+// IMPORTADOR DE DADOS LEGADOS (CSV/XLSX)
+// ============================================================================
+
+const LegacyImporter = {
+    currentStep: 1,
+    fileData: null,
+    fileColumns: [],
+    mapping: {},
+    importType: 'clientes',
+    
+    // Campos do sistema para cada tipo de importação
+    systemFields: {
+        clientes: [
+            { key: 'nome', label: 'Nome', required: true },
+            { key: 'email', label: 'E-mail', required: false },
+            { key: 'telefone', label: 'Telefone/WhatsApp', required: false },
+            { key: 'cpf', label: 'CPF', required: false },
+            { key: 'cidade', label: 'Cidade', required: false },
+            { key: 'estado', label: 'Estado/UF', required: false },
+            { key: 'bairro', label: 'Bairro', required: false },
+            { key: 'endereco', label: 'Endereço', required: false },
+            { key: 'data_cadastro', label: 'Data de Cadastro', required: false }
+        ],
+        pedidos: [
+            { key: 'cliente_nome', label: 'Nome do Cliente', required: true },
+            { key: 'cliente_telefone', label: 'Telefone do Cliente', required: false },
+            { key: 'cliente_email', label: 'E-mail do Cliente', required: false },
+            { key: 'data_pedido', label: 'Data do Pedido', required: true },
+            { key: 'valor_total', label: 'Valor Total', required: true },
+            { key: 'status', label: 'Status', required: false },
+            { key: 'produtos', label: 'Produtos (lista)', required: false },
+            { key: 'forma_pagamento', label: 'Forma de Pagamento', required: false }
+        ],
+        produtos: [
+            { key: 'nome', label: 'Nome do Produto', required: true },
+            { key: 'preco', label: 'Preço', required: false },
+            { key: 'sku', label: 'SKU/Código', required: false },
+            { key: 'categoria', label: 'Categoria', required: false },
+            { key: 'estoque', label: 'Estoque', required: false }
+        ]
+    },
+    
+    // Normalizar telefone para comparação
+    normalizePhone(phone) {
+        if (!phone) return '';
+        return String(phone).replace(/\D/g, '').slice(-11);
+    },
+    
+    // Normalizar email para comparação
+    normalizeEmail(email) {
+        if (!email) return '';
+        return String(email).toLowerCase().trim();
+    },
+    
+    // Parsear data em vários formatos
+    parseDate(dateStr) {
+        if (!dateStr) return null;
+        
+        // Tentar vários formatos
+        const formats = [
+            /^(\d{2})\/(\d{2})\/(\d{4})$/, // DD/MM/YYYY
+            /^(\d{4})-(\d{2})-(\d{2})$/, // YYYY-MM-DD
+            /^(\d{2})-(\d{2})-(\d{4})$/, // DD-MM-YYYY
+            /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/ // D/M/YY ou DD/MM/YYYY
+        ];
+        
+        const str = String(dateStr).trim();
+        
+        // Formato DD/MM/YYYY
+        let match = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+        if (match) {
+            let year = parseInt(match[3]);
+            if (year < 100) year += 2000;
+            return new Date(year, parseInt(match[2]) - 1, parseInt(match[1])).toISOString();
+        }
+        
+        // Formato YYYY-MM-DD
+        match = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (match) {
+            return new Date(match[0]).toISOString();
+        }
+        
+        // Tentar parse direto
+        const parsed = new Date(str);
+        if (!isNaN(parsed.getTime())) {
+            return parsed.toISOString();
+        }
+        
+        return null;
+    },
+    
+    // Parsear valor monetário
+    parseValue(val) {
+        if (!val) return 0;
+        const str = String(val).replace(/[R$\s]/g, '').replace(',', '.');
+        return parseFloat(str) || 0;
+    },
+    
+    // Encontrar cliente existente por chave única
+    findExistingClient(newClient) {
+        const clients = Storage.getClients();
+        
+        // Prioridade: Email > Telefone > CPF > Nome exato
+        for (const existing of clients) {
+            // Por email
+            if (newClient.email && existing.email) {
+                if (this.normalizeEmail(newClient.email) === this.normalizeEmail(existing.email)) {
+                    return existing;
+                }
+            }
+            
+            // Por telefone
+            if (newClient.telefone && existing.phone) {
+                if (this.normalizePhone(newClient.telefone) === this.normalizePhone(existing.phone)) {
+                    return existing;
+                }
+            }
+            
+            // Por CPF
+            if (newClient.cpf && existing.cpf) {
+                const cpf1 = String(newClient.cpf).replace(/\D/g, '');
+                const cpf2 = String(existing.cpf).replace(/\D/g, '');
+                if (cpf1 === cpf2 && cpf1.length >= 11) {
+                    return existing;
+                }
+            }
+            
+            // Por nome exato (último recurso)
+            if (newClient.nome && existing.name) {
+                if (newClient.nome.toLowerCase().trim() === existing.name.toLowerCase().trim()) {
+                    return existing;
+                }
+            }
+        }
+        
+        return null;
+    },
+    
+    // Processar arquivo CSV
+    parseCSV(file) {
+        return new Promise((resolve, reject) => {
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                encoding: 'UTF-8',
+                complete: (results) => {
+                    resolve({
+                        data: results.data,
+                        columns: results.meta.fields || []
+                    });
+                },
+                error: (error) => reject(error)
+            });
+        });
+    },
+    
+    // Processar arquivo XLSX/XLS
+    parseExcel(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const jsonData = XLSX.utils.sheet_to_json(firstSheet, { defval: '' });
+                    
+                    const columns = jsonData.length > 0 ? Object.keys(jsonData[0]) : [];
+                    resolve({ data: jsonData, columns });
+                } catch (err) {
+                    reject(err);
+                }
+            };
+            reader.onerror = reject;
+            reader.readAsArrayBuffer(file);
+        });
+    },
+    
+    // Importar clientes
+    importClients(data, mapping) {
+        const clients = Storage.getClients();
+        const results = { new: 0, merged: 0, skipped: 0, warnings: [] };
+        
+        for (const row of data) {
+            const newClient = {};
+            
+            // Mapear campos
+            for (const [systemField, fileColumn] of Object.entries(mapping)) {
+                if (fileColumn && row[fileColumn] !== undefined) {
+                    newClient[systemField] = row[fileColumn];
+                }
+            }
+            
+            // Validar campos obrigatórios
+            if (!newClient.nome) {
+                results.skipped++;
+                continue;
+            }
+            
+            // Verificar se já existe
+            const existing = this.findExistingClient(newClient);
+            
+            if (existing) {
+                // Mesclar dados (adicionar campos que estão vazios)
+                let updated = false;
+                
+                if (!existing.email && newClient.email) {
+                    existing.email = newClient.email;
+                    updated = true;
+                }
+                if (!existing.phone && newClient.telefone) {
+                    existing.phone = newClient.telefone;
+                    updated = true;
+                }
+                if (!existing.city && newClient.cidade) {
+                    existing.city = newClient.cidade;
+                    updated = true;
+                }
+                if (!existing.state && newClient.estado) {
+                    existing.state = newClient.estado;
+                    updated = true;
+                }
+                if (!existing.cpf && newClient.cpf) {
+                    existing.cpf = newClient.cpf;
+                    updated = true;
+                }
+                
+                // Marcar origem do merge
+                if (!existing.sources) existing.sources = ['api'];
+                if (!existing.sources.includes('legado')) {
+                    existing.sources.push('legado');
+                }
+                
+                if (updated) {
+                    results.merged++;
+                } else {
+                    results.skipped++;
+                }
+            } else {
+                // Criar novo cliente
+                const clientId = 'legado_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                
+                clients.push({
+                    id: clientId,
+                    name: newClient.nome,
+                    email: newClient.email || '',
+                    phone: newClient.telefone || '',
+                    city: newClient.cidade || '',
+                    state: newClient.estado || '',
+                    neighborhood: newClient.bairro || '',
+                    address: newClient.endereco || '',
+                    cpf: newClient.cpf || '',
+                    createdAt: this.parseDate(newClient.data_cadastro) || new Date().toISOString(),
+                    sources: ['legado'],
+                    orderCount: 0,
+                    totalSpent: 0,
+                    lastPurchaseDate: null,
+                    products: []
+                });
+                
+                results.new++;
+            }
+        }
+        
+        Storage.saveClients(clients);
+        return results;
+    },
+    
+    // Importar pedidos
+    importOrders(data, mapping) {
+        const orders = Storage.getOrders();
+        const clients = Storage.getClients();
+        const results = { new: 0, merged: 0, skipped: 0, warnings: [] };
+        
+        for (const row of data) {
+            const orderData = {};
+            
+            // Mapear campos
+            for (const [systemField, fileColumn] of Object.entries(mapping)) {
+                if (fileColumn && row[fileColumn] !== undefined) {
+                    orderData[systemField] = row[fileColumn];
+                }
+            }
+            
+            // Validar campos obrigatórios
+            if (!orderData.data_pedido || !orderData.valor_total) {
+                results.skipped++;
+                continue;
+            }
+            
+            // Tentar vincular a um cliente
+            let clientId = null;
+            let clientName = orderData.cliente_nome || 'Cliente Desconhecido';
+            
+            if (orderData.cliente_nome || orderData.cliente_telefone || orderData.cliente_email) {
+                const matchClient = this.findExistingClient({
+                    nome: orderData.cliente_nome,
+                    telefone: orderData.cliente_telefone,
+                    email: orderData.cliente_email
+                });
+                
+                if (matchClient) {
+                    clientId = matchClient.id;
+                    clientName = matchClient.name;
+                    
+                    // Atualizar estatísticas do cliente
+                    const orderDate = this.parseDate(orderData.data_pedido);
+                    const orderValue = this.parseValue(orderData.valor_total);
+                    
+                    matchClient.orderCount = (matchClient.orderCount || 0) + 1;
+                    matchClient.totalSpent = (matchClient.totalSpent || 0) + orderValue;
+                    
+                    if (orderDate && (!matchClient.lastPurchaseDate || orderDate > matchClient.lastPurchaseDate)) {
+                        matchClient.lastPurchaseDate = orderDate;
+                    }
+                } else {
+                    results.warnings.push(`Pedido sem cliente vinculado: ${orderData.cliente_nome || 'sem nome'}`);
+                }
+            }
+            
+            // Criar pedido
+            const orderId = 'legado_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            
+            orders.push({
+                id: orderId,
+                cliente_id: clientId,
+                cliente: { id: clientId, nome: clientName },
+                data: this.parseDate(orderData.data_pedido) || new Date().toISOString(),
+                total: this.parseValue(orderData.valor_total),
+                status: orderData.status || 'concluido',
+                forma_pagamento: orderData.forma_pagamento || '',
+                itens: orderData.produtos ? [{ nome: orderData.produtos }] : [],
+                source: 'legado'
+            });
+            
+            results.new++;
+        }
+        
+        Storage.saveOrders(orders);
+        Storage.saveClients(clients);
+        return results;
+    },
+    
+    // Importar produtos
+    importProducts(data, mapping) {
+        const products = Storage.getProducts();
+        const results = { new: 0, merged: 0, skipped: 0, warnings: [] };
+        
+        for (const row of data) {
+            const prodData = {};
+            
+            // Mapear campos
+            for (const [systemField, fileColumn] of Object.entries(mapping)) {
+                if (fileColumn && row[fileColumn] !== undefined) {
+                    prodData[systemField] = row[fileColumn];
+                }
+            }
+            
+            // Validar campos obrigatórios
+            if (!prodData.nome) {
+                results.skipped++;
+                continue;
+            }
+            
+            // Verificar se já existe (por nome ou SKU)
+            const existing = products.find(p => 
+                p.name?.toLowerCase() === prodData.nome.toLowerCase() ||
+                (prodData.sku && p.sku === prodData.sku)
+            );
+            
+            if (existing) {
+                results.skipped++;
+                continue;
+            }
+            
+            // Criar produto
+            products.push({
+                id: 'legado_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+                name: prodData.nome,
+                sku: prodData.sku || '',
+                price: this.parseValue(prodData.preco),
+                categoria: prodData.categoria || '',
+                stock: parseInt(prodData.estoque) || 0,
+                isActive: true,
+                source: 'legado'
+            });
+            
+            results.new++;
+        }
+        
+        Storage.saveProducts(products);
+        return results;
+    },
+    
+    // Executar importação
+    runImport() {
+        const type = this.importType;
+        const data = this.fileData;
+        const mapping = this.mapping;
+        
+        switch (type) {
+            case 'clientes':
+                return this.importClients(data, mapping);
+            case 'pedidos':
+                return this.importOrders(data, mapping);
+            case 'produtos':
+                return this.importProducts(data, mapping);
+            default:
+                return { new: 0, merged: 0, skipped: 0, warnings: ['Tipo de importação inválido'] };
+        }
+    }
+};
+
+// Inicializar interface do importador
+function initLegacyImporter() {
+    const importBtn = document.getElementById('import-legacy-button');
+    const importModal = document.getElementById('import-modal');
+    const closeBtn = document.getElementById('close-import-modal');
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('file-input');
+    const nextBtn = document.getElementById('import-next-btn');
+    const backBtn = document.getElementById('import-back-btn');
+    const finishBtn = document.getElementById('import-finish-btn');
+    
+    if (!importBtn || !importModal) return;
+    
+    // Abrir modal
+    importBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        importModal.classList.remove('hidden');
+        resetImporter();
+    });
+    
+    // Fechar modal
+    closeBtn.addEventListener('click', () => {
+        importModal.classList.add('hidden');
+    });
+    
+    // Tipo de importação
+    document.querySelectorAll('input[name="import-type"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            LegacyImporter.importType = e.target.value;
+        });
+    });
+    
+    // Dropzone click
+    dropzone.addEventListener('click', () => fileInput.click());
+    
+    // Drag and drop
+    dropzone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropzone.classList.add('border-indigo-500', 'bg-indigo-50');
+    });
+    
+    dropzone.addEventListener('dragleave', () => {
+        dropzone.classList.remove('border-indigo-500', 'bg-indigo-50');
+    });
+    
+    dropzone.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('border-indigo-500', 'bg-indigo-50');
+        const file = e.dataTransfer.files[0];
+        if (file) await processFile(file);
+    });
+    
+    // File input change
+    fileInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (file) await processFile(file);
+    });
+    
+    // Remover arquivo
+    document.getElementById('remove-file')?.addEventListener('click', () => {
+        resetImporter();
+    });
+    
+    // Botões de navegação
+    nextBtn.addEventListener('click', () => goToStep(LegacyImporter.currentStep + 1));
+    backBtn.addEventListener('click', () => goToStep(LegacyImporter.currentStep - 1));
+    finishBtn.addEventListener('click', () => {
+        importModal.classList.add('hidden');
+        renderAll();
+        showToast('Importação concluída com sucesso!', 'success');
+    });
+    
+    async function processFile(file) {
+        const ext = file.name.split('.').pop().toLowerCase();
+        
+        if (!['csv', 'xlsx', 'xls'].includes(ext)) {
+            showToast('Formato não suportado. Use CSV ou XLSX.', 'error');
+            return;
+        }
+        
+        try {
+            showToast('Processando arquivo...', 'info');
+            
+            let result;
+            if (ext === 'csv') {
+                result = await LegacyImporter.parseCSV(file);
+            } else {
+                result = await LegacyImporter.parseExcel(file);
+            }
+            
+            LegacyImporter.fileData = result.data;
+            LegacyImporter.fileColumns = result.columns;
+            
+            // Atualizar UI
+            document.getElementById('file-info').classList.remove('hidden');
+            document.getElementById('file-name').textContent = file.name;
+            document.getElementById('file-rows').textContent = `${result.data.length} linhas encontradas`;
+            
+            nextBtn.disabled = false;
+            showToast(`Arquivo carregado: ${result.data.length} linhas`, 'success');
+            
+        } catch (err) {
+            console.error('Erro ao processar arquivo:', err);
+            showToast('Erro ao ler o arquivo: ' + err.message, 'error');
+        }
+    }
+    
+    function resetImporter() {
+        LegacyImporter.currentStep = 1;
+        LegacyImporter.fileData = null;
+        LegacyImporter.fileColumns = [];
+        LegacyImporter.mapping = {};
+        
+        document.getElementById('file-info').classList.add('hidden');
+        document.getElementById('file-input').value = '';
+        nextBtn.disabled = true;
+        
+        goToStep(1);
+    }
+    
+    function goToStep(step) {
+        LegacyImporter.currentStep = step;
+        
+        // Esconder todas as steps
+        document.getElementById('import-step-1').classList.add('hidden');
+        document.getElementById('import-step-2').classList.add('hidden');
+        document.getElementById('import-step-3').classList.add('hidden');
+        
+        // Mostrar step atual
+        document.getElementById(`import-step-${step}`).classList.remove('hidden');
+        
+        // Atualizar indicadores
+        for (let i = 1; i <= 3; i++) {
+            const indicator = document.getElementById(`step${i}-indicator`);
+            const circle = indicator.querySelector('span:first-child');
+            const label = indicator.querySelector('span:last-child');
+            
+            if (i < step) {
+                indicator.classList.remove('opacity-50');
+                circle.className = 'w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center text-sm font-medium';
+                circle.innerHTML = '<i class="fas fa-check"></i>';
+                label.className = 'ml-2 text-sm font-medium text-green-600';
+            } else if (i === step) {
+                indicator.classList.remove('opacity-50');
+                circle.className = 'w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center text-sm font-medium';
+                circle.textContent = i;
+                label.className = 'ml-2 text-sm font-medium text-indigo-600';
+            } else {
+                indicator.classList.add('opacity-50');
+                circle.className = 'w-8 h-8 rounded-full bg-gray-300 text-gray-600 flex items-center justify-center text-sm font-medium';
+                circle.textContent = i;
+                label.className = 'ml-2 text-sm font-medium text-gray-500';
+            }
+        }
+        
+        // Atualizar botões
+        backBtn.classList.toggle('hidden', step === 1);
+        nextBtn.classList.toggle('hidden', step === 3);
+        finishBtn.classList.toggle('hidden', step !== 3);
+        
+        // Ações específicas por step
+        if (step === 2) {
+            renderMappingInterface();
+        } else if (step === 3) {
+            runImportProcess();
+        }
+    }
+    
+    function renderMappingInterface() {
+        const container = document.getElementById('mapping-container');
+        const fields = LegacyImporter.systemFields[LegacyImporter.importType];
+        const columns = LegacyImporter.fileColumns;
+        
+        container.innerHTML = fields.map(field => `
+            <div class="flex items-center space-x-4 p-3 bg-gray-50 rounded-lg">
+                <div class="w-1/3">
+                    <label class="font-medium text-gray-700">
+                        ${field.label}
+                        ${field.required ? '<span class="text-red-500">*</span>' : ''}
+                    </label>
+                </div>
+                <div class="w-8 text-center text-gray-400">
+                    <i class="fas fa-arrow-right"></i>
+                </div>
+                <div class="flex-1">
+                    <select class="mapping-select w-full border border-gray-300 rounded-md px-3 py-2" data-field="${field.key}">
+                        <option value="">-- Selecione a coluna --</option>
+                        ${columns.map(col => `
+                            <option value="${col}" ${autoMatchColumn(field.key, col) ? 'selected' : ''}>${col}</option>
+                        `).join('')}
+                    </select>
+                </div>
+            </div>
+        `).join('');
+        
+        // Eventos de seleção
+        container.querySelectorAll('.mapping-select').forEach(select => {
+            select.addEventListener('change', (e) => {
+                LegacyImporter.mapping[e.target.dataset.field] = e.target.value;
+                validateMapping();
+            });
+            
+            // Inicializar mapeamento automático
+            if (select.value) {
+                LegacyImporter.mapping[select.dataset.field] = select.value;
+            }
+        });
+        
+        // Prévia dos dados
+        renderDataPreview();
+        validateMapping();
+    }
+    
+    function autoMatchColumn(fieldKey, colName) {
+        const col = colName.toLowerCase();
+        const matchRules = {
+            nome: ['nome', 'name', 'cliente', 'razao', 'razão'],
+            email: ['email', 'e-mail', 'mail'],
+            telefone: ['telefone', 'phone', 'celular', 'whatsapp', 'zap', 'fone', 'tel'],
+            cpf: ['cpf', 'documento', 'doc'],
+            cidade: ['cidade', 'city', 'municipio'],
+            estado: ['estado', 'uf', 'state'],
+            bairro: ['bairro', 'neighborhood'],
+            endereco: ['endereco', 'endereço', 'address', 'rua', 'logradouro'],
+            data_cadastro: ['data', 'cadastro', 'criado', 'created'],
+            cliente_nome: ['cliente', 'nome', 'comprador'],
+            cliente_telefone: ['telefone', 'phone', 'celular', 'whatsapp'],
+            cliente_email: ['email', 'e-mail'],
+            data_pedido: ['data', 'date', 'pedido', 'venda'],
+            valor_total: ['valor', 'total', 'preco', 'preço', 'price', 'amount'],
+            status: ['status', 'situacao', 'situação'],
+            produtos: ['produtos', 'itens', 'items', 'produto'],
+            forma_pagamento: ['pagamento', 'payment', 'forma'],
+            preco: ['preco', 'preço', 'valor', 'price'],
+            sku: ['sku', 'codigo', 'código', 'code', 'ref'],
+            categoria: ['categoria', 'category', 'tipo'],
+            estoque: ['estoque', 'stock', 'quantidade', 'qtd']
+        };
+        
+        const rules = matchRules[fieldKey] || [];
+        return rules.some(r => col.includes(r));
+    }
+    
+    function renderDataPreview() {
+        const data = LegacyImporter.fileData.slice(0, 3);
+        const columns = LegacyImporter.fileColumns;
+        
+        const header = document.getElementById('preview-header');
+        const body = document.getElementById('preview-body');
+        
+        header.innerHTML = `<tr>${columns.map(c => `<th class="px-2 py-1 bg-gray-200 font-medium">${c}</th>`).join('')}</tr>`;
+        body.innerHTML = data.map(row => `
+            <tr>${columns.map(c => `<td class="px-2 py-1 border-t">${row[c] || ''}</td>`).join('')}</tr>
+        `).join('');
+    }
+    
+    function validateMapping() {
+        const fields = LegacyImporter.systemFields[LegacyImporter.importType];
+        const requiredFields = fields.filter(f => f.required).map(f => f.key);
+        
+        const allMapped = requiredFields.every(key => LegacyImporter.mapping[key]);
+        nextBtn.disabled = !allMapped;
+        
+        if (!allMapped) {
+            nextBtn.title = 'Mapeie todos os campos obrigatórios';
+        } else {
+            nextBtn.title = '';
+        }
+    }
+    
+    async function runImportProcess() {
+        const progressBar = document.getElementById('progress-bar');
+        const progressText = document.getElementById('progress-text');
+        const resultDiv = document.getElementById('import-result');
+        const progressDiv = document.getElementById('import-progress');
+        
+        progressDiv.classList.remove('hidden');
+        resultDiv.classList.add('hidden');
+        
+        // Simular progresso
+        for (let i = 0; i <= 100; i += 10) {
+            progressBar.style.width = i + '%';
+            progressText.textContent = i + '%';
+            await new Promise(r => setTimeout(r, 100));
+        }
+        
+        // Executar importação
+        const results = LegacyImporter.runImport();
+        
+        // Mostrar resultados
+        progressDiv.classList.add('hidden');
+        resultDiv.classList.remove('hidden');
+        
+        document.getElementById('result-new').textContent = results.new;
+        document.getElementById('result-merged').textContent = results.merged;
+        document.getElementById('result-skipped').textContent = results.skipped;
+        
+        if (results.warnings.length > 0) {
+            const warningsDiv = document.getElementById('import-warnings');
+            const warningsList = document.getElementById('warnings-list');
+            warningsDiv.classList.remove('hidden');
+            warningsList.innerHTML = results.warnings.slice(0, 10).map(w => `<li>${w}</li>`).join('');
+            if (results.warnings.length > 10) {
+                warningsList.innerHTML += `<li>... e mais ${results.warnings.length - 10} avisos</li>`;
+            }
+        }
+    }
+}
 
 // Expor funções para uso global (para onclick no HTML)
 window.viewOrderDetails = viewOrderDetails;
