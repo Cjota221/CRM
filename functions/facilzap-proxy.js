@@ -88,8 +88,8 @@ exports.handler = async (event) => {
     eighteenMonthsAgo.setMonth(eighteenMonthsAgo.getMonth() - 18);
     const dataInicial = eighteenMonthsAgo.toISOString().split('T')[0];
     const dataFinal = new Date().toISOString().split('T')[0];
-    // Removido incluir_produtos=1 para reduzir tamanho da resposta
-    const pedidosParams = `&filtros[data_inicial]=${dataInicial}&filtros[data_final]=${dataFinal}`;
+    // IMPORTANTE: incluir_produtos=1 para trazer os itens de cada pedido
+    const pedidosParams = `&filtros[data_inicial]=${dataInicial}&filtros[data_final]=${dataFinal}&incluir_produtos=1`;
     
     console.log("[DEBUG] Data inicial:", dataInicial);
     console.log("[DEBUG] Data final:", dataFinal);
@@ -157,6 +157,19 @@ exports.handler = async (event) => {
     const products = productsRaw;
     
     const elapsed = Date.now() - startTime;
+    
+    // DEBUG: Verificar estrutura de um pedido
+    if (ordersRaw.length > 0) {
+      const sampleOrder = ordersRaw[0];
+      console.log("[DEBUG] Estrutura do primeiro pedido RAW:");
+      console.log("[DEBUG] - Campos disponíveis:", Object.keys(sampleOrder));
+      console.log("[DEBUG] - tem 'itens'?", !!sampleOrder.itens, "length:", sampleOrder.itens?.length);
+      console.log("[DEBUG] - tem 'produtos'?", !!sampleOrder.produtos, "length:", sampleOrder.produtos?.length);
+      console.log("[DEBUG] - tem 'items'?", !!sampleOrder.items, "length:", sampleOrder.items?.length);
+      if (sampleOrder.itens && sampleOrder.itens.length > 0) {
+        console.log("[DEBUG] - Primeiro item:", JSON.stringify(sampleOrder.itens[0]).substring(0, 500));
+      }
+    }
     
     console.log("[DEBUG] ========== RESULTADO FINAL ==========");
     console.log(`[DEBUG] Clientes: ${clients.length}`);
