@@ -193,6 +193,12 @@ exports.handler = async (event) => {
       const rawItems = detail?.itens || detail?.produtos || detail?.items || 
                        o.itens || o.produtos || o.items || [];
       
+      // Determinar se o pedido foi pago/válido
+      // status_pago = boolean ou string indicando se foi pago
+      // status pode ser: "cancelado", "pago", "entregue", etc.
+      const statusPago = o.status_pago || detail?.status_pago;
+      const statusEntregue = o.status_entregue || detail?.status_entregue;
+      
       return {
         id: o.id,
         codigo: o.codigo || o.id,
@@ -207,6 +213,8 @@ exports.handler = async (event) => {
         data: o.data || o.created_at,
         status: o.status || o.status_pedido || '',
         status_pedido: o.status_pedido || o.status || '',
+        status_pago: statusPago,           // NOVO: flag de pagamento
+        status_entregue: statusEntregue,   // NOVO: flag de entrega
         total: o.total || o.valor_total || 0,
         forma_pagamento: o.forma_pagamento || '',
         origem: o.origem || '',

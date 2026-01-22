@@ -1360,7 +1360,8 @@ async function syncData() {
             'não pago', 'nao pago', 'unpaid',
             'expirado', 'expired',
             'estornado', 'refunded',
-            'devolvido', 'returned'
+            'devolvido', 'returned',
+            'aguardando', 'pendente', 'pending'  // Aguardando pagamento também não conta
         ];
         
         ordersToProcess.forEach(order => {
@@ -1378,14 +1379,39 @@ async function syncData() {
             const rawStatus = order.status || order.status_pedido || '';
             const orderStatus = String(rawStatus).toLowerCase().trim();
             
-            // Verificar se o pedido foi cancelado/não pago
-            const isCancelled = statusCancelado.some(s => orderStatus.includes(s));
+            // Verificar se o pedido foi PAGO usando múltiplas flags
+            // 1. status_pago: boolean ou string da API
+            // 2. status_entregue: se foi entregue, foi pago
+            // 3. status texto: verificar palavras-chave
+            const statusPago = order.status_pago;
+            const statusEntregue = order.status_entregue;
+            
+            // Um pedido é considerado VÁLIDO (pago) se:
+            // - status_pago === true ou === "1" ou === 1
+            // - OU status_entregue === true (se entregou, foi pago)
+            // - OU status contém "pago", "entregue", "concluido", "finalizado"
+            const isPaid = statusPago === true || statusPago === "1" || statusPago === 1 ||
+                          statusEntregue === true || statusEntregue === "1" || statusEntregue === 1 ||
+                          orderStatus.includes('pago') || 
+                          orderStatus.includes('entregue') || 
+                          orderStatus.includes('concluido') || 
+                          orderStatus.includes('finalizado');
+            
+            // Verificar se o pedido foi cancelado/não pago pelo texto do status
+            const hasCancelledStatus = statusCancelado.some(s => orderStatus.includes(s));
+            
+            // Pedido é válido se: foi pago E não tem status de cancelado
+            // OU se não podemos determinar (status_pago undefined) mas não tem status cancelado
+            const isValidOrder = (isPaid && !hasCancelledStatus) || 
+                                 (statusPago === undefined && !hasCancelledStatus && orderTotal > 0);
+            
+            const isCancelled = !isValidOrder;
+            
+            console.log(`[DEBUG] Pedido ${order.id} - Status: "${orderStatus}" - status_pago: ${statusPago} - Válido: ${isValidOrder}`);
 
             // Extrair produtos do pedido - tentar TODOS os campos possíveis
             const orderProducts = [];
             const productList = order.itens || order.produtos || order.items || order.products || [];
-            
-            console.log(`[DEBUG] Pedido ${order.id} - Status: "${orderStatus}" - Cancelado: ${isCancelled} - ${productList.length} itens`);
             
             productList.forEach(item => {
                 if (!item) return;
