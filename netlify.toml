@@ -15,5 +15,9 @@ force = true
 
 [functions]
 node_bundler = "esbuild"
-[functions."*"]
-timeout = 26
+
+[functions."facilzap-proxy"]
+timeout = 60
+
+[functions."image-proxy"]
+timeout = 10

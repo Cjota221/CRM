@@ -1527,8 +1527,8 @@ function renderProducts() {
         const card = document.createElement('div');
         card.className = 'bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow';
 
-        const imageUrl = product.image ? 
-            `/api/image-proxy?url=${encodeURIComponent(product.image)}` : 
+        // Usar URL direta da imagem (sem proxy)
+        const imageUrl = product.image || 
             'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%23f3f4f6" width="100" height="100"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="%239ca3af" font-size="12">Sem Imagem</text></svg>';
 
         // Determinar classe de estoque
