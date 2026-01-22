@@ -846,25 +846,29 @@ function setupModals() {
 
 // Funções auxiliares para processamento de produtos (baseado na documentação FácilZap)
 function extrairPreco(produto) {
-    // Prioridade: preco direto > valor > catalogo > variação
+    // API FacilZap: preço principal está em catalogos[0].precos.preco
+    
+    // 1. Tentar catálogo primeiro (estrutura padrão FacilZap)
+    if (produto.catalogos && produto.catalogos.length > 0) {
+        // Procurar primeiro catálogo com preço > 0
+        for (const catalogo of produto.catalogos) {
+            const preco = catalogo.precos?.preco;
+            if (preco && Number(preco) > 0) return Number(preco);
+        }
+    }
+    
+    // 2. Preco direto no produto
     if (typeof produto.preco === 'number' && produto.preco > 0) return produto.preco;
     if (typeof produto.preco === 'string' && parseFloat(produto.preco) > 0) return parseFloat(produto.preco);
     
-    // Campo "valor" também é comum
+    // 3. Campo "valor"
     if (typeof produto.valor === 'number' && produto.valor > 0) return produto.valor;
     if (typeof produto.valor === 'string' && parseFloat(produto.valor) > 0) return parseFloat(produto.valor);
     
-    // Tentar pegar do catálogo
-    if (produto.catalogos && produto.catalogos.length > 0) {
-        const catalogo = produto.catalogos[0];
-        const precoCatalogo = catalogo.precos?.preco || catalogo.preco || catalogo.valor;
-        if (precoCatalogo) return Number(precoCatalogo);
-    }
-    
-    // Tentar pegar da primeira variação
+    // 4. Tentar pegar da primeira variação
     if (produto.variacoes && produto.variacoes.length > 0) {
         const precoVariacao = produto.variacoes[0].preco || produto.variacoes[0].valor;
-        if (precoVariacao) return Number(precoVariacao);
+        if (precoVariacao && Number(precoVariacao) > 0) return Number(precoVariacao);
     }
     
     return 0;
@@ -912,11 +916,17 @@ function extrairImagemPrincipal(produto) {
     
     if (typeof primeira === 'string') return primeira;
     if (typeof primeira === 'object' && primeira !== null) {
-        // Tentar várias propriedades possíveis
+        // A API FacilZap retorna objeto com .url
+        // Priorizar 'url' que contém o link completo
         const url = primeira.url || primeira.path || primeira.src || 
-                   primeira.link || primeira.arquivo || primeira.file ||
+                   primeira.link || primeira.arquivo || 
                    primeira.imagem || primeira.foto || primeira.image ||
                    primeira.thumbnail || primeira.thumb;
+        
+        // Se só tem 'file', construir URL completa
+        if (!url && primeira.file) {
+            return `https://arquivos.facilzap.app.br/${primeira.file}`;
+        }
         return url || null;
     }
     return null;
@@ -927,10 +937,17 @@ function extrairTodasImagens(produto) {
     return imagens.map(img => {
         if (typeof img === 'string') return img;
         if (typeof img === 'object' && img !== null) {
-            return img.url || img.path || img.src || 
-                   img.link || img.arquivo || img.file ||
+            // Priorizar .url (link completo)
+            const url = img.url || img.path || img.src || 
+                   img.link || img.arquivo ||
                    img.imagem || img.foto || img.image ||
-                   img.thumbnail || img.thumb || null;
+                   img.thumbnail || img.thumb;
+            
+            // Se só tem 'file', construir URL completa
+            if (!url && img.file) {
+                return `https://arquivos.facilzap.app.br/${img.file}`;
+            }
+            return url || null;
         }
         return null;
     }).filter(Boolean);
@@ -938,11 +955,21 @@ function extrairTodasImagens(produto) {
 
 function extrairCodigoBarras(produto) {
     const codBarras = produto.cod_barras;
+    
+    // API FacilZap: cod_barras é objeto com .numero ou .numero_interno
+    if (codBarras && typeof codBarras === 'object') {
+        if (codBarras.numero) return String(codBarras.numero);
+        if (codBarras.numero_interno) return String(codBarras.numero_interno);
+    }
+    
+    // Array de códigos
     if (Array.isArray(codBarras) && codBarras.length > 0) {
         const primeiro = codBarras[0];
         if (typeof primeiro === 'string') return primeiro;
         if (primeiro?.numero) return String(primeiro.numero);
     }
+    
+    // String direta
     if (typeof codBarras === 'string') return codBarras;
     return null;
 }
