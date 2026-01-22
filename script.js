@@ -4678,29 +4678,54 @@ const AIVigilante = {
         const orders = Storage.getOrders();
         this.alerts = [];
         
+        // DEBUG: Encontrar Milene para diagnóstico
+        const debugTarget = clients.find(c => c.name && c.name.toLowerCase().includes('milene'));
+        if (debugTarget) {
+            console.log(`[DEBUG IA] Análise detalhada para: ${debugTarget.name} (ID: ${debugTarget.id})`);
+            const allOrders = orders.filter(o => String(o.clientId) === String(debugTarget.id));
+            console.log(`[DEBUG IA] Total de pedidos brutos: ${allOrders.length}`);
+            allOrders.forEach(o => {
+                console.log(` > Data: ${o.data} | Status: ${o.status} | Pago: ${o.status_pago} | Cancelado: ${o.isCancelled}`);
+            });
+        }
+        
         // Calcular stats para cada cliente baseado nos pedidos
         const clientsWithStats = clients.map(client => {
+            // USAR APENAS PEDIDOS VÁLIDOS (Não cancelados)
             const clientOrders = orders.filter(o => 
-                o.clientId == client.id || 
-                o.cliente_id == client.id ||
-                (o.clientName && client.name && o.clientName.toLowerCase().includes(client.name.toLowerCase().split(' ')[0]))
+                String(o.clientId) === String(client.id) && 
+                !o.isCancelled
             );
             
             const totalSpent = clientOrders.reduce((sum, o) => sum + (parseFloat(o.total) || 0), 0);
             const totalOrders = clientOrders.length;
             const averageTicket = totalOrders > 0 ? totalSpent / totalOrders : 0;
             
-            // Calcular dias desde última compra
-            let daysSinceLastPurchase = 9999;
+            // Calcular dias desde última compra (usando a data mais recente dos pedidos VÁLIDOS)
+            let daysSinceLastPurchase = null;
+            
             if (clientOrders.length > 0) {
-                const dates = clientOrders.map(o => new Date(o.data || o.date)).filter(d => !isNaN(d));
+                // Pegar datas válidas
+                const dates = clientOrders
+                    .map(o => new Date(o.data || o.date))
+                    .filter(d => !isNaN(d.getTime()));
+                
                 if (dates.length > 0) {
                     const lastDate = new Date(Math.max(...dates));
-                    daysSinceLastPurchase = Math.ceil((new Date() - lastDate) / (1000 * 60 * 60 * 24));
+                    const diffTime = new Date() - lastDate;
+                    daysSinceLastPurchase = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
                 }
-            } else if (client.lastPurchaseDate) {
-                daysSinceLastPurchase = Math.ceil((new Date() - new Date(client.lastPurchaseDate)) / (1000 * 60 * 60 * 24));
+            } 
+            
+            // Se não tiver pedidos válidos (ou bug), verificar se tem data de última compra vindo do cadastro (fallback)
+            // Mas apenas se não encontramos nada nos pedidos, pra não sobrescrever dados reais
+            if (daysSinceLastPurchase === null && client.lastPurchaseDate) {
+                 const diffTime = new Date() - new Date(client.lastPurchaseDate);
+                 daysSinceLastPurchase = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
             }
+            
+            // Se ainda for null (cliente nunca comprou ou sem dados), definir como Infinity para ordenação
+            const displayDays = daysSinceLastPurchase === null ? 9999 : daysSinceLastPurchase;
             
             // Calcular intervalo médio entre compras
             let avgPurchaseInterval = 0;
@@ -4717,18 +4742,30 @@ const AIVigilante = {
             
             return {
                 ...client,
-                stats: { daysSinceLastPurchase, totalOrders, averageTicket, totalSpent, avgPurchaseInterval }
+                stats: { 
+                    daysSinceLastPurchase: displayDays, 
+                    realDays: daysSinceLastPurchase, // Para debug
+                    totalOrders, 
+                    averageTicket, 
+                    totalSpent, 
+                    avgPurchaseInterval 
+                }
             };
         });
         
-        console.log('[IA Vigilante] Clientes com stats:', clientsWithStats.length);
-        console.log('[IA Vigilante] Exemplo:', clientsWithStats[0]?.stats);
+        console.log('[IA Vigilante] Clientes com stats calculados:', clientsWithStats.length);
+
+        // ATUALIZAR STATUS DOS CLIENTES NA UI SE NECESSÁRIO
+        // (Isso já é feito pelo renderClients, mas aqui focamos nos alertas)
         
         // Urgentes (300+ dias, ticket alto OU muitos pedidos)
+        // Ignorar quem tem dias > 5000 (provavelmente nunca comprou)
         const urgent = clientsWithStats.filter(c => 
             c.stats.daysSinceLastPurchase >= 300 && 
+            c.stats.daysSinceLastPurchase < 2000 &&
             (c.stats.averageTicket >= 200 || c.stats.totalOrders >= 3)
         );
+        
         urgent.forEach(c => this.alerts.push({ 
             type: 'urgent', priority: 1, client: c, 
             title: `${c.name} - ${c.stats.daysSinceLastPurchase} dias`,
@@ -4742,6 +4779,7 @@ const AIVigilante = {
             c.stats.daysSinceLastPurchase < 300 &&
             c.stats.totalOrders >= 2
         );
+        
         atRisk.slice(0, 10).forEach(c => this.alerts.push({ 
             type: 'urgent', priority: 2, client: c, 
             title: `${c.name} - ${c.stats.daysSinceLastPurchase} dias`,
