@@ -1428,6 +1428,16 @@ async function syncData() {
         
         // Renderizar dados
         renderAll();
+        
+        // SALVAR AUTOMATICAMENTE NO SUPABASE
+        try {
+            showToast('Salvando na nuvem...', 'info');
+            await SupabaseSync.saveAll();
+            showToast('Dados salvos no Supabase!', 'success');
+        } catch (supaError) {
+            console.error('Erro ao salvar no Supabase:', supaError);
+            showToast('Aviso: Dados locais OK, mas falhou salvar na nuvem', 'warning', 5000);
+        }
 
     } catch (error) {
         console.error('Erro na sincronização:', error);
