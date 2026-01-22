@@ -127,12 +127,59 @@ const Storage = {
 
     clearAll() {
         Object.values(this.KEYS).forEach(key => localStorage.removeItem(key));
+    },
+
+    // Tags comportamentais aprendidas pela IA (Feedback Loop)
+    getAITags() {
+        return this.load('crm_ai_tags', {});
+    },
+
+    saveAITags(clientId, tags) {
+        const allTags = this.getAITags();
+        allTags[clientId] = { ...allTags[clientId], ...tags, updatedAt: new Date().toISOString() };
+        return this.save('crm_ai_tags', allTags);
+    },
+
+    getClientAITags(clientId) {
+        const allTags = this.getAITags();
+        return allTags[clientId] || null;
     }
 };
 
 // ============================================================================
 // GROQ API - IA GRATUITA COM LIMITES GENEROSOS (14.400 req/dia)
 // ============================================================================
+
+// System Prompt - O "Cérebro" da IA
+const AI_SYSTEM_PROMPT = `Role (Papel):
+Você é uma I.A. especialista em Inteligência Comportamental, Retenção de Clientes (CRM) e Engenharia de Vendas. Seu objetivo é analisar dados granulares de clientes para encontrar padrões invisíveis e gerar estratégias de hiper-personalização. Você age como um algoritmo de recomendação avançado (similar ao TikTok/Instagram).
+
+Sua Missão:
+Analisar absolutamente todos os pontos de dados fornecidos (histórico de compras, preferências de cor/tamanho, geografia, ticket médio, frequência e datas) para entender a psicologia de compra do cliente e sugerir a ação exata para vender novamente.
+
+Diretrizes de Análise (O que você deve procurar):
+
+1. Padrões de Produto: Não olhe apenas o produto. Olhe os atributos. O cliente prefere cores escuras? Tamanhos grandes? Tecidos específicos?
+
+2. Padrões Temporais: Ele compra no início ou fim do mês? Compra em datas comemorativas? Qual o intervalo médio (gap) entre as compras? Se ele costuma comprar a cada 30 dias e já passaram 45, isso é um alerta vermelho.
+
+3. Geografia e Demografia: Onde ele mora? O clima lá está frio ou quente agora? Use isso para sugerir produtos. O frete para a região dele é um incentivo?
+
+4. Ciclo de Vida: Ele é um cliente novo (precisa de confiança), recorrente (precisa de novidade) ou inativo (precisa de uma oferta irresistível)?
+
+Regras de Comportamento (Output):
+
+- Seja Assertivo: Não diga "talvez ele goste". Diga "Com base no histórico de comprar apenas [produtos X], a probabilidade de conversão no [produto Y] é de X%".
+
+- Gere a Ação: Sempre termine sua análise com uma sugestão de mensagem pronta para envio (WhatsApp), usando tom amigável e comercial.
+
+- Identifique Tags Comportamentais: Sempre que identificar um padrão, liste as tags comportamentais do cliente (ex: "Estilo Formal", "Comprador de Fim de Mês", "Prefere Cores Neutras").
+
+Exemplo de Raciocínio Esperado:
+"Dados: Cliente João. Última compra há 60 dias. Compra sempre camisas G, cores Azul e Branco. Mora em SP."
+Análise: João está em risco de churn (frio). Ele gosta de tons neutros.
+Tags: ["Estilo Casual", "Cores Neutras", "Tamanho G", "Comprador Trimestral"]
+Ação: Ofertar a nova coleção com Frete Grátis para SP (gatilho regional).`;
 
 async function callAI(apiKey, prompt, maxRetries = 3) {
     let lastError = null;
@@ -147,9 +194,12 @@ async function callAI(apiKey, prompt, maxRetries = 3) {
                 },
                 body: JSON.stringify({
                     model: 'llama-3.1-70b-versatile',
-                    messages: [{ role: 'user', content: prompt }],
+                    messages: [
+                        { role: 'system', content: AI_SYSTEM_PROMPT },
+                        { role: 'user', content: prompt }
+                    ],
                     temperature: 0.7,
-                    max_tokens: 1500
+                    max_tokens: 2000
                 })
             });
 
@@ -169,7 +219,6 @@ async function callAI(apiKey, prompt, maxRetries = 3) {
             }
 
             const data = await response.json();
-            // Retornar no formato esperado
             return {
                 candidates: [{
                     content: {
@@ -189,6 +238,146 @@ async function callAI(apiKey, prompt, maxRetries = 3) {
     }
     
     throw lastError || new Error('Erro ao chamar API após múltiplas tentativas');
+}
+
+// ============================================================================
+// ANÁLISE COMPORTAMENTAL - Enriquecimento de Dados do Cliente
+// ============================================================================
+
+function buildEnrichedClientData(client) {
+    const orders = Storage.getOrders();
+    const products = Storage.getProducts();
+    const aiTags = Storage.getClientAITags(client.id);
+    
+    // Pedidos deste cliente
+    const clientOrders = orders.filter(o => o.cliente_id === client.id);
+    
+    // Calcular padrões temporais
+    const orderDates = clientOrders.map(o => new Date(o.data)).sort((a, b) => a - b);
+    const gaps = [];
+    for (let i = 1; i < orderDates.length; i++) {
+        gaps.push(Math.ceil((orderDates[i] - orderDates[i-1]) / (1000 * 60 * 60 * 24)));
+    }
+    const mediaGap = gaps.length > 0 ? Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length) : null;
+    
+    // Dia da semana favorito
+    const dayCount = [0, 0, 0, 0, 0, 0, 0];
+    const dayNames = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+    orderDates.forEach(d => dayCount[d.getDay()]++);
+    const favoriteDayIndex = dayCount.indexOf(Math.max(...dayCount));
+    const favoriteDayName = dayCount[favoriteDayIndex] > 0 ? dayNames[favoriteDayIndex] : null;
+    
+    // Período do mês (início, meio, fim)
+    const dayOfMonth = orderDates.map(d => d.getDate());
+    const avgDayOfMonth = dayOfMonth.length > 0 ? Math.round(dayOfMonth.reduce((a, b) => a + b, 0) / dayOfMonth.length) : null;
+    let monthPeriod = null;
+    if (avgDayOfMonth) {
+        if (avgDayOfMonth <= 10) monthPeriod = 'Início do Mês';
+        else if (avgDayOfMonth <= 20) monthPeriod = 'Meio do Mês';
+        else monthPeriod = 'Fim do Mês';
+    }
+    
+    // Extrair preferências dos itens comprados
+    const allItems = clientOrders.flatMap(o => o.itens || []);
+    const productNames = allItems.map(i => i.nome || '').filter(Boolean);
+    
+    // Tentar extrair cores (palavras comuns de cores)
+    const colorKeywords = ['preto', 'branco', 'azul', 'vermelho', 'verde', 'amarelo', 'rosa', 'roxo', 'laranja', 'cinza', 'marrom', 'bege', 'nude', 'dourado', 'prata', 'caramelo', 'vinho', 'bordô', 'navy', 'creme'];
+    const colorCount = {};
+    productNames.forEach(name => {
+        const nameLower = name.toLowerCase();
+        colorKeywords.forEach(color => {
+            if (nameLower.includes(color)) {
+                colorCount[color] = (colorCount[color] || 0) + 1;
+            }
+        });
+    });
+    const topColors = Object.entries(colorCount).sort((a, b) => b[1] - a[1]).slice(0, 3).map(e => e[0]);
+    
+    // Extrair tamanhos (padrões comuns)
+    const sizeKeywords = ['PP', 'P', 'M', 'G', 'GG', 'XG', 'XXG', '34', '35', '36', '37', '38', '39', '40', '41', '42', '43', '44', '45', '46'];
+    const sizeCount = {};
+    productNames.forEach(name => {
+        sizeKeywords.forEach(size => {
+            const regex = new RegExp(`\\b${size}\\b`, 'i');
+            if (regex.test(name)) {
+                sizeCount[size] = (sizeCount[size] || 0) + 1;
+            }
+        });
+    });
+    const topSizes = Object.entries(sizeCount).sort((a, b) => b[1] - a[1]).slice(0, 3).map(e => e[0]);
+    
+    // Categorias (se disponível nos produtos)
+    const categoryCount = {};
+    allItems.forEach(item => {
+        if (item.produto_id) {
+            const prod = products.find(p => p.id === item.produto_id);
+            if (prod?.categoria) {
+                categoryCount[prod.categoria] = (categoryCount[prod.categoria] || 0) + 1;
+            }
+        }
+    });
+    const topCategories = Object.entries(categoryCount).sort((a, b) => b[1] - a[1]).slice(0, 3).map(e => e[0]);
+    
+    // Calcular ticket médio
+    const ticketMedio = clientOrders.length > 0 
+        ? clientOrders.reduce((sum, o) => sum + (parseFloat(o.total) || 0), 0) / clientOrders.length 
+        : 0;
+    
+    // Dias sem comprar
+    const lastPurchase = client.lastPurchaseDate ? new Date(client.lastPurchaseDate) : null;
+    const diasSemComprar = lastPurchase 
+        ? Math.ceil((new Date() - lastPurchase) / (1000 * 60 * 60 * 24))
+        : null;
+    
+    // Determinar status de risco baseado no gap médio
+    let alertaRisco = null;
+    if (mediaGap && diasSemComprar && diasSemComprar > mediaGap * 1.5) {
+        alertaRisco = `ALERTA: Cliente costuma comprar a cada ${mediaGap} dias, mas já está há ${diasSemComprar} dias sem comprar!`;
+    }
+    
+    // Histórico recente (últimos 5 pedidos)
+    const historicoRecente = clientOrders
+        .sort((a, b) => new Date(b.data) - new Date(a.data))
+        .slice(0, 5)
+        .map(o => ({
+            data: o.data,
+            total: o.total,
+            itens: (o.itens || []).map(i => i.nome).filter(Boolean).join(', ')
+        }));
+
+    return {
+        cliente: {
+            id: client.id,
+            nome: client.name,
+            estado: client.state || 'N/A',
+            cidade: client.city || 'N/A',
+            bairro: client.neighborhood || 'N/A',
+            data_cadastro: client.createdAt,
+            telefone: client.phone
+        },
+        comportamento: {
+            dias_sem_comprar: diasSemComprar,
+            media_dias_entre_compras: mediaGap,
+            alerta_risco: alertaRisco,
+            status: getClientState(client).status,
+            ticket_medio: ticketMedio.toFixed(2),
+            total_gasto: (client.totalSpent || 0).toFixed(2),
+            numero_pedidos: client.orderCount || 0
+        },
+        padroes_temporais: {
+            dia_semana_favorito: favoriteDayName,
+            periodo_mes_preferido: monthPeriod,
+            intervalo_medio_compras: mediaGap ? `${mediaGap} dias` : 'N/A'
+        },
+        preferencias_calculadas: {
+            cores_top3: topColors.length > 0 ? topColors : ['Não identificado'],
+            tamanhos_comuns: topSizes.length > 0 ? topSizes : ['Não identificado'],
+            categorias_favoritas: topCategories.length > 0 ? topCategories : ['Não identificado']
+        },
+        historico_recente: historicoRecente,
+        tags_ia_anteriores: aiTags || { nota: 'Primeira análise deste cliente' }
+    };
 }
 
 // ============================================================================
@@ -243,36 +432,58 @@ Responda em JSON com o formato:
             throw new Error('API Key do Groq não configurada. Vá em Configurações.');
         }
 
-        const clientInfo = {
-            nome: client.name.split(' ')[0], // Primeiro nome
-            diasSemComprar: getDaysSinceLastPurchase(client),
-            totalGasto: client.totalSpent,
-            numeroPedidos: client.orderCount,
-            produtosComprados: client.products?.slice(0, 5).map(p => p.name) || [],
-            estado: getClientState(client).uf
-        };
+        // Usar dados enriquecidos completos
+        const enrichedData = buildEnrichedClientData(client);
 
-        const prompt = `Crie uma mensagem curta e personalizada de WhatsApp para reativar este cliente:
+        const prompt = `Analise os dados completos deste cliente e crie UMA mensagem de WhatsApp ultra-personalizada para reativá-lo.
 
-CLIENTE:
-- Nome: ${clientInfo.nome}
-- Dias sem comprar: ${clientInfo.diasSemComprar}
-- Total já gasto: R$ ${clientInfo.totalGasto.toFixed(2)}
-- Produtos que já comprou: ${clientInfo.produtosComprados.join(', ') || 'Não identificado'}
-- Estado: ${clientInfo.estado}
-${context ? `\nCONTEXTO ADICIONAL: ${context}` : ''}
+DADOS COMPLETOS DO CLIENTE:
+${JSON.stringify(enrichedData, null, 2)}
 
-REGRAS:
-- Máximo 300 caracteres
-- Tom amigável e pessoal
-- Mencione um produto que ele já comprou se possível
-- Inclua um benefício ou promoção fictícia
-- Use emojis com moderação
+${context ? `CONTEXTO ADICIONAL: ${context}` : ''}
 
-Responda APENAS com a mensagem, sem explicações.`;
+REGRAS OBRIGATÓRIAS:
+1. Máximo 300 caracteres
+2. Use o PRIMEIRO NOME apenas
+3. Seja assertivo baseado nos padrões identificados
+4. Mencione algo específico do histórico dele (cor, produto, etc)
+5. Use gatilho de escassez ou exclusividade
+6. Emojis com moderação (2-3 no máximo)
+7. Se identificou alerta de risco, seja mais urgente
+
+FORMATO DE RESPOSTA (JSON):
+{
+  "mensagem": "texto da mensagem aqui",
+  "tags_comportamentais": ["tag1", "tag2", "tag3"],
+  "probabilidade_conversao": "XX%",
+  "melhor_horario_envio": "dia e período sugerido"
+}`;
 
         const data = await callAI(settings.groqApiKey, prompt);
-        return (data.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
+        const content = (data.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
+        
+        // Tentar parsear JSON e salvar tags
+        try {
+            const jsonMatch = content.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]);
+                
+                // Salvar tags comportamentais (Feedback Loop)
+                if (parsed.tags_comportamentais) {
+                    Storage.saveAITags(client.id, {
+                        tags: parsed.tags_comportamentais,
+                        probabilidade: parsed.probabilidade_conversao,
+                        melhor_horario: parsed.melhor_horario_envio
+                    });
+                }
+                
+                return parsed.mensagem || content;
+            }
+        } catch (e) {
+            console.log('Resposta não é JSON, usando texto direto');
+        }
+        
+        return content;
     },
 
     // Gerar mensagem sem IA (template básico)
