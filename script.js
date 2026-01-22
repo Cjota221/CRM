@@ -1867,8 +1867,8 @@ function renderProducts() {
         const card = document.createElement('div');
         card.className = 'bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow';
 
-        // Usar URL direta da imagem ou placeholder simples
-        const placeholderImg = 'https://via.placeholder.com/200x200?text=Sem+Foto';
+        // Usar URL direta da imagem ou placeholder cinza simples
+        const placeholderImg = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIj48cmVjdCBmaWxsPSIjZjNmNGY2IiB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjOWNhM2FmIiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCI+U2VtIEZvdG88L3RleHQ+PC9zdmc+';
         const imageUrl = product.image || placeholderImg;
 
         // Determinar classe de estoque
@@ -1881,7 +1881,7 @@ function renderProducts() {
 
         card.innerHTML = `
             <div class="aspect-square bg-gray-100 relative">
-                <img src="${imageUrl}" alt="${escapeHtml(product.name)}" class="w-full h-full object-cover" onerror="this.onerror=null;this.src='https://via.placeholder.com/200x200?text=Sem+Foto'">
+                <img src="${imageUrl}" alt="${escapeHtml(product.name)}" class="w-full h-full object-cover" onerror="this.onerror=null;this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIj48cmVjdCBmaWxsPSIjZjNmNGY2IiB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjOWNhM2FmIiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCI+U2VtIEZvdG88L3RleHQ+PC9zdmc+'">
                 <span class="absolute top-2 right-2 stock-badge ${product.isActive ? 'stock-in' : 'stock-out'}">${product.isActive ? 'Ativo' : 'Inativo'}</span>
                 ${product.hasVariacoes ? `
                     <span class="absolute top-2 left-2 bg-purple-600 text-white text-xs px-2 py-1 rounded-full">
