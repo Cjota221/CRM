@@ -1545,10 +1545,8 @@ function renderProducts() {
 
         card.innerHTML = `
             <div class="aspect-square bg-gray-100 relative">
-                <img src="${imageUrl}" alt="${escapeHtml(product.name)}" class="w-full h-full object-cover" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23f3f4f6%22 width=%22100%22 height=%22100%22/><text x=%2250%%22 y=%2250%%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22%239ca3af%22 font-size=%2212%22>Sem Imagem</text></svg>'">
-                <span class="absolute top-2 right-2 stock-badge ${product.isActive ? 'stock-in' : 'stock-out'}">
-                    ${product.isActive ? 'Ativo' : 'Inativo'}
-                </span>
+                <img src="${imageUrl}" alt="${escapeHtml(product.name)}" class="w-full h-full object-cover" onerror="this.onerror=null;this.src='data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27%3E%3Crect fill=%27%23f3f4f6%27 width=%27100%27 height=%27100%27/%3E%3Ctext x=%2750%25%27 y=%2750%25%27 dominant-baseline=%27middle%27 text-anchor=%27middle%27 fill=%27%239ca3af%27 font-size=%2712%27%3ESem Imagem%3C/text%3E%3C/svg%3E'">
+                <span class="absolute top-2 right-2 stock-badge ${product.isActive ? 'stock-in' : 'stock-out'}">${product.isActive ? 'Ativo' : 'Inativo'}</span>
                 ${product.hasVariacoes ? `
                     <span class="absolute top-2 left-2 bg-purple-600 text-white text-xs px-2 py-1 rounded-full">
                         ${product.variacoes.length} variações
