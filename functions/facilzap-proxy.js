@@ -120,7 +120,11 @@ exports.handler = async (event) => {
     const orders = ordersRaw.map(o => ({
       id: o.id,
       cliente_id: o.cliente_id,
-      cliente: o.cliente ? { id: o.cliente.id, nome: o.cliente.nome } : null,
+      cliente: o.cliente ? { 
+        id: o.cliente.id, 
+        nome: o.cliente.nome,
+        telefone: o.cliente.telefone || o.cliente.whatsapp || o.cliente.celular || ''
+      } : null,
       data: o.data,
       status: o.status,
       total: o.total,
@@ -129,7 +133,8 @@ exports.handler = async (event) => {
         produto_id: i.produto_id,
         nome: i.nome || i.produto?.nome,
         quantidade: i.quantidade,
-        valor: i.valor
+        valor: i.valor,
+        imagem: i.produto?.imagens?.[0]?.url || i.imagem || null
       })) : []
     }));
     

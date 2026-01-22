@@ -2017,36 +2017,45 @@ function renderOrders() {
 
 function viewOrderDetails(orderId) {
     const orders = Storage.getOrders();
-    const order = orders.find(o => o.id === orderId);
+    const order = orders.find(o => o.id === orderId || o.id === String(orderId));
 
     if (!order) {
         showToast('Pedido não encontrado.', 'error');
         return;
     }
 
+    // Buscar produtos do catálogo para imagens
+    const allProducts = Storage.getProducts();
+    const productsMap = new Map(allProducts.map(p => [String(p.id), p]));
+
     let productsHtml = '<p class="text-sm text-gray-500">Nenhum produto neste pedido.</p>';
-    if (order.products && order.products.length > 0) {
+    const orderProducts = order.products || [];
+    
+    if (orderProducts.length > 0) {
         productsHtml = `
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Produto</th>
-                        <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Qtd</th>
-                        <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Preço Un.</th>
-                        <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
-                    </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
-                    ${order.products.map(p => `
-                        <tr>
-                            <td class="px-4 py-2">${escapeHtml(p.productName)}</td>
-                            <td class="px-4 py-2 text-center">${p.quantity}</td>
-                            <td class="px-4 py-2 text-right">${formatCurrency(p.unitPrice)}</td>
-                            <td class="px-4 py-2 text-right font-medium">${formatCurrency(p.total)}</td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
+            <div class="space-y-3">
+                ${orderProducts.map(p => {
+                    // Tentar pegar imagem do catálogo
+                    const catalogProduct = productsMap.get(String(p.productId));
+                    const imageUrl = p.image || catalogProduct?.image || null;
+                    const placeholderImg = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCI+PHJlY3QgZmlsbD0iI2YzZjRmNiIgd2lkdGg9IjYwIiBoZWlnaHQ9IjYwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGRvbWluYW50LWJhc2VsaW5lPSJtaWRkbGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiM5Y2EzYWYiIGZvbnQtc2l6ZT0iMTAiPj88L3RleHQ+PC9zdmc+';
+                    
+                    return `
+                        <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                            <img src="${imageUrl || placeholderImg}" alt="${escapeHtml(p.productName)}" 
+                                class="w-14 h-14 object-cover rounded" 
+                                onerror="this.src='${placeholderImg}'">
+                            <div class="flex-1">
+                                <p class="font-medium text-gray-800">${escapeHtml(p.productName)}</p>
+                                <p class="text-sm text-gray-500">Qtd: ${p.quantity} × ${formatCurrency(p.unitPrice)}</p>
+                            </div>
+                            <div class="text-right">
+                                <p class="font-bold text-green-600">${formatCurrency(p.total)}</p>
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
         `;
     }
 
@@ -4202,7 +4211,10 @@ const AIVigilante = {
         if (urgent.length === 0) { container.innerHTML = '<div class="p-6 text-center text-gray-500"><i class="fas fa-check-circle text-4xl text-green-300"></i><p>Nenhuma urgência</p></div>'; return; }
         container.innerHTML = urgent.map(a => `<div class="p-4 hover:bg-red-50 flex justify-between items-center">
             <div><p class="font-medium">${a.title}</p><p class="text-sm text-gray-500">${a.reason}</p><p class="text-xs text-indigo-600">Sugestão: ${a.suggestedCoupon?.code}</p></div>
-            <button onclick="AIVigilante.sendCoupon(${a.client.id},'${a.suggestedCoupon?.code}')" class="bg-green-600 text-white text-xs px-3 py-1.5 rounded"><i class="fab fa-whatsapp"></i> Enviar</button></div>`).join('');
+            <div class="flex gap-2">
+                <button onclick="viewClientDetails('${a.client.id}')" class="bg-indigo-600 text-white text-xs px-2 py-1 rounded"><i class="fas fa-eye"></i></button>
+                <button onclick="AIVigilante.sendCoupon('${a.client.id}','${a.suggestedCoupon?.code}')" class="bg-green-600 text-white text-xs px-3 py-1.5 rounded"><i class="fab fa-whatsapp"></i> Enviar</button>
+            </div></div>`).join('');
     },
     
     renderUpsellList() {
@@ -4211,7 +4223,7 @@ const AIVigilante = {
         const upsell = this.alerts.filter(a => a.type === 'upsell');
         if (upsell.length === 0) { container.innerHTML = '<div class="p-6 text-center text-gray-500"><i class="fas fa-star text-4xl text-yellow-300"></i><p>Analisando...</p></div>'; return; }
         container.innerHTML = upsell.map(a => `<div class="p-4 hover:bg-green-50 flex justify-between"><div><p class="font-medium">${a.title}</p><p class="text-sm text-gray-500">${a.reason}</p></div>
-            <button onclick="viewClientDetails(${a.client.id})" class="bg-indigo-600 text-white text-xs px-3 py-1 rounded">Ver</button></div>`).join('');
+            <button onclick="viewClientDetails('${a.client.id}')" class="bg-indigo-600 text-white text-xs px-3 py-1 rounded">Ver</button></div>`).join('');
     },
     
     renderLateList() {
@@ -4220,23 +4232,84 @@ const AIVigilante = {
         const late = this.alerts.filter(a => a.type === 'late').slice(0, 10);
         if (late.length === 0) { container.innerHTML = '<div class="p-6 text-center text-gray-500"><i class="fas fa-calendar-check text-4xl text-gray-300"></i><p>Nenhum atrasado</p></div>'; return; }
         container.innerHTML = late.map(a => `<div class="p-3 hover:bg-yellow-50 flex justify-between"><div><p class="font-medium">${a.title}</p><p class="text-xs text-gray-500">${a.reason}</p></div>
-            <button onclick="AIVigilante.sendReminder(${a.client.id})" class="bg-yellow-500 text-white text-xs px-3 py-1 rounded"><i class="fab fa-whatsapp"></i></button></div>`).join('');
+            <div class="flex gap-2">
+                <button onclick="viewClientDetails('${a.client.id}')" class="bg-indigo-600 text-white text-xs px-2 py-1 rounded"><i class="fas fa-eye"></i></button>
+                <button onclick="AIVigilante.sendReminder('${a.client.id}')" class="bg-yellow-500 text-white text-xs px-3 py-1 rounded"><i class="fab fa-whatsapp"></i></button>
+            </div></div>`).join('');
     },
     
     sendCoupon(clientId, couponCode) {
-        const client = Storage.getClients().find(c => c.id == clientId);
-        if (!client?.phone) { showToast('Sem telefone', 'error'); return; }
+        const client = Storage.getClients().find(c => c.id == clientId || String(c.id) === String(clientId));
+        if (!client) { showToast('Cliente não encontrado', 'error'); return; }
+        if (!client.phone) { showToast('Cliente sem telefone cadastrado', 'error'); return; }
         CouponManager.assignCoupon(clientId, couponCode, client.name);
         const msg = `Olá ${client.name?.split(' ')[0]}!\n\nSentimos sua falta!\n\nCupom EXCLUSIVO: ${couponCode}\n\nAproveite!`;
-        window.open(`https://wa.me/55${client.phone.replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+        window.open(`https://wa.me/55${client.phone.replace(/\\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
         showToast(`Cupom enviado!`, 'success');
     },
     
     sendReminder(clientId) {
-        const client = Storage.getClients().find(c => c.id == clientId);
-        if (!client?.phone) { showToast('Sem telefone', 'error'); return; }
+        const client = Storage.getClients().find(c => c.id == clientId || String(c.id) === String(clientId));
+        if (!client) { showToast('Cliente não encontrado', 'error'); return; }
+        if (!client.phone) { showToast('Cliente sem telefone cadastrado', 'error'); return; }
         const msg = `Olá ${client.name?.split(' ')[0]}!\n\nTudo bem? Faz um tempinho que não te vemos por aqui!\n\nPosso te ajudar com algo?`;
-        window.open(`https://wa.me/55${client.phone.replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+        window.open(`https://wa.me/55${client.phone.replace(/\\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+    },
+    
+    // NOVA FUNÇÃO: Exportar clientes urgentes para CSV
+    exportUrgentCSV() {
+        const urgent = this.alerts.filter(a => a.type === 'urgent' || a.type === 'at_risk');
+        if (urgent.length === 0) { showToast('Nenhum cliente urgente para exportar', 'info'); return; }
+        
+        const headers = ['Nome', 'Telefone', 'Email', 'Último Pedido', 'Total Gasto', 'Qtd Pedidos', 'Dias Inativo', 'Motivo'];
+        const rows = urgent.map(a => {
+            const c = a.client;
+            const stats = a.stats || {};
+            return [
+                c.name || '',
+                c.phone || '',
+                c.email || '',
+                stats.lastPurchaseDate || '',
+                stats.totalSpent || 0,
+                stats.orderCount || 0,
+                stats.daysSincePurchase || 0,
+                a.reason || ''
+            ];
+        });
+        
+        const csvContent = [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+        const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `clientes_urgentes_${new Date().toISOString().split('T')[0]}.csv`;
+        link.click();
+        showToast(`${urgent.length} clientes exportados!`, 'success');
+    },
+    
+    // Exportar TODOS os clientes com telefone
+    exportAllClientsCSV() {
+        const clients = Storage.getClients().filter(c => c.phone);
+        if (clients.length === 0) { showToast('Nenhum cliente com telefone', 'info'); return; }
+        
+        const headers = ['Nome', 'Telefone', 'Email', 'Cidade', 'Último Pedido', 'Total Gasto', 'Qtd Pedidos', 'Status'];
+        const rows = clients.map(c => [
+            c.name || '',
+            c.phone || '',
+            c.email || '',
+            c.city || '',
+            c.lastPurchaseDate || '',
+            c.totalSpent || 0,
+            c.orderCount || 0,
+            getClientStatus(c).text
+        ]);
+        
+        const csvContent = [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+        const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `todos_clientes_${new Date().toISOString().split('T')[0]}.csv`;
+        link.click();
+        showToast(`${clients.length} clientes exportados!`, 'success');
     },
     
     actionAllUrgent() {

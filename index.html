@@ -174,9 +174,14 @@
                                     <h3 class="text-lg font-semibold text-red-800">
                                         <i class="fas fa-fire text-red-500 mr-2"></i>Clientes Urgentes
                                     </h3>
-                                    <button id="action-all-urgent" class="bg-red-600 text-white text-xs px-3 py-1 rounded hover:bg-red-700">
-                                        <i class="fas fa-bolt mr-1"></i> Ação em Massa
-                                    </button>
+                                    <div class="flex gap-2">
+                                        <button onclick="AIVigilante.exportUrgentCSV()" class="bg-gray-600 text-white text-xs px-3 py-1 rounded hover:bg-gray-700" title="Exportar para planilha">
+                                            <i class="fas fa-file-csv mr-1"></i> Exportar
+                                        </button>
+                                        <button id="action-all-urgent" class="bg-red-600 text-white text-xs px-3 py-1 rounded hover:bg-red-700">
+                                            <i class="fas fa-bolt mr-1"></i> Ação em Massa
+                                        </button>
+                                    </div>
                                 </div>
                                 <div id="urgent-clients-list" class="divide-y divide-gray-200 max-h-80 overflow-y-auto">
                                     <div class="p-6 text-center text-gray-500">
@@ -278,6 +283,9 @@
                                     <option value="lowest-spent">Menor Valor Gasto</option>
                                 </select>
                             </div>
+                            <button onclick="AIVigilante.exportAllClientsCSV()" class="bg-green-600 text-white text-sm px-4 py-2 rounded hover:bg-green-700" title="Exportar clientes com telefone">
+                                <i class="fas fa-file-csv mr-1"></i> Exportar CSV
+                            </button>
                         </div>
                         <div id="client-cards-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"></div>
                         <div id="no-clients-message" class="hidden text-center py-12 px-4 bg-white rounded-lg shadow"><i class="fas fa-user-friends fa-3x text-gray-300"></i><h3 class="mt-2 text-sm font-medium text-gray-900">Nenhum cliente encontrado</h3><p class="mt-1 text-sm text-gray-500">Clique em "Sincronizar Dados" ou adicione um novo cliente.</p></div>
