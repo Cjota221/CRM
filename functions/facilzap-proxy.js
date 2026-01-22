@@ -1,43 +1,47 @@
 const fetch = require('node-fetch');
 
-// Função auxiliar para buscar todas as páginas de um determinado endpoint
-async function fetchAllPages(endpoint, token) {
-  let allData = [];
-  let page = 1;
-  let hasMore = true;
-
-  const tenYearsAgo = new Date();
-  tenYearsAgo.setFullYear(tenYearsAgo.getFullYear() - 10);
-  const dataInicial = tenYearsAgo.toISOString().split('T')[0];
-
-  while (hasMore) {
-    const url = `${endpoint}?page=${page}&length=100&data_inicial=${dataInicial}&incluir_produtos=1`;
-    console.log(`[INFO] A procurar ${endpoint}, página ${page}...`);
-    
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!response.ok) {
-        if (response.status === 401) throw new Error("401 - Token de autorização da FacilZap inválido.");
-        const errorBody = await response.text();
-        throw new Error(`Erro da API para ${endpoint} na página ${page}: Status ${response.status} - ${errorBody}`);
+// Buscar uma página específica
+async function fetchPage(endpoint, token, page) {
+  const oneYearAgo = new Date();
+  oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+  const dataInicial = oneYearAgo.toISOString().split('T')[0];
+  
+  const url = `${endpoint}?page=${page}&length=100&data_inicial=${dataInicial}&incluir_produtos=1`;
+  
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
     }
-    
-    const pageData = await response.json();
-    const dataOnPage = pageData.data;
+  });
 
-    if (dataOnPage && dataOnPage.length > 0) {
-      allData = allData.concat(dataOnPage);
-      page++;
-    } else {
-      hasMore = false;
+  if (!response.ok) {
+    if (response.status === 401) throw new Error("401 - Token inválido");
+    return []; // Retorna vazio em caso de erro
+  }
+  
+  const data = await response.json();
+  return data.data || [];
+}
+
+// Buscar todas as páginas em paralelo (até um limite)
+async function fetchAllParallel(endpoint, token, maxPages = 20) {
+  // Buscar todas as páginas em paralelo de uma vez
+  const pagePromises = [];
+  for (let p = 1; p <= maxPages; p++) {
+    pagePromises.push(fetchPage(endpoint, token, p));
+  }
+  
+  const results = await Promise.all(pagePromises);
+  let allData = [];
+  
+  for (const pageData of results) {
+    if (pageData.length > 0) {
+      allData = allData.concat(pageData);
     }
   }
+  
   return allData;
 }
 
@@ -60,15 +64,16 @@ exports.handler = async (event) => {
   }
   
   try {
-    console.log("[INFO] A iniciar busca paralela de clientes, pedidos e produtos.");
+    console.log("[INFO] Buscando dados em paralelo...");
     
+    // Buscar tudo em paralelo com limite de páginas para caber no timeout
     const [clients, orders, products] = await Promise.all([
-      fetchAllPages('https://api.facilzap.app.br/clientes', FACILZAP_TOKEN),
-      fetchAllPages('https://api.facilzap.app.br/pedidos', FACILZAP_TOKEN),
-      fetchAllPages('https://api.facilzap.app.br/produtos', FACILZAP_TOKEN)
+      fetchAllParallel('https://api.facilzap.app.br/clientes', FACILZAP_TOKEN, 15),
+      fetchAllParallel('https://api.facilzap.app.br/pedidos', FACILZAP_TOKEN, 20),
+      fetchAllParallel('https://api.facilzap.app.br/produtos', FACILZAP_TOKEN, 5)
     ]);
     
-    console.log(`[INFO] Busca finalizada. ${clients.length} clientes, ${orders.length} pedidos e ${products.length} produtos encontrados.`);
+    console.log(`[INFO] Resultado: ${clients.length} clientes, ${orders.length} pedidos, ${products.length} produtos`);
     
     return {
       statusCode: 200,
@@ -77,12 +82,11 @@ exports.handler = async (event) => {
     };
 
   } catch (error) {
-    console.error("[ERRO FATAL] Erro inesperado no proxy:", error.message);
-    const statusCode = error.message.startsWith('401') ? 401 : 500;
+    console.error("[ERRO]", error.message);
     return {
-      statusCode: statusCode,
+      statusCode: 500,
       headers,
-      body: JSON.stringify({ error: `Erro interno no servidor proxy: ${error.message}` })
+      body: JSON.stringify({ error: error.message })
     };
   }
 };
