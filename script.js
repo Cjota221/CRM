@@ -2578,7 +2578,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // Inicializar página de Webhooks
     initWebhooksPage();
     
-    console.log('CRM FacilZap - Pronto!');
+    // Inicializar novos módulos de vendas
+    initDashboard();
+    initCampaigns();
+    initCoupons();
+    
+    console.log('CRM FacilZap - Gerador de Vendas Pronto!');
 });
 
 // ============================================================================
@@ -3660,3 +3665,460 @@ function initWebhooksPage() {
 
 // Expor WebhookManager globalmente
 window.WebhookManager = WebhookManager;
+
+// ============================================================================
+// MÓDULO DE CUPONS - GESTÃO INTELIGENTE
+// ============================================================================
+
+const CouponManager = {
+    STORAGE_KEY: 'crm_coupons',
+    ASSIGNMENTS_KEY: 'crm_coupon_assignments',
+    
+    getCoupons() {
+        try { return JSON.parse(localStorage.getItem(this.STORAGE_KEY) || '[]'); } catch { return []; }
+    },
+    
+    saveCoupon(coupon) {
+        const coupons = this.getCoupons();
+        const existing = coupons.findIndex(c => c.code === coupon.code.toUpperCase());
+        const newCoupon = {
+            ...coupon, code: coupon.code.toUpperCase(), id: coupon.id || Date.now().toString(),
+            createdAt: coupon.createdAt || new Date().toISOString(), usedCount: coupon.usedCount || 0,
+            sentCount: coupon.sentCount || 0, active: coupon.active !== false
+        };
+        if (existing >= 0) coupons[existing] = { ...coupons[existing], ...newCoupon };
+        else coupons.push(newCoupon);
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(coupons));
+        this.updateUI();
+        return newCoupon;
+    },
+    
+    deleteCoupon(code) {
+        const coupons = this.getCoupons().filter(c => c.code !== code.toUpperCase());
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(coupons));
+        this.updateUI();
+    },
+    
+    getAssignments() {
+        try { return JSON.parse(localStorage.getItem(this.ASSIGNMENTS_KEY) || '[]'); } catch { return []; }
+    },
+    
+    assignCoupon(clientId, couponCode, clientName = '') {
+        const assignments = this.getAssignments();
+        if (!assignments.find(a => a.clientId === clientId && a.couponCode === couponCode)) {
+            assignments.push({ id: Date.now().toString(), clientId, clientName, couponCode: couponCode.toUpperCase(),
+                assignedAt: new Date().toISOString(), used: false, usedAt: null, orderId: null });
+            localStorage.setItem(this.ASSIGNMENTS_KEY, JSON.stringify(assignments));
+            const coupons = this.getCoupons();
+            const coupon = coupons.find(c => c.code === couponCode.toUpperCase());
+            if (coupon) { coupon.sentCount = (coupon.sentCount || 0) + 1; localStorage.setItem(this.STORAGE_KEY, JSON.stringify(coupons)); }
+        }
+        this.updateUI();
+    },
+    
+    markCouponUsed(couponCode, clientId, orderId) {
+        const assignments = this.getAssignments();
+        const assignment = assignments.find(a => a.couponCode === couponCode.toUpperCase() && a.clientId === clientId && !a.used);
+        if (assignment) {
+            assignment.used = true; assignment.usedAt = new Date().toISOString(); assignment.orderId = orderId;
+            localStorage.setItem(this.ASSIGNMENTS_KEY, JSON.stringify(assignments));
+            const coupons = this.getCoupons();
+            const coupon = coupons.find(c => c.code === couponCode.toUpperCase());
+            if (coupon) { coupon.usedCount = (coupon.usedCount || 0) + 1; localStorage.setItem(this.STORAGE_KEY, JSON.stringify(coupons)); }
+            const clients = Storage.getClients();
+            const client = clients.find(c => c.id == clientId);
+            if (client) { client.recoveredWithCoupon = true; client.recoveredAt = new Date().toISOString(); Storage.saveClients(clients); }
+            showToast(`🎉 Cliente recuperado com cupom ${couponCode}!`, 'success');
+        }
+        this.updateUI();
+    },
+    
+    suggestCoupon(client) {
+        const ticketMedio = client.stats?.averageTicket || 0;
+        const assignments = this.getAssignments();
+        const pending = assignments.find(a => a.clientId === client.id && !a.used);
+        if (pending) return { code: pending.couponCode, reason: 'Cupom já enviado', pending: true };
+        if (ticketMedio >= 500) return { code: 'VOLTA15', reason: 'Ticket Alto (15%)', discount: '15%' };
+        if (ticketMedio >= 200) return { code: 'VOLTA10', reason: 'Ticket Médio (10%)', discount: '10%' };
+        return { code: 'FRETEGRATIS', reason: 'Frete Grátis', discount: 'Frete' };
+    },
+    
+    getStats() {
+        const coupons = this.getCoupons();
+        const assignments = this.getAssignments();
+        const active = coupons.filter(c => c.active).length;
+        const totalSent = assignments.length;
+        const totalUsed = assignments.filter(a => a.used).length;
+        const conversionRate = totalSent > 0 ? ((totalUsed / totalSent) * 100).toFixed(1) : 0;
+        return { active, totalSent, totalUsed, conversionRate };
+    },
+    
+    updateUI() {
+        const stats = this.getStats();
+        const coupons = this.getCoupons();
+        const assignments = this.getAssignments();
+        
+        ['coupon-active-count', 'coupon-sent-count', 'coupon-used-count', 'coupon-conversion-rate',
+         'dash-recovered-count', 'dash-coupon-roi'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                if (id.includes('active')) el.textContent = stats.active;
+                else if (id.includes('sent')) el.textContent = stats.totalSent;
+                else if (id.includes('used') || id.includes('recovered')) el.textContent = stats.totalUsed;
+                else if (id.includes('rate') || id.includes('roi')) el.textContent = stats.conversionRate + '%';
+            }
+        });
+        
+        this.renderCouponsList(coupons);
+        this.renderUsageHistory(assignments);
+        this.renderPendingCoupons(assignments);
+        this.updateCouponSelect(coupons);
+    },
+    
+    renderCouponsList(coupons) {
+        const container = document.getElementById('coupons-list');
+        if (!container) return;
+        if (coupons.length === 0) {
+            container.innerHTML = '<div class="p-6 text-center text-gray-500"><i class="fas fa-ticket-alt text-4xl text-gray-300 mb-2"></i><p>Nenhum cupom cadastrado</p></div>';
+            return;
+        }
+        container.innerHTML = coupons.map(c => {
+            const conv = c.sentCount > 0 ? ((c.usedCount / c.sentCount) * 100).toFixed(0) : 0;
+            return `<div class="p-4 hover:bg-gray-50"><div class="flex justify-between items-start"><div>
+                <span class="font-mono font-bold text-lg text-indigo-600">${c.code}</span>
+                <span class="text-xs px-2 py-0.5 rounded-full ${c.active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}">${c.active ? 'Ativo' : 'Inativo'}</span>
+                <p class="text-sm text-gray-500">${c.description || 'Sem descrição'}</p></div>
+                <div class="text-right"><p class="text-sm"><span class="font-bold text-blue-600">${c.sentCount || 0}</span> enviados</p>
+                <p class="text-sm"><span class="font-bold text-green-600">${c.usedCount || 0}</span> usados (${conv}%)</p></div></div>
+                <div class="flex gap-2 mt-2"><button onclick="CouponManager.toggleActive('${c.code}')" class="text-xs px-2 py-1 bg-gray-200 rounded">${c.active ? 'Desativar' : 'Ativar'}</button>
+                <button onclick="CouponManager.deleteCoupon('${c.code}')" class="text-xs px-2 py-1 bg-red-100 text-red-700 rounded">Excluir</button></div></div>`;
+        }).join('');
+    },
+    
+    renderUsageHistory(assignments) {
+        const container = document.getElementById('coupon-usage-history');
+        if (!container) return;
+        const used = assignments.filter(a => a.used).slice(0, 20);
+        if (used.length === 0) { container.innerHTML = '<div class="p-6 text-center text-gray-500"><i class="fas fa-history text-4xl text-gray-300"></i><p>Nenhum uso</p></div>'; return; }
+        container.innerHTML = used.map(a => `<div class="p-3 flex justify-between"><div><p class="font-medium">${a.clientName || 'Cliente'}</p><p class="text-xs text-gray-500">Cupom: ${a.couponCode}</p></div><span class="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">✓ ${formatDate(a.usedAt)}</span></div>`).join('');
+    },
+    
+    renderPendingCoupons(assignments) {
+        const container = document.getElementById('pending-coupons-list');
+        const countEl = document.getElementById('pending-coupons-count');
+        if (!container) return;
+        const pending = assignments.filter(a => !a.used);
+        if (countEl) countEl.textContent = `${pending.length} clientes`;
+        if (pending.length === 0) { container.innerHTML = '<div class="p-6 text-center text-gray-500"><i class="fas fa-hourglass-half text-4xl text-gray-300"></i><p>Nenhum pendente</p></div>'; return; }
+        container.innerHTML = pending.slice(0, 15).map(a => `<div class="p-3 flex justify-between"><div><p class="font-medium">${a.clientName || 'Cliente'}</p><p class="text-xs">${a.couponCode} - ${formatDate(a.assignedAt)}</p></div><button onclick="CouponManager.resendCoupon('${a.clientId}','${a.couponCode}')" class="text-xs bg-green-100 text-green-700 px-2 py-1 rounded"><i class="fab fa-whatsapp"></i> Reenviar</button></div>`).join('');
+    },
+    
+    updateCouponSelect(coupons) {
+        const select = document.getElementById('bulk-coupon-select');
+        if (select) select.innerHTML = '<option value="">Nenhum cupom</option>' + coupons.filter(c => c.active).map(c => `<option value="${c.code}">${c.code}</option>`).join('');
+    },
+    
+    toggleActive(code) {
+        const coupons = this.getCoupons();
+        const c = coupons.find(x => x.code === code);
+        if (c) { c.active = !c.active; localStorage.setItem(this.STORAGE_KEY, JSON.stringify(coupons)); this.updateUI(); }
+    },
+    
+    resendCoupon(clientId, couponCode) {
+        const client = Storage.getClients().find(c => c.id == clientId);
+        if (!client?.phone) { showToast('Sem telefone', 'error'); return; }
+        const msg = `Olá ${client.name}! Você ainda não usou seu cupom: ${couponCode} 🎁`;
+        window.open(`https://wa.me/55${client.phone.replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+    }
+};
+window.CouponManager = CouponManager;
+
+// ============================================================================
+// MÓDULO DE CAMPANHAS
+// ============================================================================
+
+const CampaignManager = {
+    filteredClients: [],
+    
+    applyFilters() {
+        const clients = Storage.getClients();
+        const assignments = CouponManager.getAssignments();
+        const daysMin = parseInt(document.getElementById('camp-days-min')?.value) || 0;
+        const daysMax = parseInt(document.getElementById('camp-days-max')?.value) || 9999;
+        const ticketMin = parseFloat(document.getElementById('camp-ticket-min')?.value) || 0;
+        const ticketMax = parseFloat(document.getElementById('camp-ticket-max')?.value) || 999999;
+        const ordersMin = parseInt(document.getElementById('camp-orders-min')?.value) || 0;
+        const ordersMax = parseInt(document.getElementById('camp-orders-max')?.value) || 9999;
+        const state = document.getElementById('camp-state')?.value || '';
+        const status = document.getElementById('camp-status')?.value || '';
+        const hasCoupon = document.getElementById('camp-has-coupon')?.value || '';
+        
+        this.filteredClients = clients.filter(client => {
+            const stats = client.stats || {};
+            const days = stats.daysSinceLastPurchase || 9999;
+            if (days < daysMin || days > daysMax) return false;
+            if ((stats.averageTicket || 0) < ticketMin || (stats.averageTicket || 0) > ticketMax) return false;
+            if ((stats.totalOrders || 0) < ordersMin || (stats.totalOrders || 0) > ordersMax) return false;
+            if (state && (client.state || client.estado || '').toUpperCase() !== state.toUpperCase()) return false;
+            if (status && client.status !== status) return false;
+            if (hasCoupon) {
+                const ca = assignments.filter(a => a.clientId === client.id);
+                if (hasCoupon === 'no' && ca.length > 0) return false;
+                if (hasCoupon === 'yes' && ca.length === 0) return false;
+                if (hasCoupon === 'used' && !ca.some(a => a.used)) return false;
+                if (hasCoupon === 'not-used' && (ca.length === 0 || ca.some(a => a.used))) return false;
+            }
+            return true;
+        });
+        this.renderResults();
+        this.updateButtons();
+    },
+    
+    applyQuickFilter(filterType) {
+        document.querySelectorAll('#campaigns-page input, #campaigns-page select').forEach(el => { if (el.type === 'number') el.value = ''; else if (el.tagName === 'SELECT') el.value = ''; });
+        switch (filterType) {
+            case 'inactive-300': document.getElementById('camp-days-min').value = 300; break;
+            case 'risk-high-ticket': document.getElementById('camp-status').value = 'em-risco'; document.getElementById('camp-ticket-min').value = 300; break;
+            case 'vip-inactive': document.getElementById('camp-ticket-min').value = 500; document.getElementById('camp-orders-min').value = 5; document.getElementById('camp-days-min').value = 60; break;
+            case 'first-purchase': document.getElementById('camp-orders-min').value = 1; document.getElementById('camp-orders-max').value = 1; break;
+            case 'no-coupon': document.getElementById('camp-has-coupon').value = 'no'; break;
+        }
+        this.applyFilters();
+    },
+    
+    renderResults() {
+        const container = document.getElementById('campaign-results-list');
+        const countEl = document.getElementById('campaign-result-count');
+        if (countEl) countEl.textContent = this.filteredClients.length;
+        if (this.filteredClients.length === 0) {
+            container.innerHTML = '<div class="p-8 text-center text-gray-500"><i class="fas fa-search text-5xl text-gray-300 mb-4"></i><p class="text-lg">Nenhum cliente encontrado</p></div>';
+            return;
+        }
+        container.innerHTML = this.filteredClients.slice(0, 50).map(client => {
+            const stats = client.stats || {};
+            const suggestion = CouponManager.suggestCoupon(client);
+            return `<div class="p-4 hover:bg-gray-50 flex items-center justify-between"><div class="flex items-center gap-4">
+                <input type="checkbox" class="campaign-client-check" data-id="${client.id}" checked>
+                <div><p class="font-medium">${client.name}</p><p class="text-sm text-gray-500">${client.phone || client.email || 'Sem contato'}</p>
+                <p class="text-xs text-gray-400">${stats.totalOrders || 0} ped • ${formatCurrency(stats.averageTicket || 0)} • ${stats.daysSinceLastPurchase || '?'} dias</p></div></div>
+                <div class="text-right"><span class="text-xs px-2 py-1 rounded-full ${client.status === 'ativo' ? 'bg-green-100 text-green-700' : client.status === 'em-risco' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}">${client.status || 'N/A'}</span>
+                <p class="text-xs text-gray-500 mt-1">Sugestão: <span class="font-mono text-indigo-600">${suggestion.code}</span></p></div></div>`;
+        }).join('');
+    },
+    
+    updateButtons() {
+        const has = this.filteredClients.length > 0;
+        ['campaign-generate-coupons', 'campaign-export', 'campaign-whatsapp'].forEach(id => { const el = document.getElementById(id); if (el) el.disabled = !has; });
+    },
+    
+    getSelectedClients() {
+        const ids = Array.from(document.querySelectorAll('.campaign-client-check:checked')).map(cb => cb.dataset.id);
+        return this.filteredClients.filter(c => ids.includes(c.id.toString()));
+    },
+    
+    generateCoupons() {
+        const selected = this.getSelectedClients();
+        if (selected.length === 0) { showToast('Selecione clientes', 'error'); return; }
+        let gen = 0;
+        selected.forEach(client => {
+            const s = CouponManager.suggestCoupon(client);
+            if (!s.pending) { CouponManager.assignCoupon(client.id, s.code, client.name); gen++; }
+        });
+        showToast(`${gen} cupons atribuídos!`, 'success');
+        this.applyFilters();
+    },
+    
+    exportCSV() {
+        const selected = this.getSelectedClients();
+        if (selected.length === 0) { showToast('Selecione clientes', 'error'); return; }
+        const rows = [['Nome', 'Telefone', 'Email', 'Ticket', 'Dias', 'Cupom']];
+        selected.forEach(c => {
+            const s = c.stats || {};
+            rows.push([c.name, c.phone || '', c.email || '', s.averageTicket || 0, s.daysSinceLastPurchase || '', CouponManager.suggestCoupon(c).code]);
+        });
+        const csv = rows.map(r => r.map(x => `"${x}"`).join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `campanha_${new Date().toISOString().split('T')[0]}.csv`;
+        link.click();
+        showToast(`${selected.length} exportados!`, 'success');
+    },
+    
+    openBulkWhatsApp() {
+        const selected = this.getSelectedClients();
+        if (selected.length === 0) { showToast('Selecione clientes', 'error'); return; }
+        document.getElementById('bulk-client-count').textContent = selected.length;
+        document.getElementById('bulk-whatsapp-modal').classList.remove('hidden');
+    },
+    
+    async startBulkDispatch() {
+        const selected = this.getSelectedClients();
+        const msg = document.getElementById('bulk-message-text').value;
+        const coupon = document.getElementById('bulk-coupon-select').value;
+        if (!msg) { showToast('Preencha a mensagem', 'error'); return; }
+        let sent = 0;
+        for (const client of selected) {
+            if (!client.phone) continue;
+            let m = msg.replace(/{nome}/g, client.name?.split(' ')[0] || '').replace(/{cupom}/g, coupon);
+            if (coupon) CouponManager.assignCoupon(client.id, coupon, client.name);
+            window.open(`https://wa.me/55${client.phone.replace(/\D/g, '')}?text=${encodeURIComponent(m)}`, '_blank');
+            sent++;
+            await new Promise(r => setTimeout(r, 500));
+        }
+        showToast(`${sent} mensagens!`, 'success');
+        document.getElementById('bulk-whatsapp-modal').classList.add('hidden');
+    }
+};
+window.CampaignManager = CampaignManager;
+
+// ============================================================================
+// IA VIGILANTE
+// ============================================================================
+
+const AIVigilante = {
+    alerts: [],
+    
+    run() {
+        console.log('[IA Vigilante] Analisando...');
+        const clients = Storage.getClients();
+        this.alerts = [];
+        
+        // Urgentes (300+ dias, ticket alto)
+        const urgent = clients.filter(c => (c.stats?.daysSinceLastPurchase || 0) >= 300 && (c.stats?.averageTicket || 0) >= 200);
+        urgent.forEach(c => this.alerts.push({ type: 'urgent', priority: 1, client: c, title: `${c.name} - ${c.stats?.daysSinceLastPurchase} dias`,
+            reason: `Ticket: ${formatCurrency(c.stats?.averageTicket || 0)}`, suggestedCoupon: CouponManager.suggestCoupon(c) }));
+        
+        // Upsell
+        const upsell = clients.filter(c => (c.stats?.daysSinceLastPurchase || 999) <= 30 && (c.stats?.totalOrders || 0) >= 3).slice(0, 10);
+        upsell.forEach(c => this.alerts.push({ type: 'upsell', priority: 3, client: c, title: c.name, reason: `${c.stats?.totalOrders} ped, ${formatCurrency(c.stats?.averageTicket || 0)}` }));
+        
+        // Atrasados
+        const late = clients.filter(c => {
+            const avg = c.stats?.avgPurchaseInterval || 0;
+            const days = c.stats?.daysSinceLastPurchase || 0;
+            return avg > 0 && days > avg * 1.5 && (c.stats?.totalOrders || 0) >= 3;
+        });
+        late.forEach(c => this.alerts.push({ type: 'late', priority: 2, client: c, title: c.name, reason: `Comprava a cada ${Math.round(c.stats?.avgPurchaseInterval || 0)}d, há ${c.stats?.daysSinceLastPurchase}d` }));
+        
+        this.alerts.sort((a, b) => a.priority - b.priority);
+        const riskValue = urgent.reduce((s, c) => s + (c.stats?.totalSpent || 0), 0);
+        
+        this.updateDashboard({ urgentCount: urgent.length, riskValue, upsellCount: upsell.length, lateCount: late.length });
+        showToast(`IA: ${urgent.length} urgências!`, 'info');
+    },
+    
+    updateDashboard(stats) {
+        const badge = document.getElementById('alerts-badge');
+        if (badge) { if (stats.urgentCount > 0) { badge.textContent = stats.urgentCount; badge.classList.remove('hidden'); } else badge.classList.add('hidden'); }
+        
+        const u = document.getElementById('dash-urgent-count');
+        const r = document.getElementById('dash-risk-value');
+        if (u) u.textContent = stats.urgentCount;
+        if (r) r.textContent = formatCurrency(stats.riskValue);
+        
+        document.getElementById('quick-inactive-count')?.textContent && (document.getElementById('quick-inactive-count').textContent = `${stats.urgentCount} clientes`);
+        document.getElementById('late-count')?.textContent && (document.getElementById('late-count').textContent = `${stats.lateCount} clientes`);
+        document.getElementById('upsell-count')?.textContent && (document.getElementById('upsell-count').textContent = `${stats.upsellCount} clientes`);
+        document.getElementById('quick-cart-count')?.textContent && (document.getElementById('quick-cart-count').textContent = `${WebhookManager.getAbandonedCarts().length} carrinhos`);
+        
+        this.renderUrgentList();
+        this.renderUpsellList();
+        this.renderLateList();
+    },
+    
+    renderUrgentList() {
+        const container = document.getElementById('urgent-clients-list');
+        if (!container) return;
+        const urgent = this.alerts.filter(a => a.type === 'urgent').slice(0, 10);
+        if (urgent.length === 0) { container.innerHTML = '<div class="p-6 text-center text-gray-500"><i class="fas fa-check-circle text-4xl text-green-300"></i><p>Nenhuma urgência</p></div>'; return; }
+        container.innerHTML = urgent.map(a => `<div class="p-4 hover:bg-red-50 flex justify-between items-center">
+            <div><p class="font-medium">${a.title}</p><p class="text-sm text-gray-500">${a.reason}</p><p class="text-xs text-indigo-600">Sugestão: ${a.suggestedCoupon?.code}</p></div>
+            <button onclick="AIVigilante.sendCoupon(${a.client.id},'${a.suggestedCoupon?.code}')" class="bg-green-600 text-white text-xs px-3 py-1.5 rounded"><i class="fab fa-whatsapp"></i> Enviar</button></div>`).join('');
+    },
+    
+    renderUpsellList() {
+        const container = document.getElementById('upsell-clients-list');
+        if (!container) return;
+        const upsell = this.alerts.filter(a => a.type === 'upsell');
+        if (upsell.length === 0) { container.innerHTML = '<div class="p-6 text-center text-gray-500"><i class="fas fa-star text-4xl text-yellow-300"></i><p>Analisando...</p></div>'; return; }
+        container.innerHTML = upsell.map(a => `<div class="p-4 hover:bg-green-50 flex justify-between"><div><p class="font-medium">${a.title}</p><p class="text-sm text-gray-500">${a.reason}</p></div>
+            <button onclick="viewClientDetails(${a.client.id})" class="bg-indigo-600 text-white text-xs px-3 py-1 rounded">Ver</button></div>`).join('');
+    },
+    
+    renderLateList() {
+        const container = document.getElementById('late-clients-list');
+        if (!container) return;
+        const late = this.alerts.filter(a => a.type === 'late').slice(0, 10);
+        if (late.length === 0) { container.innerHTML = '<div class="p-6 text-center text-gray-500"><i class="fas fa-calendar-check text-4xl text-gray-300"></i><p>Nenhum atrasado</p></div>'; return; }
+        container.innerHTML = late.map(a => `<div class="p-3 hover:bg-yellow-50 flex justify-between"><div><p class="font-medium">${a.title}</p><p class="text-xs text-gray-500">${a.reason}</p></div>
+            <button onclick="AIVigilante.sendReminder(${a.client.id})" class="bg-yellow-500 text-white text-xs px-3 py-1 rounded"><i class="fab fa-whatsapp"></i></button></div>`).join('');
+    },
+    
+    sendCoupon(clientId, couponCode) {
+        const client = Storage.getClients().find(c => c.id == clientId);
+        if (!client?.phone) { showToast('Sem telefone', 'error'); return; }
+        CouponManager.assignCoupon(clientId, couponCode, client.name);
+        const msg = `Olá ${client.name?.split(' ')[0]}! 👋\n\nSentimos sua falta!\n\n🎁 Cupom EXCLUSIVO: ${couponCode}\n\nAproveite!`;
+        window.open(`https://wa.me/55${client.phone.replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+        showToast(`Cupom enviado!`, 'success');
+    },
+    
+    sendReminder(clientId) {
+        const client = Storage.getClients().find(c => c.id == clientId);
+        if (!client?.phone) { showToast('Sem telefone', 'error'); return; }
+        const msg = `Olá ${client.name?.split(' ')[0]}! 👋\n\nTudo bem? Faz um tempinho que não te vemos por aqui! 😊\n\nPosso te ajudar com algo?`;
+        window.open(`https://wa.me/55${client.phone.replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+    },
+    
+    actionAllUrgent() {
+        const urgent = this.alerts.filter(a => a.type === 'urgent');
+        if (urgent.length === 0) { showToast('Nenhum urgente', 'info'); return; }
+        CampaignManager.filteredClients = urgent.map(a => a.client).filter(c => c.phone);
+        CampaignManager.openBulkWhatsApp();
+    }
+};
+window.AIVigilante = AIVigilante;
+
+// ============================================================================
+// INICIALIZAÇÃO NOVOS MÓDULOS
+// ============================================================================
+
+function initDashboard() {
+    document.getElementById('run-vigilante-btn')?.addEventListener('click', () => AIVigilante.run());
+    document.getElementById('action-all-urgent')?.addEventListener('click', () => AIVigilante.actionAllUrgent());
+    document.getElementById('quick-action-inactive')?.addEventListener('click', () => { document.getElementById('nav-campaigns').click(); setTimeout(() => CampaignManager.applyQuickFilter('inactive-300'), 100); });
+    document.getElementById('quick-action-vip')?.addEventListener('click', () => { document.getElementById('nav-campaigns').click(); setTimeout(() => CampaignManager.applyQuickFilter('vip-inactive'), 100); });
+    document.getElementById('quick-action-cart')?.addEventListener('click', () => document.getElementById('nav-webhooks').click());
+    setTimeout(() => { if (Storage.getClients().length > 0) AIVigilante.run(); }, 1000);
+}
+
+function initCampaigns() {
+    document.getElementById('apply-campaign-filters')?.addEventListener('click', () => CampaignManager.applyFilters());
+    document.querySelectorAll('.quick-filter').forEach(btn => btn.addEventListener('click', () => CampaignManager.applyQuickFilter(btn.dataset.filter)));
+    document.getElementById('campaign-generate-coupons')?.addEventListener('click', () => CampaignManager.generateCoupons());
+    document.getElementById('campaign-export')?.addEventListener('click', () => CampaignManager.exportCSV());
+    document.getElementById('campaign-whatsapp')?.addEventListener('click', () => CampaignManager.openBulkWhatsApp());
+    document.getElementById('cancel-bulk-btn')?.addEventListener('click', () => document.getElementById('bulk-whatsapp-modal').classList.add('hidden'));
+    document.getElementById('start-bulk-dispatch')?.addEventListener('click', () => CampaignManager.startBulkDispatch());
+}
+
+function initCoupons() {
+    document.getElementById('add-coupon-btn')?.addEventListener('click', () => { document.getElementById('coupon-form').reset(); document.getElementById('coupon-modal').classList.remove('hidden'); });
+    document.getElementById('cancel-coupon-btn')?.addEventListener('click', () => document.getElementById('coupon-modal').classList.add('hidden'));
+    document.getElementById('coupon-form')?.addEventListener('submit', (e) => {
+        e.preventDefault();
+        CouponManager.saveCoupon({
+            code: document.getElementById('coupon-code').value,
+            description: document.getElementById('coupon-description').value,
+            type: document.getElementById('coupon-type').value,
+            value: parseFloat(document.getElementById('coupon-value').value) || 0,
+            expiry: document.getElementById('coupon-expiry').value,
+            limit: parseInt(document.getElementById('coupon-limit').value) || null,
+            rule: document.getElementById('coupon-rule').value
+        });
+        document.getElementById('coupon-modal').classList.add('hidden');
+        showToast('Cupom cadastrado!', 'success');
+    });
+    CouponManager.updateUI();
+}

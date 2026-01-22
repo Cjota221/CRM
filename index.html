@@ -49,32 +49,55 @@
         <div class="w-64 bg-gray-800 text-white flex flex-col">
             <div class="px-8 py-6 border-b border-gray-700">
                 <h2 class="text-2xl font-semibold">CRM FacilZap</h2>
+                <p class="text-xs text-gray-400 mt-1">Gerador de Vendas</p>
             </div>
-            <nav class="flex-1 px-4 py-4 space-y-2">
-                <a href="#" id="nav-clients" class="nav-link flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200 active">
+            <nav class="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
+                <!-- Dashboard -->
+                <a href="#" id="nav-dashboard" class="nav-link flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200 active">
+                    <i class="fas fa-tachometer-alt w-6 text-center"></i><span class="ml-4">Dashboard</span>
+                    <span id="alerts-badge" class="ml-auto bg-red-500 text-white text-xs px-2 py-0.5 rounded-full hidden">0</span>
+                </a>
+                
+                <!-- Clientes -->
+                <a href="#" id="nav-clients" class="nav-link flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
                     <i class="fas fa-users w-6 text-center"></i><span class="ml-4">Clientes</span>
                 </a>
-                <a href="#" id="nav-products" class="nav-link flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
-                    <i class="fas fa-box-open w-6 text-center"></i><span class="ml-4">Produtos</span>
+                
+                <!-- Campanhas -->
+                <a href="#" id="nav-campaigns" class="nav-link flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
+                    <i class="fas fa-bullhorn w-6 text-center text-orange-400"></i><span class="ml-4">Campanhas</span>
                 </a>
-                <a href="#" id="nav-orders" class="nav-link flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
-                    <i class="fas fa-receipt w-6 text-center"></i><span class="ml-4">Pedidos</span>
+                
+                <!-- Cupons -->
+                <a href="#" id="nav-coupons" class="nav-link flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
+                    <i class="fas fa-ticket-alt w-6 text-center text-green-400"></i><span class="ml-4">Gestão de Cupons</span>
                 </a>
-                <a href="#" id="nav-growth" class="nav-link flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
-                    <i class="fas fa-chart-line w-6 text-center"></i><span class="ml-4">Análise Estratégica</span>
-                </a>
-                <a href="#" id="nav-webhooks" class="nav-link flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
-                    <i class="fas fa-bolt w-6 text-center text-yellow-400"></i><span class="ml-4">Webhooks</span>
-                    <span id="webhook-badge" class="ml-auto bg-red-500 text-white text-xs px-2 py-0.5 rounded-full hidden">0</span>
-                </a>
+                
                 <div class="border-t border-gray-700 pt-4 mt-4 space-y-2">
+                    <p class="px-4 text-xs text-gray-500 uppercase tracking-wider">Dados</p>
+                    
+                    <a href="#" id="nav-products" class="nav-link flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
+                        <i class="fas fa-box-open w-6 text-center"></i><span class="ml-4">Produtos</span>
+                    </a>
+                    <a href="#" id="nav-orders" class="nav-link flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
+                        <i class="fas fa-receipt w-6 text-center"></i><span class="ml-4">Pedidos</span>
+                    </a>
+                    <a href="#" id="nav-webhooks" class="nav-link flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
+                        <i class="fas fa-bolt w-6 text-center text-yellow-400"></i><span class="ml-4">Webhooks</span>
+                        <span id="webhook-badge" class="ml-auto bg-red-500 text-white text-xs px-2 py-0.5 rounded-full hidden">0</span>
+                    </a>
+                </div>
+                
+                <div class="border-t border-gray-700 pt-4 mt-4 space-y-2">
+                    <p class="px-4 text-xs text-gray-500 uppercase tracking-wider">Sistema</p>
+                    
                     <a href="#" id="sync-button" class="flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
-                        <i class="fas fa-sync-alt w-6 text-center"></i><span class="ml-4">Sincronizar Dados</span>
+                        <i class="fas fa-sync-alt w-6 text-center"></i><span class="ml-4">Sincronizar</span>
                     </a>
                     <a href="#" id="import-legacy-button" class="flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
                         <i class="fas fa-file-import w-6 text-center"></i><span class="ml-4">Importar Legado</span>
                     </a>
-                     <a href="#" id="open-settings-button" class="flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
+                    <a href="#" id="open-settings-button" class="flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
                         <i class="fas fa-cog w-6 text-center"></i><span class="ml-4">Configurações</span>
                     </a>
                 </div>
@@ -83,8 +106,152 @@
 
         <!-- Main content -->
         <div class="flex-1 flex flex-col"> <!-- CORREÇÃO: Removido 'overflow-hidden' -->
+            
+            <!-- PÁGINA DASHBOARD (ALERTAS DO DIA) -->
+            <div id="dashboard-page" class="page-content flex flex-col h-full">
+                <header class="bg-white shadow-sm">
+                    <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
+                        <div>
+                            <h1 class="text-xl font-semibold text-gray-900">🚀 Dashboard - Central de Ação</h1>
+                            <p class="text-sm text-gray-500">Oportunidades identificadas pela IA Vigilante</p>
+                        </div>
+                        <button id="run-vigilante-btn" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">
+                            <i class="fas fa-robot mr-2"></i> Rodar IA Vigilante
+                        </button>
+                    </div>
+                </header>
+                <main class="flex-1 overflow-y-auto bg-gray-100 p-6">
+                    <div class="container mx-auto">
+                        <!-- KPIs Principais -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                            <div class="bg-gradient-to-br from-red-500 to-red-600 rounded-lg shadow p-4 text-white">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm opacity-90">🔥 Urgentes Hoje</p>
+                                        <p class="text-3xl font-bold" id="dash-urgent-count">0</p>
+                                        <p class="text-xs opacity-75">Clientes precisam de ação</p>
+                                    </div>
+                                    <i class="fas fa-exclamation-triangle text-4xl opacity-50"></i>
+                                </div>
+                            </div>
+                            <div class="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow p-4 text-white">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm opacity-90">💰 Valor em Risco</p>
+                                        <p class="text-3xl font-bold" id="dash-risk-value">R$ 0</p>
+                                        <p class="text-xs opacity-75">Ticket dos inativos</p>
+                                    </div>
+                                    <i class="fas fa-money-bill-wave text-4xl opacity-50"></i>
+                                </div>
+                            </div>
+                            <div class="bg-gradient-to-br from-green-500 to-green-600 rounded-lg shadow p-4 text-white">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm opacity-90">✅ Recuperados (Mês)</p>
+                                        <p class="text-3xl font-bold" id="dash-recovered-count">0</p>
+                                        <p class="text-xs opacity-75">Usaram cupons</p>
+                                    </div>
+                                    <i class="fas fa-user-check text-4xl opacity-50"></i>
+                                </div>
+                            </div>
+                            <div class="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow p-4 text-white">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm opacity-90">📊 ROI Cupons</p>
+                                        <p class="text-3xl font-bold" id="dash-coupon-roi">0%</p>
+                                        <p class="text-xs opacity-75">Taxa de conversão</p>
+                                    </div>
+                                    <i class="fas fa-chart-pie text-4xl opacity-50"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Alertas do Dia -->
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                            <!-- Clientes Urgentes -->
+                            <div class="bg-white rounded-lg shadow">
+                                <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-red-50">
+                                    <h3 class="text-lg font-semibold text-red-800">
+                                        <i class="fas fa-fire text-red-500 mr-2"></i>Clientes Urgentes
+                                    </h3>
+                                    <button id="action-all-urgent" class="bg-red-600 text-white text-xs px-3 py-1 rounded hover:bg-red-700">
+                                        <i class="fas fa-bolt mr-1"></i> Ação em Massa
+                                    </button>
+                                </div>
+                                <div id="urgent-clients-list" class="divide-y divide-gray-200 max-h-80 overflow-y-auto">
+                                    <div class="p-6 text-center text-gray-500">
+                                        <i class="fas fa-check-circle text-4xl text-green-300 mb-2"></i>
+                                        <p>Nenhuma urgência no momento</p>
+                                        <p class="text-xs">Clique em "Rodar IA Vigilante" para analisar</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Oportunidades de Upsell -->
+                            <div class="bg-white rounded-lg shadow">
+                                <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-green-50">
+                                    <h3 class="text-lg font-semibold text-green-800">
+                                        <i class="fas fa-gem text-green-500 mr-2"></i>Oportunidades de Upsell
+                                    </h3>
+                                    <span id="upsell-count" class="text-sm text-gray-500">0 clientes</span>
+                                </div>
+                                <div id="upsell-clients-list" class="divide-y divide-gray-200 max-h-80 overflow-y-auto">
+                                    <div class="p-6 text-center text-gray-500">
+                                        <i class="fas fa-star text-4xl text-yellow-300 mb-2"></i>
+                                        <p>Analisando oportunidades...</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Clientes Atrasados (padrão de compra) -->
+                        <div class="bg-white rounded-lg shadow mb-6">
+                            <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-yellow-50">
+                                <h3 class="text-lg font-semibold text-yellow-800">
+                                    <i class="fas fa-clock text-yellow-500 mr-2"></i>Clientes Atrasados (Fora do Padrão)
+                                </h3>
+                                <span id="late-count" class="text-sm text-gray-500">0 clientes</span>
+                            </div>
+                            <div id="late-clients-list" class="divide-y divide-gray-200 max-h-64 overflow-y-auto">
+                                <div class="p-6 text-center text-gray-500">
+                                    <i class="fas fa-calendar-check text-4xl text-gray-300 mb-2"></i>
+                                    <p>Clientes que compravam regularmente mas atrasaram</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Ações Rápidas -->
+                        <div class="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-lg shadow p-6 text-white">
+                            <h3 class="text-lg font-semibold mb-4"><i class="fas fa-zap mr-2"></i>Ações Rápidas</h3>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <button id="quick-action-inactive" class="bg-white/20 hover:bg-white/30 rounded-lg p-4 text-center transition-colors">
+                                    <i class="fas fa-user-clock text-2xl mb-2"></i>
+                                    <p class="text-sm font-medium">Reativar Inativos</p>
+                                    <p class="text-xs opacity-75" id="quick-inactive-count">0 clientes</p>
+                                </button>
+                                <button id="quick-action-birthday" class="bg-white/20 hover:bg-white/30 rounded-lg p-4 text-center transition-colors">
+                                    <i class="fas fa-birthday-cake text-2xl mb-2"></i>
+                                    <p class="text-sm font-medium">Aniversariantes</p>
+                                    <p class="text-xs opacity-75" id="quick-birthday-count">0 este mês</p>
+                                </button>
+                                <button id="quick-action-vip" class="bg-white/20 hover:bg-white/30 rounded-lg p-4 text-center transition-colors">
+                                    <i class="fas fa-crown text-2xl mb-2"></i>
+                                    <p class="text-sm font-medium">Mimar VIPs</p>
+                                    <p class="text-xs opacity-75" id="quick-vip-count">0 VIPs</p>
+                                </button>
+                                <button id="quick-action-cart" class="bg-white/20 hover:bg-white/30 rounded-lg p-4 text-center transition-colors">
+                                    <i class="fas fa-shopping-cart text-2xl mb-2"></i>
+                                    <p class="text-sm font-medium">Carrinhos Abandonados</p>
+                                    <p class="text-xs opacity-75" id="quick-cart-count">0 carrinhos</p>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </main>
+            </div>
+
             <!-- PÁGINA DE CLIENTES -->
-            <div id="clients-page" class="page-content flex flex-col h-full">
+            <div id="clients-page" class="page-content hidden flex flex-col h-full">
                 <header class="bg-white shadow-sm">
                     <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
                         <div class="flex items-baseline">
@@ -283,6 +450,275 @@
                             </div>
                             <div id="segment-client-list" class="space-y-2 max-h-96 overflow-y-auto">
                                 <!-- Lista de clientes -->
+                            </div>
+                        </div>
+                    </div>
+                </main>
+            </div>
+
+            <!-- PÁGINA DE CAMPANHAS -->
+            <div id="campaigns-page" class="page-content hidden flex-col h-full">
+                <header class="bg-white shadow-sm">
+                    <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
+                        <div>
+                            <h1 class="text-xl font-semibold text-gray-900"><i class="fas fa-bullhorn text-orange-500 mr-2"></i>Campanhas</h1>
+                            <p class="text-sm text-gray-500">Segmente clientes e dispare mensagens em massa</p>
+                        </div>
+                    </div>
+                </header>
+                <main class="flex-1 overflow-y-auto bg-gray-100 p-6">
+                    <div class="container mx-auto">
+                        <!-- Filtros Avançados -->
+                        <div class="bg-white rounded-lg shadow p-6 mb-6">
+                            <h3 class="text-lg font-semibold text-gray-800 mb-4"><i class="fas fa-filter mr-2"></i>Filtros de Segmentação</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Dias sem comprar</label>
+                                    <div class="flex gap-2">
+                                        <input type="number" id="camp-days-min" class="w-full border-gray-300 rounded-md text-sm" placeholder="Mín">
+                                        <input type="number" id="camp-days-max" class="w-full border-gray-300 rounded-md text-sm" placeholder="Máx">
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Ticket Médio (R$)</label>
+                                    <div class="flex gap-2">
+                                        <input type="number" id="camp-ticket-min" class="w-full border-gray-300 rounded-md text-sm" placeholder="Mín">
+                                        <input type="number" id="camp-ticket-max" class="w-full border-gray-300 rounded-md text-sm" placeholder="Máx">
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Qtd. de Pedidos</label>
+                                    <div class="flex gap-2">
+                                        <input type="number" id="camp-orders-min" class="w-full border-gray-300 rounded-md text-sm" placeholder="Mín">
+                                        <input type="number" id="camp-orders-max" class="w-full border-gray-300 rounded-md text-sm" placeholder="Máx">
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Estado (UF)</label>
+                                    <select id="camp-state" class="w-full border-gray-300 rounded-md text-sm">
+                                        <option value="">Todos</option>
+                                        <option value="SP">São Paulo</option>
+                                        <option value="RJ">Rio de Janeiro</option>
+                                        <option value="MG">Minas Gerais</option>
+                                        <option value="PR">Paraná</option>
+                                        <option value="RS">Rio Grande do Sul</option>
+                                        <option value="SC">Santa Catarina</option>
+                                        <option value="BA">Bahia</option>
+                                        <option value="GO">Goiás</option>
+                                        <option value="PE">Pernambuco</option>
+                                        <option value="CE">Ceará</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                                    <select id="camp-status" class="w-full border-gray-300 rounded-md text-sm">
+                                        <option value="">Todos</option>
+                                        <option value="ativo">Ativo</option>
+                                        <option value="em-risco">Em Risco</option>
+                                        <option value="inativo">Inativo</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Já recebeu cupom?</label>
+                                    <select id="camp-has-coupon" class="w-full border-gray-300 rounded-md text-sm">
+                                        <option value="">Todos</option>
+                                        <option value="no">Nunca recebeu</option>
+                                        <option value="yes">Já recebeu</option>
+                                        <option value="used">Usou cupom</option>
+                                        <option value="not-used">Não usou cupom</option>
+                                    </select>
+                                </div>
+                                <div class="flex items-end">
+                                    <button id="apply-campaign-filters" class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">
+                                        <i class="fas fa-search mr-2"></i>Aplicar Filtros
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- Filtros Rápidos -->
+                            <div class="flex flex-wrap gap-2 pt-4 border-t">
+                                <span class="text-sm text-gray-500 mr-2">Filtros rápidos:</span>
+                                <button class="quick-filter px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs hover:bg-red-200" data-filter="inactive-300">
+                                    Inativos +300 dias
+                                </button>
+                                <button class="quick-filter px-3 py-1 bg-orange-100 text-orange-700 rounded-full text-xs hover:bg-orange-200" data-filter="risk-high-ticket">
+                                    Em Risco + Ticket Alto
+                                </button>
+                                <button class="quick-filter px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs hover:bg-green-200" data-filter="vip-inactive">
+                                    VIPs Inativos
+                                </button>
+                                <button class="quick-filter px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs hover:bg-blue-200" data-filter="first-purchase">
+                                    Só 1 Compra
+                                </button>
+                                <button class="quick-filter px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs hover:bg-purple-200" data-filter="no-coupon">
+                                    Nunca Recebeu Cupom
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Resultados -->
+                        <div class="bg-white rounded-lg shadow">
+                            <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                                <div>
+                                    <h3 class="text-lg font-semibold text-gray-800">Clientes Filtrados</h3>
+                                    <p class="text-sm text-gray-500"><span id="campaign-result-count">0</span> clientes encontrados</p>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button id="campaign-generate-coupons" class="bg-green-600 text-white px-4 py-2 rounded-md text-sm hover:bg-green-700 disabled:opacity-50" disabled>
+                                        <i class="fas fa-ticket-alt mr-2"></i>Gerar Cupons
+                                    </button>
+                                    <button id="campaign-export" class="bg-blue-600 text-white px-4 py-2 rounded-md text-sm hover:bg-blue-700 disabled:opacity-50" disabled>
+                                        <i class="fas fa-download mr-2"></i>Exportar CSV
+                                    </button>
+                                    <button id="campaign-whatsapp" class="bg-green-500 text-white px-4 py-2 rounded-md text-sm hover:bg-green-600 disabled:opacity-50" disabled>
+                                        <i class="fab fa-whatsapp mr-2"></i>Disparar WhatsApp
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="campaign-results-list" class="divide-y divide-gray-200 max-h-96 overflow-y-auto">
+                                <div class="p-8 text-center text-gray-500">
+                                    <i class="fas fa-users text-5xl text-gray-300 mb-4"></i>
+                                    <p class="text-lg">Configure os filtros acima</p>
+                                    <p class="text-sm">Os clientes filtrados aparecerão aqui</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </main>
+            </div>
+
+            <!-- PÁGINA DE CUPONS -->
+            <div id="coupons-page" class="page-content hidden flex-col h-full">
+                <header class="bg-white shadow-sm">
+                    <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
+                        <div>
+                            <h1 class="text-xl font-semibold text-gray-900"><i class="fas fa-ticket-alt text-green-500 mr-2"></i>Gestão de Cupons</h1>
+                            <p class="text-sm text-gray-500">Crie, rastreie e analise ROI dos seus cupons</p>
+                        </div>
+                        <button id="add-coupon-btn" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700">
+                            <i class="fas fa-plus mr-2"></i> Cadastrar Cupom
+                        </button>
+                    </div>
+                </header>
+                <main class="flex-1 overflow-y-auto bg-gray-100 p-6">
+                    <div class="container mx-auto">
+                        <!-- KPIs de Cupons -->
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                            <div class="bg-white rounded-lg shadow p-4">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-500">Cupons Ativos</p>
+                                        <p class="text-2xl font-bold text-green-600" id="coupon-active-count">0</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                                        <i class="fas fa-check-circle text-green-600"></i>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bg-white rounded-lg shadow p-4">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-500">Cupons Enviados</p>
+                                        <p class="text-2xl font-bold text-blue-600" id="coupon-sent-count">0</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                                        <i class="fas fa-paper-plane text-blue-600"></i>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bg-white rounded-lg shadow p-4">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-500">Cupons Usados</p>
+                                        <p class="text-2xl font-bold text-purple-600" id="coupon-used-count">0</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
+                                        <i class="fas fa-receipt text-purple-600"></i>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bg-white rounded-lg shadow p-4">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-500">Taxa Conversão</p>
+                                        <p class="text-2xl font-bold text-orange-600" id="coupon-conversion-rate">0%</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
+                                        <i class="fas fa-percentage text-orange-600"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Regras de Cupom Automático -->
+                        <div class="bg-gradient-to-r from-green-500 to-emerald-600 rounded-lg shadow p-6 mb-6 text-white">
+                            <h3 class="text-lg font-semibold mb-2"><i class="fas fa-magic mr-2"></i>Regras de Cupom Automático</h3>
+                            <p class="text-sm opacity-90 mb-4">Configure as regras para sugestão automática de cupons</p>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div class="bg-white/20 rounded-lg p-4">
+                                    <p class="font-medium mb-2">💎 Ticket Alto (R$ 500+)</p>
+                                    <p class="text-sm opacity-90">Cupom de 15% para reativação</p>
+                                    <p class="text-xs opacity-75 mt-1">Código: VOLTA15</p>
+                                </div>
+                                <div class="bg-white/20 rounded-lg p-4">
+                                    <p class="font-medium mb-2">📦 Ticket Médio (R$ 200-500)</p>
+                                    <p class="text-sm opacity-90">Cupom de 10%</p>
+                                    <p class="text-xs opacity-75 mt-1">Código: VOLTA10</p>
+                                </div>
+                                <div class="bg-white/20 rounded-lg p-4">
+                                    <p class="font-medium mb-2">🚚 Ticket Baixo (&lt;R$ 200)</p>
+                                    <p class="text-sm opacity-90">Frete Grátis</p>
+                                    <p class="text-xs opacity-75 mt-1">Código: FRETEGRATIS</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <!-- Lista de Cupons -->
+                            <div class="bg-white rounded-lg shadow">
+                                <div class="px-6 py-4 border-b border-gray-200">
+                                    <h3 class="text-lg font-semibold text-gray-800">Cupons Cadastrados</h3>
+                                </div>
+                                <div id="coupons-list" class="divide-y divide-gray-200 max-h-96 overflow-y-auto">
+                                    <div class="p-6 text-center text-gray-500">
+                                        <i class="fas fa-ticket-alt text-4xl text-gray-300 mb-2"></i>
+                                        <p>Nenhum cupom cadastrado</p>
+                                        <p class="text-xs">Clique em "Cadastrar Cupom" para começar</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Histórico de Uso -->
+                            <div class="bg-white rounded-lg shadow">
+                                <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                                    <h3 class="text-lg font-semibold text-gray-800">Histórico de Uso</h3>
+                                    <span class="text-sm text-gray-500" id="coupon-history-count">0 usos</span>
+                                </div>
+                                <div id="coupon-usage-history" class="divide-y divide-gray-200 max-h-96 overflow-y-auto">
+                                    <div class="p-6 text-center text-gray-500">
+                                        <i class="fas fa-history text-4xl text-gray-300 mb-2"></i>
+                                        <p>Nenhum uso registrado</p>
+                                        <p class="text-xs">Os usos aparecerão aqui automaticamente</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Clientes que Receberam Cupom -->
+                        <div class="bg-white rounded-lg shadow mt-6">
+                            <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                                <h3 class="text-lg font-semibold text-gray-800">
+                                    <i class="fas fa-user-tag text-indigo-500 mr-2"></i>Clientes com Cupom Pendente
+                                </h3>
+                                <span class="text-sm text-gray-500" id="pending-coupons-count">0 clientes</span>
+                            </div>
+                            <div id="pending-coupons-list" class="divide-y divide-gray-200 max-h-64 overflow-y-auto">
+                                <div class="p-6 text-center text-gray-500">
+                                    <i class="fas fa-hourglass-half text-4xl text-gray-300 mb-2"></i>
+                                    <p>Nenhum cupom pendente</p>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -721,9 +1157,138 @@
         </div>
     </div>
 
+    <!-- Modal de Cadastro de Cupom -->
+    <div id="coupon-modal" class="fixed z-30 inset-0 overflow-y-auto hidden">
+        <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 transition-opacity" aria-hidden="true"><div class="absolute inset-0 bg-gray-500 opacity-75 modal-bg"></div></div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                <form id="coupon-form">
+                    <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                        <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">
+                            <i class="fas fa-ticket-alt text-green-500 mr-2"></i>Cadastrar Cupom
+                        </h3>
+                        <p class="text-sm text-gray-500 mb-4">
+                            <i class="fas fa-info-circle mr-1"></i>
+                            Crie o cupom no FacilZap primeiro, depois cadastre aqui para rastrear uso.
+                        </p>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Código do Cupom *</label>
+                                <input type="text" id="coupon-code" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm uppercase" placeholder="Ex: VOLTA15" required>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Descrição</label>
+                                <input type="text" id="coupon-description" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" placeholder="Ex: Cupom de reativação 15%">
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">Tipo de Desconto</label>
+                                    <select id="coupon-type" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
+                                        <option value="percent">Porcentagem (%)</option>
+                                        <option value="fixed">Valor Fixo (R$)</option>
+                                        <option value="shipping">Frete Grátis</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">Valor</label>
+                                    <input type="number" id="coupon-value" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" placeholder="Ex: 15">
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">Validade</label>
+                                    <input type="date" id="coupon-expiry" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">Limite de Uso</label>
+                                    <input type="number" id="coupon-limit" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" placeholder="Ilimitado">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Regra de Aplicação</label>
+                                <select id="coupon-rule" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
+                                    <option value="all">Todos os clientes</option>
+                                    <option value="inactive">Apenas inativos (+90 dias)</option>
+                                    <option value="high-ticket">Ticket alto (+R$ 500)</option>
+                                    <option value="low-ticket">Ticket baixo (-R$ 200)</option>
+                                    <option value="vip">Apenas VIPs</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                        <button type="submit" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-green-600 text-base font-medium text-white hover:bg-green-700 sm:ml-3 sm:w-auto sm:text-sm">
+                            <i class="fas fa-save mr-2"></i>Salvar Cupom
+                        </button>
+                        <button type="button" id="cancel-coupon-btn" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:w-auto sm:text-sm">
+                            Cancelar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Disparo WhatsApp em Massa -->
+    <div id="bulk-whatsapp-modal" class="fixed z-30 inset-0 overflow-y-auto hidden">
+        <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 transition-opacity" aria-hidden="true"><div class="absolute inset-0 bg-gray-500 opacity-75 modal-bg"></div></div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
+                <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">
+                        <i class="fab fa-whatsapp text-green-500 mr-2"></i>Disparo em Massa
+                    </h3>
+                    <div class="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <p class="text-sm text-yellow-800">
+                            <i class="fas fa-exclamation-triangle mr-1"></i>
+                            <strong>Atenção:</strong> Os links serão abertos um a um. O WhatsApp não permite automação direta.
+                        </p>
+                    </div>
+                    <div class="mb-4">
+                        <p class="text-sm text-gray-600">
+                            <span id="bulk-client-count" class="font-bold text-indigo-600">0</span> clientes selecionados
+                        </p>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Mensagem</label>
+                        <textarea id="bulk-message-text" rows="6" class="w-full border border-gray-300 rounded-md p-3 text-sm" placeholder="Use {nome} para personalizar com o nome do cliente e {cupom} para inserir o código do cupom">Olá {nome}! 👋
+
+Sentimos sua falta! 💚
+
+Preparamos um cupom especial pra você: {cupom}
+
+Aproveite e volte a comprar conosco! 🛒</textarea>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Cupom a incluir</label>
+                        <select id="bulk-coupon-select" class="w-full border-gray-300 rounded-md shadow-sm">
+                            <option value="">Nenhum cupom</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center mb-4">
+                        <input type="checkbox" id="bulk-generate-ai" class="mr-2">
+                        <label for="bulk-generate-ai" class="text-sm text-gray-700">
+                            <i class="fas fa-magic text-purple-500 mr-1"></i>
+                            Gerar mensagem personalizada com IA para cada cliente
+                        </label>
+                    </div>
+                </div>
+                <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                    <button type="button" id="start-bulk-dispatch" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-green-600 text-base font-medium text-white hover:bg-green-700 sm:ml-3 sm:w-auto sm:text-sm">
+                        <i class="fab fa-whatsapp mr-2"></i>Iniciar Disparo
+                    </button>
+                    <button type="button" id="cancel-bulk-btn" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:w-auto sm:text-sm">
+                        Cancelar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="toast-container" class="toast-container"></div>
     
     <script src="script.js"></script>
 </body>
 </html>
-
