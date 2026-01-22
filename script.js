@@ -109,7 +109,7 @@ const Storage = {
         return this.load(this.KEYS.SETTINGS, {
             activeDays: 30,
             riskDays: 60,
-            geminiApiKey: ''
+            groqApiKey: ''
         });
     },
 
@@ -131,54 +131,64 @@ const Storage = {
 };
 
 // ============================================================================
-// GEMINI API COM RETRY AUTOMÁTICO
+// GROQ API - IA GRATUITA COM LIMITES GENEROSOS (14.400 req/dia)
 // ============================================================================
 
-async function callGeminiWithRetry(apiKey, prompt, maxRetries = 3) {
+async function callAI(apiKey, prompt, maxRetries = 3) {
     let lastError = null;
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+            const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                },
                 body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: { temperature: 0.7, maxOutputTokens: 1500 }
+                    model: 'llama-3.1-70b-versatile',
+                    messages: [{ role: 'user', content: prompt }],
+                    temperature: 0.7,
+                    max_tokens: 1500
                 })
             });
 
             if (response.status === 429) {
-                // Rate limit - extrair tempo de espera ou usar 30s
-                const errorData = await response.json();
-                const errorMsg = errorData.error?.message || '';
-                const waitMatch = errorMsg.match(/retry in (\d+(?:\.\d+)?)/i);
-                const waitTime = waitMatch ? Math.ceil(parseFloat(waitMatch[1])) + 2 : 30;
-                
+                const waitTime = 10;
                 if (attempt < maxRetries) {
                     showToast(`Limite da API atingido. Aguardando ${waitTime}s... (tentativa ${attempt}/${maxRetries})`, 'info', waitTime * 1000);
                     await new Promise(r => setTimeout(r, waitTime * 1000));
                     continue;
                 }
-                throw new Error(`Limite de uso da API Gemini excedido. Tente novamente em alguns minutos.`);
+                throw new Error(`Limite de uso da API excedido. Tente novamente em alguns segundos.`);
             }
 
             if (!response.ok) {
                 const error = await response.json();
-                throw new Error(error.error?.message || 'Erro na API do Gemini');
+                throw new Error(error.error?.message || 'Erro na API');
             }
 
-            return await response.json();
+            const data = await response.json();
+            // Retornar no formato esperado
+            return {
+                candidates: [{
+                    content: {
+                        parts: [{
+                            text: data.choices?.[0]?.message?.content || ''
+                        }]
+                    }
+                }]
+            };
         } catch (error) {
             lastError = error;
-            if (attempt < maxRetries && error.message?.includes('rate') || error.message?.includes('quota')) {
-                showToast(`Erro na API. Tentando novamente em 30s... (tentativa ${attempt}/${maxRetries})`, 'info', 30000);
-                await new Promise(r => setTimeout(r, 30000));
+            if (attempt < maxRetries) {
+                showToast(`Erro na API. Tentando novamente... (tentativa ${attempt}/${maxRetries})`, 'info', 5000);
+                await new Promise(r => setTimeout(r, 5000));
             }
         }
     }
     
-    throw lastError || new Error('Erro ao chamar API Gemini após múltiplas tentativas');
+    throw lastError || new Error('Erro ao chamar API após múltiplas tentativas');
 }
 
 // ============================================================================
@@ -188,8 +198,8 @@ async function callGeminiWithRetry(apiKey, prompt, maxRetries = 3) {
 const AIAssistant = {
     async generateStrategy(segmentData) {
         const settings = Storage.getSettings();
-        if (!settings.geminiApiKey) {
-            throw new Error('API Key do Gemini não configurada. Vá em Configurações.');
+        if (!settings.groqApiKey) {
+            throw new Error('API Key do Groq não configurada. Vá em Configurações.');
         }
 
         const prompt = `Você é um especialista em Growth e CRM para e-commerce. Analise os dados abaixo e me dê:
@@ -211,7 +221,7 @@ Responda em JSON com o formato:
   ]
 }`;
 
-        const data = await callGeminiWithRetry(settings.geminiApiKey, prompt);
+        const data = await callAI(settings.groqApiKey, prompt);
         const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
         
         // Tentar parsear JSON da resposta
@@ -229,8 +239,8 @@ Responda em JSON com o formato:
 
     async generatePersonalizedMessage(client, context = '') {
         const settings = Storage.getSettings();
-        if (!settings.geminiApiKey) {
-            throw new Error('API Key do Gemini não configurada. Vá em Configurações.');
+        if (!settings.groqApiKey) {
+            throw new Error('API Key do Groq não configurada. Vá em Configurações.');
         }
 
         const clientInfo = {
@@ -261,7 +271,7 @@ REGRAS:
 
 Responda APENAS com a mensagem, sem explicações.`;
 
-        const data = await callGeminiWithRetry(settings.geminiApiKey, prompt);
+        const data = await callAI(settings.groqApiKey, prompt);
         return (data.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
     },
 
@@ -283,8 +293,8 @@ Responda APENAS com a mensagem, sem explicações.`;
     // IA sugere parâmetros ideais de classificação
     async suggestClassificationParams() {
         const settings = Storage.getSettings();
-        if (!settings.geminiApiKey) {
-            throw new Error('API Key do Gemini não configurada. Vá em Configurações.');
+        if (!settings.groqApiKey) {
+            throw new Error('API Key do Groq não configurada. Vá em Configurações.');
         }
 
         const clients = Storage.getClients();
@@ -375,7 +385,7 @@ Responda em JSON:
   }
 }`;
 
-        const data = await callGeminiWithRetry(settings.geminiApiKey, prompt);
+        const data = await callAI(settings.groqApiKey, prompt);
         const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
         
         try {
@@ -531,9 +541,9 @@ function setupModals() {
         const settings = Storage.getSettings();
         statusAtivoDaysInput.value = settings.activeDays;
         statusRiscoDaysInput.value = settings.riskDays;
-        const geminiKeyInput = document.getElementById('gemini-api-key');
-        if (geminiKeyInput) {
-            geminiKeyInput.value = settings.geminiApiKey || '';
+        const groqKeyInput = document.getElementById('groq-api-key');
+        if (groqKeyInput) {
+            groqKeyInput.value = settings.groqApiKey || '';
         }
         openModal('settings-modal');
     });
@@ -1704,11 +1714,11 @@ function viewOrderDetails(orderId) {
 function saveSettings(e) {
     e.preventDefault();
 
-    const geminiKeyInput = document.getElementById('gemini-api-key');
+    const groqKeyInput = document.getElementById('groq-api-key');
     const settings = {
         activeDays: parseInt(statusAtivoDaysInput.value) || 30,
         riskDays: parseInt(statusRiscoDaysInput.value) || 60,
-        geminiApiKey: geminiKeyInput?.value || ''
+        groqApiKey: groqKeyInput?.value || ''
     };
 
     if (settings.riskDays <= settings.activeDays) {
@@ -1900,8 +1910,8 @@ async function generateAIMessage() {
     const messageInput = document.getElementById('whatsapp-message');
     const settings = Storage.getSettings();
     
-    if (!settings.geminiApiKey) {
-        showToast('Configure sua API Key do Gemini nas Configurações', 'error');
+    if (!settings.groqApiKey) {
+        showToast('Configure sua API Key do Groq nas Configurações', 'error');
         return;
     }
     
@@ -1962,8 +1972,8 @@ function sendWhatsApp() {
 async function generateReactivationStrategy() {
     const settings = Storage.getSettings();
     
-    if (!settings.geminiApiKey) {
-        showToast('Configure sua API Key do Gemini nas Configurações', 'error');
+    if (!settings.groqApiKey) {
+        showToast('Configure sua API Key do Groq nas Configurações', 'error');
         return;
     }
     
@@ -2053,8 +2063,8 @@ function copyToClipboard(text) {
 async function aiSuggestParameters() {
     const settings = Storage.getSettings();
     
-    if (!settings.geminiApiKey) {
-        showToast('Configure sua API Key do Gemini nas Configurações', 'error');
+    if (!settings.groqApiKey) {
+        showToast('Configure sua API Key do Groq nas Configurações', 'error');
         return;
     }
     
@@ -2272,9 +2282,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Carregar API Key nas configurações
     const settings = Storage.getSettings();
-    const geminiKeyInput = document.getElementById('gemini-api-key');
-    if (geminiKeyInput && settings.geminiApiKey) {
-        geminiKeyInput.value = settings.geminiApiKey;
+    const groqKeyInput = document.getElementById('groq-api-key');
+    if (groqKeyInput && settings.groqApiKey) {
+        groqKeyInput.value = settings.groqApiKey;
     }
     
     // Verificar última sincronização
