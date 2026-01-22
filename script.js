@@ -699,9 +699,18 @@ async function syncData() {
 
         const { clients: apiClients, orders: apiOrders, products: apiProducts } = data;
         
-        if (!apiClients || !apiOrders || !apiProducts) {
+        console.log('[DEBUG] Dados recebidos da API:', {
+            clients: apiClients?.length || 0,
+            orders: apiOrders?.length || 0,
+            products: apiProducts?.length || 0
+        });
+        
+        if (!apiClients || !apiProducts) {
             throw new Error("Resposta da API inválida.");
         }
+        
+        // Se orders não veio, usar array vazio
+        const ordersToProcess = apiOrders || [];
 
         // Processar e salvar produtos com funções melhoradas
         const productsMap = new Map();
@@ -742,7 +751,8 @@ async function syncData() {
 
         // Processar pedidos e relacionar com clientes
         const processedOrders = [];
-        apiOrders.forEach(order => {
+        console.log('[DEBUG] Processando pedidos:', ordersToProcess.length);
+        ordersToProcess.forEach(order => {
             if (!order || !order.id) return;
             
             const clientId = order.cliente?.id ? String(order.cliente.id) : null;
