@@ -1,14 +1,15 @@
 {
   "name": "crm-facilzap-integration",
-  "version": "1.0.0",
-  "description": "CRM integrado com a API da FacilZap - Versão Local",
+  "version": "2.0.0",
+  "description": "CRM integrado com FacilZap API e Supabase",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js"
   },
   "dependencies": {
-    "node-fetch": "^2.7.0"
+    "node-fetch": "^2.7.0",
+    "@supabase/supabase-js": "^2.39.0"
   }
 }
 

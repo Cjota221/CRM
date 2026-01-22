@@ -147,6 +147,226 @@ const Storage = {
 };
 
 // ============================================================================
+// SUPABASE SYNC - Sincronização com Banco de Dados na Nuvem
+// ============================================================================
+
+const SupabaseSync = {
+    endpoint: '/api/supabase-sync',
+    
+    async call(action, table = null, data = null, id = null) {
+        try {
+            const response = await fetch(this.endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action, table, data, id })
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Erro no Supabase');
+            return result;
+        } catch (error) {
+            console.error('[SupabaseSync]', error);
+            throw error;
+        }
+    },
+    
+    // Salvar tudo no Supabase
+    async saveAll() {
+        const clients = Storage.getClients();
+        const products = Storage.getProducts();
+        const orders = Storage.getOrders();
+        const coupons = Storage.load('crm_coupons', []);
+        const campaigns = Storage.load('crm_campaigns', []);
+        const settings = Storage.getSettings();
+        
+        // Preparar dados para o formato do Supabase
+        const clientsForDb = clients.map(c => ({
+            id: c.id,
+            name: c.name,
+            email: c.email,
+            phone: c.phone,
+            birthday: c.birthday,
+            cpf: c.cpf,
+            address: c.address,
+            address_number: c.address_number,
+            address_complement: c.address_complement,
+            address_neighborhood: c.address_neighborhood,
+            city: c.city,
+            state: c.state,
+            zip_code: c.zip_code,
+            origin: c.origin,
+            last_purchase_date: c.lastPurchaseDate,
+            total_spent: c.totalSpent,
+            order_count: c.orderCount,
+            products: c.products,
+            order_ids: c.orderIds,
+            tags: c.tags
+        }));
+        
+        const productsForDb = products.map(p => ({
+            id: p.id,
+            codigo: p.codigo,
+            name: p.name,
+            description: p.description,
+            sku: p.sku,
+            price: p.price,
+            stock: p.stock,
+            is_active: p.isActive,
+            manages_stock: p.managesStock,
+            image: p.image,
+            images: p.images,
+            barcode: p.barcode,
+            variacoes: p.variacoes,
+            has_variacoes: p.hasVariacoes
+        }));
+        
+        const ordersForDb = orders.map(o => ({
+            id: o.id,
+            codigo: o.codigo,
+            data: o.data,
+            client_id: o.clientId,
+            client_name: o.clientName,
+            client_phone: o.clientPhone,
+            total: o.total,
+            status: o.status,
+            products: o.products,
+            origin: o.origin
+        }));
+        
+        const settingsForDb = {
+            active_days: settings.activeDays,
+            risk_days: settings.riskDays,
+            groq_api_key: settings.groqApiKey
+        };
+        
+        return await this.call('syncAll', null, {
+            clients: clientsForDb,
+            products: productsForDb,
+            orders: ordersForDb,
+            coupons,
+            campaigns,
+            settings: settingsForDb
+        });
+    },
+    
+    // Carregar tudo do Supabase
+    async loadAll() {
+        const result = await this.call('loadAll');
+        
+        // Converter de volta para o formato do localStorage
+        if (result.clients?.length > 0) {
+            const clients = result.clients.map(c => ({
+                id: c.id,
+                name: c.name,
+                email: c.email,
+                phone: c.phone,
+                birthday: c.birthday,
+                cpf: c.cpf,
+                address: c.address,
+                address_number: c.address_number,
+                address_complement: c.address_complement,
+                address_neighborhood: c.address_neighborhood,
+                city: c.city,
+                state: c.state,
+                zip_code: c.zip_code,
+                origin: c.origin,
+                lastPurchaseDate: c.last_purchase_date,
+                totalSpent: c.total_spent,
+                orderCount: c.order_count,
+                products: c.products || [],
+                orderIds: c.order_ids || [],
+                tags: c.tags || []
+            }));
+            Storage.saveClients(clients);
+        }
+        
+        if (result.products?.length > 0) {
+            const products = result.products.map(p => ({
+                id: p.id,
+                codigo: p.codigo,
+                name: p.name,
+                description: p.description,
+                sku: p.sku,
+                price: p.price,
+                stock: p.stock,
+                isActive: p.is_active,
+                managesStock: p.manages_stock,
+                image: p.image,
+                images: p.images || [],
+                barcode: p.barcode,
+                variacoes: p.variacoes || [],
+                hasVariacoes: p.has_variacoes
+            }));
+            Storage.saveProducts(products);
+        }
+        
+        if (result.orders?.length > 0) {
+            const orders = result.orders.map(o => ({
+                id: o.id,
+                codigo: o.codigo,
+                data: o.data,
+                clientId: o.client_id,
+                clientName: o.client_name,
+                clientPhone: o.client_phone,
+                total: o.total,
+                status: o.status,
+                products: o.products || [],
+                origin: o.origin
+            }));
+            Storage.saveOrders(orders);
+        }
+        
+        if (result.coupons?.length > 0) {
+            Storage.save('crm_coupons', result.coupons);
+        }
+        
+        if (result.campaigns?.length > 0) {
+            Storage.save('crm_campaigns', result.campaigns);
+        }
+        
+        if (result.settings) {
+            const currentSettings = Storage.getSettings();
+            Storage.saveSettings({
+                activeDays: result.settings.active_days || currentSettings.activeDays,
+                riskDays: result.settings.risk_days || currentSettings.riskDays,
+                groqApiKey: result.settings.groq_api_key || currentSettings.groqApiKey
+            });
+        }
+        
+        return result;
+    },
+    
+    // Sincronizar (salva local → nuvem)
+    async sync() {
+        showToast('Salvando dados na nuvem...', 'info');
+        try {
+            const result = await this.saveAll();
+            showToast('Dados salvos no Supabase!', 'success');
+            console.log('[SupabaseSync] Salvos:', result.synced);
+            return result;
+        } catch (error) {
+            showToast('Erro ao salvar na nuvem: ' + error.message, 'error');
+            throw error;
+        }
+    },
+    
+    // Baixar dados da nuvem
+    async download() {
+        showToast('Carregando dados da nuvem...', 'info');
+        try {
+            const result = await this.loadAll();
+            showToast('Dados carregados do Supabase!', 'success');
+            renderAll();
+            return result;
+        } catch (error) {
+            showToast('Erro ao carregar da nuvem: ' + error.message, 'error');
+            throw error;
+        }
+    }
+};
+
+window.SupabaseSync = SupabaseSync;
+
+// ============================================================================
 // GROQ API - IA GRATUITA COM LIMITES GENEROSOS (14.400 req/dia)
 // ============================================================================
 
