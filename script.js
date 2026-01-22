@@ -1026,8 +1026,11 @@ async function syncData() {
     syncButton.innerHTML = '<i class="fas fa-sync-alt w-6 text-center animate-spin"></i><span class="ml-4">Sincronizando...</span>';
 
     try {
+        console.log('[SYNC] Iniciando sincronização...');
         const response = await fetch('/api/facilzap-proxy');
+        console.log('[SYNC] Resposta recebida, status:', response.status);
         const data = await response.json();
+        console.log('[SYNC] JSON parseado');
         
         if (!response.ok) {
             throw new Error(data.error || `Erro HTTP ${response.status}`);
@@ -1063,13 +1066,24 @@ async function syncData() {
 
         // Processar e salvar produtos com funções melhoradas
         const productsMap = new Map();
+        console.log('[SYNC] Processando', apiProducts.length, 'produtos...');
         const processedProducts = apiProducts.map(p => {
             const product = processarProdutoAPI(p);
             productsMap.set(product.id, product);
             return product;
         });
+        
+        // Log de verificação antes de salvar
+        const prodComPreco = processedProducts.filter(p => p.price > 0).length;
+        const prodComImagem = processedProducts.filter(p => p.image).length;
+        console.log(`[SYNC] Produtos com preço > 0: ${prodComPreco}/${processedProducts.length}`);
+        console.log(`[SYNC] Produtos com imagem: ${prodComImagem}/${processedProducts.length}`);
+        if (processedProducts.length > 0) {
+            console.log('[SYNC] Exemplo produto processado:', processedProducts[0]);
+        }
+        
         Storage.saveProducts(processedProducts);
-        console.log(`[INFO] ${processedProducts.length} produtos processados`);
+        console.log(`[INFO] ${processedProducts.length} produtos salvos no localStorage`);
 
         // Processar clientes
         const clientsMap = new Map();
