@@ -532,15 +532,23 @@
                                     </select>
                                 </div>
                             </div>
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                                    <select id="camp-status" class="w-full border-gray-300 rounded-md text-sm">
-                                        <option value="">Todos</option>
-                                        <option value="ativo">Ativo</option>
-                                        <option value="em-risco">Em Risco</option>
-                                        <option value="inativo">Inativo</option>
-                                    </select>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Status (selecione múltiplos)</label>
+                                    <div class="flex flex-wrap gap-2" id="camp-status-checkboxes">
+                                        <label class="inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" class="camp-status-check rounded border-gray-300 text-green-600" value="ativo">
+                                            <span class="ml-1 text-xs px-2 py-1 bg-green-100 text-green-700 rounded">Ativo</span>
+                                        </label>
+                                        <label class="inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" class="camp-status-check rounded border-gray-300 text-yellow-600" value="em-risco">
+                                            <span class="ml-1 text-xs px-2 py-1 bg-yellow-100 text-yellow-700 rounded">Em Risco</span>
+                                        </label>
+                                        <label class="inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" class="camp-status-check rounded border-gray-300 text-red-600" value="inativo">
+                                            <span class="ml-1 text-xs px-2 py-1 bg-red-100 text-red-700 rounded">Inativo</span>
+                                        </label>
+                                    </div>
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Já recebeu cupom?</label>
@@ -550,6 +558,16 @@
                                         <option value="yes">Já recebeu</option>
                                         <option value="used">Usou cupom</option>
                                         <option value="not-used">Não usou cupom</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Tag IA Vigilante</label>
+                                    <select id="camp-ai-tag" class="w-full border-gray-300 rounded-md text-sm">
+                                        <option value="">Todas</option>
+                                        <option value="urgente">🚨 Urgente</option>
+                                        <option value="upsell">💎 Upsell</option>
+                                        <option value="fidelidade">🏆 Fidelidade</option>
+                                        <option value="atrasado">⏰ Atrasado</option>
                                     </select>
                                 </div>
                                 <div class="flex items-end">
@@ -1257,7 +1275,7 @@
         <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
             <div class="fixed inset-0 transition-opacity" aria-hidden="true"><div class="absolute inset-0 bg-gray-500 opacity-75 modal-bg"></div></div>
             <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-            <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
+            <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-3xl sm:w-full">
                 <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
                     <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">
                         <i class="fab fa-whatsapp text-green-500 mr-2"></i>Disparo em Massa
@@ -1273,6 +1291,26 @@
                             <span id="bulk-client-count" class="font-bold text-indigo-600">0</span> clientes selecionados
                         </p>
                     </div>
+                    
+                    <!-- Gerador de Variações com IA -->
+                    <div class="mb-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                        <div class="flex items-center justify-between mb-3">
+                            <span class="text-sm font-medium text-purple-800">
+                                <i class="fas fa-magic mr-1"></i>Gerador de Variações com IA
+                            </span>
+                            <button id="generate-ai-variations" class="px-3 py-1 bg-purple-600 text-white rounded text-xs hover:bg-purple-700">
+                                <i class="fas fa-wand-magic-sparkles mr-1"></i>Gerar 3 Variações
+                            </button>
+                        </div>
+                        <div id="ai-variations-container" class="hidden space-y-2">
+                            <p class="text-xs text-purple-600 mb-2">Clique para usar:</p>
+                            <div id="ai-variations-list" class="space-y-2"></div>
+                        </div>
+                        <p id="ai-variations-loading" class="hidden text-xs text-purple-600">
+                            <i class="fas fa-spinner fa-spin mr-1"></i>Gerando variações com IA...
+                        </p>
+                    </div>
+                    
                     <div class="mb-4">
                         <label class="block text-sm font-medium text-gray-700 mb-2">Mensagem</label>
                         <textarea id="bulk-message-text" rows="6" class="w-full border border-gray-300 rounded-md p-3 text-sm" placeholder="Use {nome} para personalizar com o nome do cliente e {cupom} para inserir o código do cupom">Olá {nome}!
@@ -1289,14 +1327,6 @@ Aproveite e volte a comprar conosco! 🛒</textarea>
                             <option value="">Nenhum cupom</option>
                         </select>
                     </div>
-                    <div class="flex items-center mb-4">
-                        <input type="checkbox" id="bulk-generate-ai" class="mr-2">
-                        <label for="bulk-generate-ai" class="text-sm text-gray-700">
-                            <i class="fas fa-magic text-purple-500 mr-1"></i>
-                            Gerar mensagem personalizada com IA para cada cliente
-                        </label>
-                    </div>
-                </div>
                 <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
                     <button type="button" id="start-bulk-dispatch" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-green-600 text-base font-medium text-white hover:bg-green-700 sm:ml-3 sm:w-auto sm:text-sm">
                         <i class="fab fa-whatsapp mr-2"></i>Iniciar Disparo

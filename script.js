@@ -1846,18 +1846,24 @@ function viewClientDetails(clientId) {
     const clients = Storage.getClients();
     const orders = Storage.getOrders();
     const products = Storage.getProducts();
-    const client = clients.find(c => c.id === clientId);
+    
+    // CORREÇÃO: Buscar com comparação flexível (string ou número)
+    const client = clients.find(c => String(c.id) === String(clientId));
 
     if (!client) {
-        showToast('Cliente não encontrado.', 'error');
+        console.error('[viewClientDetails] Cliente não encontrado. ID buscado:', clientId, 'Tipo:', typeof clientId);
+        console.log('[viewClientDetails] IDs disponíveis:', clients.slice(0, 5).map(c => ({ id: c.id, tipo: typeof c.id })));
+        showToast('Cliente não encontrado. ID: ' + clientId, 'error');
         return;
     }
+    
+    console.log('[viewClientDetails] Cliente encontrado:', client.name, 'Phone:', client.phone);
 
     const status = getClientStatus(client);
     const daysSince = getDaysSinceLastPurchase(client);
 
-    // Buscar pedidos do cliente
-    const clientOrders = orders.filter(o => o.clientId === clientId)
+    // Buscar pedidos do cliente (comparação flexível)
+    const clientOrders = orders.filter(o => String(o.clientId) === String(clientId))
         .sort((a, b) => new Date(b.data) - new Date(a.data));
 
     // Criar mapa de produtos para lookup rápido
@@ -1895,31 +1901,52 @@ function viewClientDetails(clientId) {
         `;
     }
 
-    // Gerar HTML do histórico de pedidos
+    // Gerar HTML do histórico de pedidos COM PRODUTOS EXPANDIDOS
     let ordersHtml = '<p class="text-sm text-gray-500">Nenhum pedido encontrado.</p>';
     if (clientOrders.length > 0) {
         ordersHtml = `
-            <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Código</th>
-                            <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Data</th>
-                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
-                            <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Itens</th>
-                        </tr>
-                    </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
-                        ${clientOrders.slice(0, 10).map(order => `
-                            <tr class="hover:bg-gray-50 cursor-pointer" onclick="viewOrderDetails('${order.id}')">
-                                <td class="px-4 py-2 font-mono text-sm">#${escapeHtml(order.codigo)}</td>
-                                <td class="px-4 py-2 text-center">${formatDate(order.data)}</td>
-                                <td class="px-4 py-2 text-right font-semibold">${formatCurrency(order.total)}</td>
-                                <td class="px-4 py-2 text-center">${order.products?.length || 0}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
+            <div class="space-y-3">
+                ${clientOrders.slice(0, 10).map((order, idx) => {
+                    const orderProducts = order.products || [];
+                    return `
+                        <div class="border rounded-lg overflow-hidden">
+                            <div class="bg-gray-50 px-4 py-3 flex justify-between items-center cursor-pointer" 
+                                 onclick="document.getElementById('order-items-${idx}').classList.toggle('hidden')">
+                                <div class="flex items-center gap-4">
+                                    <span class="font-mono text-sm font-semibold">#${escapeHtml(order.codigo)}</span>
+                                    <span class="text-gray-500 text-sm">${formatDate(order.data)}</span>
+                                </div>
+                                <div class="flex items-center gap-4">
+                                    <span class="font-bold text-green-600">${formatCurrency(order.total)}</span>
+                                    <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded">${orderProducts.length} itens</span>
+                                    <i class="fas fa-chevron-down text-gray-400"></i>
+                                </div>
+                            </div>
+                            <div id="order-items-${idx}" class="hidden border-t bg-white p-3">
+                                ${orderProducts.length > 0 ? `
+                                    <div class="space-y-2">
+                                        ${orderProducts.map(p => {
+                                            // Tentar pegar imagem do catálogo se não tiver no pedido
+                                            const catalogProduct = productsMap.get(String(p.productId));
+                                            const imageUrl = p.image || catalogProduct?.image || null;
+                                            const placeholderImg = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PHJlY3QgZmlsbD0iI2YzZjRmNiIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIi8+PC9zdmc+';
+                                            return `
+                                                <div class="flex items-center gap-3 p-2 bg-gray-50 rounded">
+                                                    <img src="${imageUrl || placeholderImg}" alt="" class="w-10 h-10 object-cover rounded" onerror="this.src='${placeholderImg}'">
+                                                    <div class="flex-1">
+                                                        <p class="font-medium text-sm">${escapeHtml(p.productName || p.name || 'Produto')}</p>
+                                                        <p class="text-xs text-gray-500">Qtd: ${p.quantity} × ${formatCurrency(p.unitPrice || 0)}</p>
+                                                    </div>
+                                                    <span class="font-semibold text-green-600">${formatCurrency(p.total || (p.quantity * (p.unitPrice || 0)))}</span>
+                                                </div>
+                                            `;
+                                        }).join('')}
+                                    </div>
+                                ` : '<p class="text-sm text-gray-400 text-center">Detalhes dos produtos não disponíveis</p>'}
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
                 ${clientOrders.length > 10 ? `<p class="text-sm text-gray-500 mt-2 text-center">...e mais ${clientOrders.length - 10} pedidos</p>` : ''}
             </div>
         `;
@@ -1927,6 +1954,23 @@ function viewClientDetails(clientId) {
 
     detailsModalTitle.textContent = `Detalhes de ${escapeHtml(client.name)}`;
     detailsModalContent.innerHTML = `
+        <!-- Ações Rápidas -->
+        <div class="flex gap-2 mb-4">
+            ${client.phone ? `
+                <a href="https://wa.me/55${client.phone.replace(/\\D/g, '')}" target="_blank" 
+                   class="flex-1 bg-green-600 hover:bg-green-700 text-white text-center py-2 px-4 rounded-lg font-medium">
+                    <i class="fab fa-whatsapp mr-2"></i>Enviar WhatsApp
+                </a>
+            ` : `
+                <button disabled class="flex-1 bg-gray-300 text-gray-500 py-2 px-4 rounded-lg font-medium cursor-not-allowed">
+                    <i class="fab fa-whatsapp mr-2"></i>Sem telefone
+                </button>
+            `}
+            <button onclick="generateClientCoupon('${client.id}')" class="bg-purple-600 hover:bg-purple-700 text-white py-2 px-4 rounded-lg font-medium">
+                <i class="fas fa-ticket-alt mr-2"></i>Gerar Cupom
+            </button>
+        </div>
+
         <!-- Status e Estatísticas -->
         <div class="bg-gray-50 rounded-lg p-4 mb-6">
             <div class="flex items-center justify-between mb-4">
@@ -3647,6 +3691,54 @@ function initLegacyImporter() {
     }
 }
 
+// Função para gerar cupom direto para um cliente
+function generateClientCoupon(clientId) {
+    const client = Storage.getClients().find(c => String(c.id) === String(clientId));
+    if (!client) {
+        showToast('Cliente não encontrado', 'error');
+        return;
+    }
+    
+    // Gerar código único
+    const code = `VIP${client.name.substring(0, 3).toUpperCase()}${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+    const discount = client.totalSpent > 1000 ? 15 : 10; // VIPs ganham mais desconto
+    
+    // Criar cupom
+    const newCoupon = {
+        id: Date.now().toString(),
+        code,
+        discount,
+        type: 'percent',
+        minValue: 0,
+        maxUses: 1,
+        currentUses: 0,
+        validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 30 dias
+        isActive: true,
+        description: `Cupom exclusivo para ${client.name}`,
+        assignedClients: [{ clientId: client.id, name: client.name, assignedAt: new Date().toISOString() }],
+        createdAt: new Date().toISOString()
+    };
+    
+    // Salvar
+    const coupons = Storage.load('crm_coupons', []);
+    coupons.push(newCoupon);
+    Storage.save('crm_coupons', coupons);
+    
+    // Montar mensagem para WhatsApp
+    const msg = `Olá ${client.name.split(' ')[0]}! 🎉\n\nPreparei um cupom EXCLUSIVO pra você:\n\n🎟️ Código: *${code}*\n💰 Desconto: *${discount}%*\n📅 Válido por 30 dias\n\nAproveite! 😊`;
+    
+    if (client.phone) {
+        window.open(`https://wa.me/55${client.phone.replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+        showToast(`Cupom ${code} criado e WhatsApp aberto!`, 'success');
+    } else {
+        // Copiar código para clipboard
+        navigator.clipboard.writeText(code);
+        showToast(`Cupom ${code} criado! (copiado - cliente sem telefone)`, 'success');
+    }
+}
+
+window.generateClientCoupon = generateClientCoupon;
+
 // Expor funções para uso global (para onclick no HTML)
 window.viewOrderDetails = viewOrderDetails;
 window.viewClientDetails = viewClientDetails;
@@ -4188,8 +4280,11 @@ const CampaignManager = {
         const ordersMin = parseInt(document.getElementById('camp-orders-min')?.value) || 0;
         const ordersMax = parseInt(document.getElementById('camp-orders-max')?.value) || 9999;
         const state = document.getElementById('camp-state')?.value || '';
-        const status = document.getElementById('camp-status')?.value || '';
         const hasCoupon = document.getElementById('camp-has-coupon')?.value || '';
+        const aiTag = document.getElementById('camp-ai-tag')?.value || '';
+        
+        // Múltiplos status selecionados
+        const selectedStatuses = Array.from(document.querySelectorAll('.camp-status-check:checked')).map(cb => cb.value);
         
         this.filteredClients = clients.filter(client => {
             const stats = client.stats || {};
@@ -4198,7 +4293,16 @@ const CampaignManager = {
             if ((stats.averageTicket || 0) < ticketMin || (stats.averageTicket || 0) > ticketMax) return false;
             if ((stats.totalOrders || 0) < ordersMin || (stats.totalOrders || 0) > ordersMax) return false;
             if (state && (client.state || client.estado || '').toUpperCase() !== state.toUpperCase()) return false;
-            if (status && client.status !== status) return false;
+            
+            // Filtro combo de status
+            if (selectedStatuses.length > 0 && !selectedStatuses.includes(client.status)) return false;
+            
+            // Filtro por tag da IA Vigilante
+            if (aiTag) {
+                const aiTags = client.aiTags || [];
+                if (!aiTags.includes(aiTag)) return false;
+            }
+            
             if (hasCoupon) {
                 const ca = assignments.filter(a => a.clientId === client.id);
                 if (hasCoupon === 'no' && ca.length > 0) return false;
@@ -4213,12 +4317,23 @@ const CampaignManager = {
     },
     
     applyQuickFilter(filterType) {
-        document.querySelectorAll('#campaigns-page input, #campaigns-page select').forEach(el => { if (el.type === 'number') el.value = ''; else if (el.tagName === 'SELECT') el.value = ''; });
+        document.querySelectorAll('#campaigns-page input[type="number"], #campaigns-page select').forEach(el => { if (el.type === 'number') el.value = ''; else if (el.tagName === 'SELECT') el.value = ''; });
+        document.querySelectorAll('.camp-status-check').forEach(cb => cb.checked = false);
         switch (filterType) {
             case 'inactive-300': document.getElementById('camp-days-min').value = 300; break;
-            case 'risk-high-ticket': document.getElementById('camp-status').value = 'em-risco'; document.getElementById('camp-ticket-min').value = 300; break;
-            case 'vip-inactive': document.getElementById('camp-ticket-min').value = 500; document.getElementById('camp-orders-min').value = 5; document.getElementById('camp-days-min').value = 60; break;
-            case 'first-purchase': document.getElementById('camp-orders-min').value = 1; document.getElementById('camp-orders-max').value = 1; break;
+            case 'risk-high-ticket': 
+                document.querySelector('.camp-status-check[value="em-risco"]').checked = true;
+                document.getElementById('camp-ticket-min').value = 300; 
+                break;
+            case 'vip-inactive': 
+                document.getElementById('camp-ticket-min').value = 500; 
+                document.getElementById('camp-orders-min').value = 5; 
+                document.getElementById('camp-days-min').value = 60; 
+                break;
+            case 'first-purchase': 
+                document.getElementById('camp-orders-min').value = 1; 
+                document.getElementById('camp-orders-max').value = 1; 
+                break;
             case 'no-coupon': document.getElementById('camp-has-coupon').value = 'no'; break;
         }
         this.applyFilters();
@@ -4287,7 +4402,102 @@ const CampaignManager = {
         const selected = this.getSelectedClients();
         if (selected.length === 0) { showToast('Selecione clientes', 'error'); return; }
         document.getElementById('bulk-client-count').textContent = selected.length;
+        document.getElementById('ai-variations-container').classList.add('hidden');
+        document.getElementById('ai-variations-loading').classList.add('hidden');
         document.getElementById('bulk-whatsapp-modal').classList.remove('hidden');
+        
+        // Popular select de cupons
+        const coupons = Storage.load('crm_coupons', []).filter(c => c.isActive);
+        const select = document.getElementById('bulk-coupon-select');
+        select.innerHTML = '<option value="">Nenhum cupom</option>' + 
+            coupons.map(c => `<option value="${c.code}">${c.code} (-${c.discount}${c.type === 'percent' ? '%' : 'R$'})</option>`).join('');
+    },
+    
+    async generateAIVariations() {
+        const selected = this.getSelectedClients();
+        const baseMsg = document.getElementById('bulk-message-text').value;
+        const settings = Storage.getSettings();
+        
+        if (!settings.groqApiKey) {
+            showToast('Configure a API Key do Groq em Configurações', 'error');
+            return;
+        }
+        
+        document.getElementById('ai-variations-loading').classList.remove('hidden');
+        document.getElementById('ai-variations-container').classList.add('hidden');
+        
+        // Resumo dos clientes selecionados
+        const avgTicket = selected.reduce((sum, c) => sum + (c.stats?.averageTicket || 0), 0) / selected.length;
+        const avgDays = selected.reduce((sum, c) => sum + (c.stats?.daysSinceLastPurchase || 0), 0) / selected.length;
+        const statuses = [...new Set(selected.map(c => c.status))].join(', ');
+        
+        const prompt = `Você é um copywriter especialista em WhatsApp Marketing para e-commerce.
+
+Contexto dos clientes selecionados:
+- Total: ${selected.length} clientes
+- Ticket médio: R$${avgTicket.toFixed(2)}
+- Dias sem comprar (média): ${avgDays.toFixed(0)} dias
+- Status: ${statuses}
+
+Mensagem base atual:
+"${baseMsg}"
+
+Crie EXATAMENTE 3 variações criativas e persuasivas da mensagem acima.
+- Use emojis de forma profissional
+- Mantenha {nome} e {cupom} como placeholders
+- Cada variação deve ter um tom diferente: 1) Urgente/Escassez, 2) Amigável/Emotivo, 3) Benefício/Valor
+- Máximo 300 caracteres cada
+- Formato de resposta: Retorne APENAS um JSON array com 3 strings, sem explicações.
+
+Exemplo de resposta:
+["Mensagem 1...", "Mensagem 2...", "Mensagem 3..."]`;
+
+        try {
+            const data = await callAI(settings.groqApiKey, prompt);
+            const content = (data.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
+            
+            // Tentar parsear JSON da resposta
+            let parsed = [];
+            try {
+                // Extrair JSON da resposta
+                const match = content.match(/\[[\s\S]*\]/);
+                if (match) {
+                    parsed = JSON.parse(match[0]);
+                }
+            } catch (e) {
+                // Se não conseguir parsear, dividir por linhas
+                parsed = content.split('\n').filter(l => l.trim().length > 20).slice(0, 3);
+            }
+            
+            if (parsed.length === 0) {
+                throw new Error('Resposta inválida da IA');
+            }
+            
+            // Renderizar variações
+            const container = document.getElementById('ai-variations-list');
+            container.innerHTML = parsed.map((v, i) => `
+                <div class="p-3 bg-white border border-purple-200 rounded cursor-pointer hover:bg-purple-100 transition ai-variation" data-variation="${encodeURIComponent(v)}">
+                    <span class="text-xs font-bold text-purple-600">${i === 0 ? '🔥 Urgente' : i === 1 ? '💚 Emotivo' : '💎 Valor'}</span>
+                    <p class="text-sm text-gray-700 mt-1">${v.substring(0, 150)}${v.length > 150 ? '...' : ''}</p>
+                </div>
+            `).join('');
+            
+            // Adicionar listeners
+            container.querySelectorAll('.ai-variation').forEach(el => {
+                el.addEventListener('click', () => {
+                    document.getElementById('bulk-message-text').value = decodeURIComponent(el.dataset.variation);
+                    showToast('Variação aplicada!', 'success');
+                });
+            });
+            
+            document.getElementById('ai-variations-loading').classList.add('hidden');
+            document.getElementById('ai-variations-container').classList.remove('hidden');
+            
+        } catch (error) {
+            console.error('Erro ao gerar variações:', error);
+            document.getElementById('ai-variations-loading').classList.add('hidden');
+            showToast('Erro ao gerar variações. Verifique a API.', 'error');
+        }
     },
     
     async startBulkDispatch() {
@@ -4572,6 +4782,7 @@ function initCampaigns() {
     document.getElementById('campaign-whatsapp')?.addEventListener('click', () => CampaignManager.openBulkWhatsApp());
     document.getElementById('cancel-bulk-btn')?.addEventListener('click', () => document.getElementById('bulk-whatsapp-modal').classList.add('hidden'));
     document.getElementById('start-bulk-dispatch')?.addEventListener('click', () => CampaignManager.startBulkDispatch());
+    document.getElementById('generate-ai-variations')?.addEventListener('click', () => CampaignManager.generateAIVariations());
 }
 
 function initCoupons() {
