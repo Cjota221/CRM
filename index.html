@@ -63,6 +63,10 @@
                 <a href="#" id="nav-growth" class="nav-link flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
                     <i class="fas fa-chart-line w-6 text-center"></i><span class="ml-4">Análise Estratégica</span>
                 </a>
+                <a href="#" id="nav-webhooks" class="nav-link flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
+                    <i class="fas fa-bolt w-6 text-center text-yellow-400"></i><span class="ml-4">Webhooks</span>
+                    <span id="webhook-badge" class="ml-auto bg-red-500 text-white text-xs px-2 py-0.5 rounded-full hidden">0</span>
+                </a>
                 <div class="border-t border-gray-700 pt-4 mt-4 space-y-2">
                     <a href="#" id="sync-button" class="flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
                         <i class="fas fa-sync-alt w-6 text-center"></i><span class="ml-4">Sincronizar Dados</span>
@@ -280,6 +284,154 @@
                             <div id="segment-client-list" class="space-y-2 max-h-96 overflow-y-auto">
                                 <!-- Lista de clientes -->
                             </div>
+                        </div>
+                    </div>
+                </main>
+            </div>
+
+            <!-- PÁGINA DE WEBHOOKS -->
+            <div id="webhooks-page" class="page-content hidden flex-col h-full">
+                <header class="bg-white shadow-sm">
+                    <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
+                        <div class="flex items-baseline">
+                            <h1 class="text-xl font-semibold text-gray-900"><i class="fas fa-bolt text-yellow-500 mr-2"></i>Webhooks - Eventos em Tempo Real</h1>
+                        </div>
+                        <button id="clear-webhook-events" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                            <i class="fas fa-trash-alt mr-2"></i> Limpar Histórico
+                        </button>
+                    </div>
+                </header>
+                <main class="flex-1 overflow-y-auto bg-gray-100 p-6">
+                    <div class="container mx-auto">
+                        <!-- Configuração do Webhook -->
+                        <div class="bg-gradient-to-r from-green-500 to-emerald-600 rounded-lg shadow p-6 mb-6 text-white">
+                            <h3 class="text-lg font-semibold mb-2"><i class="fas fa-link mr-2"></i>URL do Webhook</h3>
+                            <p class="text-sm opacity-90 mb-4">Configure esta URL no FacilZap para receber eventos em tempo real</p>
+                            <div class="bg-white/20 rounded-lg p-3 flex items-center justify-between">
+                                <code class="text-sm font-mono" id="webhook-url-text">https://crmcjota.netlify.app/.netlify/functions/webhook-handler</code>
+                                <button id="copy-webhook-url-page" class="bg-white text-green-600 px-3 py-1 rounded text-sm font-medium hover:bg-green-50">
+                                    <i class="fas fa-copy mr-1"></i> Copiar
+                                </button>
+                            </div>
+                            <div class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <div class="bg-white/10 rounded-lg p-2 text-center">
+                                    <span class="text-2xl">📦</span>
+                                    <p class="text-xs mt-1">pedido_criado</p>
+                                </div>
+                                <div class="bg-white/10 rounded-lg p-2 text-center">
+                                    <span class="text-2xl">🔄</span>
+                                    <p class="text-xs mt-1">pedido_atualizado</p>
+                                </div>
+                                <div class="bg-white/10 rounded-lg p-2 text-center">
+                                    <span class="text-2xl">💰</span>
+                                    <p class="text-xs mt-1">pedido_pago</p>
+                                </div>
+                                <div class="bg-white/10 rounded-lg p-2 text-center">
+                                    <span class="text-2xl">🛒</span>
+                                    <p class="text-xs mt-1">carrinho_abandonado</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- KPIs de Webhooks -->
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                            <div class="bg-white rounded-lg shadow p-4">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-500">Eventos Hoje</p>
+                                        <p class="text-2xl font-bold text-gray-800" id="webhook-events-today">0</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                                        <i class="fas fa-calendar-day text-blue-600"></i>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bg-white rounded-lg shadow p-4">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-500">Novos Pedidos</p>
+                                        <p class="text-2xl font-bold text-green-600" id="webhook-new-orders">0</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                                        <i class="fas fa-shopping-cart text-green-600"></i>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bg-white rounded-lg shadow p-4">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-500">Carrinhos Abandonados</p>
+                                        <p class="text-2xl font-bold text-orange-600" id="webhook-abandoned-carts">0</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
+                                        <i class="fas fa-shopping-basket text-orange-600"></i>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bg-white rounded-lg shadow p-4">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-500">Valor Recuperável</p>
+                                        <p class="text-2xl font-bold text-purple-600" id="webhook-recoverable-value">R$ 0</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
+                                        <i class="fas fa-hand-holding-usd text-purple-600"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <!-- Carrinhos Abandonados -->
+                            <div class="bg-white rounded-lg shadow">
+                                <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                                    <h3 class="text-lg font-semibold text-gray-800">
+                                        <i class="fas fa-shopping-basket text-orange-500 mr-2"></i>Carrinhos Abandonados
+                                    </h3>
+                                    <span class="text-sm text-gray-500" id="abandoned-carts-count">0 carrinhos</span>
+                                </div>
+                                <div id="abandoned-carts-list" class="divide-y divide-gray-200 max-h-96 overflow-y-auto">
+                                    <div class="p-6 text-center text-gray-500">
+                                        <i class="fas fa-inbox text-4xl text-gray-300 mb-2"></i>
+                                        <p>Nenhum carrinho abandonado</p>
+                                        <p class="text-xs mt-1">Configure o webhook no FacilZap para receber alertas</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Histórico de Eventos -->
+                            <div class="bg-white rounded-lg shadow">
+                                <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                                    <h3 class="text-lg font-semibold text-gray-800">
+                                        <i class="fas fa-history text-blue-500 mr-2"></i>Histórico de Eventos
+                                    </h3>
+                                    <span class="text-sm text-gray-500" id="events-count">0 eventos</span>
+                                </div>
+                                <div id="webhook-events-list" class="divide-y divide-gray-200 max-h-96 overflow-y-auto">
+                                    <div class="p-6 text-center text-gray-500">
+                                        <i class="fas fa-satellite-dish text-4xl text-gray-300 mb-2"></i>
+                                        <p>Aguardando eventos...</p>
+                                        <p class="text-xs mt-1">Os eventos aparecerão aqui quando o FacilZap enviar</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Instruções -->
+                        <div class="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-6">
+                            <h4 class="font-semibold text-blue-800 mb-3"><i class="fas fa-info-circle mr-2"></i>Como Configurar no FacilZap</h4>
+                            <ol class="text-sm text-blue-700 space-y-2 list-decimal list-inside">
+                                <li>Acesse sua conta no <strong>FacilZap</strong></li>
+                                <li>No menu lateral, clique em <strong>Integrações</strong></li>
+                                <li>Clique no submenu <strong>Webhooks</strong></li>
+                                <li>Cole a URL acima e <strong>ative</strong> o webhook</li>
+                                <li>Ative os eventos: <strong>Pedido Criado</strong>, <strong>Pedido Atualizado</strong>, <strong>Carrinho Abandonado</strong></li>
+                                <li>Clique em <strong>Salvar</strong></li>
+                            </ol>
+                            <p class="text-xs text-blue-600 mt-3">
+                                <i class="fas fa-exclamation-triangle mr-1"></i>
+                                A URL deve retornar código 200. O FacilZap faz até 3 tentativas em caso de falha.
+                            </p>
                         </div>
                     </div>
                 </main>

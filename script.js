@@ -2575,6 +2575,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Inicializar importador de legado
     initLegacyImporter();
     
+    // Inicializar página de Webhooks
+    initWebhooksPage();
+    
     console.log('CRM FacilZap - Pronto!');
 });
 
@@ -3308,3 +3311,352 @@ window.openWhatsAppModal = openWhatsAppModal;
 window.showSegmentClients = showSegmentClients;
 window.copyToClipboard = copyToClipboard;
 window.applyAISuggestedParams = applyAISuggestedParams;
+
+// ============================================================================
+// WEBHOOKS - GERENCIAMENTO DE EVENTOS EM TEMPO REAL
+// ============================================================================
+
+const WebhookManager = {
+    STORAGE_KEY: 'crm_webhook_events',
+    ABANDONED_CARTS_KEY: 'crm_abandoned_carts',
+    
+    // Obter eventos salvos
+    getEvents() {
+        try {
+            return JSON.parse(localStorage.getItem(this.STORAGE_KEY) || '[]');
+        } catch {
+            return [];
+        }
+    },
+    
+    // Salvar evento
+    saveEvent(event) {
+        const events = this.getEvents();
+        events.unshift({
+            ...event,
+            receivedAt: new Date().toISOString()
+        });
+        // Manter apenas os últimos 100 eventos
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(events.slice(0, 100)));
+        this.updateUI();
+    },
+    
+    // Obter carrinhos abandonados
+    getAbandonedCarts() {
+        try {
+            return JSON.parse(localStorage.getItem(this.ABANDONED_CARTS_KEY) || '[]');
+        } catch {
+            return [];
+        }
+    },
+    
+    // Salvar carrinho abandonado
+    saveAbandonedCart(cart) {
+        const carts = this.getAbandonedCarts();
+        // Verificar se já existe
+        const existingIndex = carts.findIndex(c => c.id === cart.id);
+        if (existingIndex >= 0) {
+            carts[existingIndex] = cart;
+        } else {
+            carts.unshift(cart);
+        }
+        // Manter apenas os últimos 50
+        localStorage.setItem(this.ABANDONED_CARTS_KEY, JSON.stringify(carts.slice(0, 50)));
+        this.updateUI();
+    },
+    
+    // Remover carrinho (quando cliente finaliza compra)
+    removeAbandonedCart(cartId) {
+        const carts = this.getAbandonedCarts().filter(c => c.id !== cartId);
+        localStorage.setItem(this.ABANDONED_CARTS_KEY, JSON.stringify(carts));
+        this.updateUI();
+    },
+    
+    // Limpar histórico
+    clearEvents() {
+        localStorage.setItem(this.STORAGE_KEY, '[]');
+        this.updateUI();
+        showToast('Histórico de eventos limpo', 'success');
+    },
+    
+    // Atualizar interface
+    updateUI() {
+        const events = this.getEvents();
+        const carts = this.getAbandonedCarts();
+        
+        // Badge no menu
+        const badge = document.getElementById('webhook-badge');
+        const cartsCount = carts.length;
+        if (badge) {
+            if (cartsCount > 0) {
+                badge.textContent = cartsCount;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+        
+        // KPIs
+        const today = new Date().toDateString();
+        const eventsToday = events.filter(e => new Date(e.receivedAt).toDateString() === today);
+        const newOrdersToday = eventsToday.filter(e => e.evento === 'pedido_criado').length;
+        
+        const elemEventsToday = document.getElementById('webhook-events-today');
+        const elemNewOrders = document.getElementById('webhook-new-orders');
+        const elemAbandonedCarts = document.getElementById('webhook-abandoned-carts');
+        const elemRecoverableValue = document.getElementById('webhook-recoverable-value');
+        
+        if (elemEventsToday) elemEventsToday.textContent = eventsToday.length;
+        if (elemNewOrders) elemNewOrders.textContent = newOrdersToday;
+        if (elemAbandonedCarts) elemAbandonedCarts.textContent = carts.length;
+        
+        // Valor recuperável
+        const recoverableValue = carts.reduce((sum, c) => sum + (c.valor_total || 0), 0);
+        if (elemRecoverableValue) {
+            elemRecoverableValue.textContent = `R$ ${recoverableValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+        }
+        
+        // Contadores
+        const cartsCountElem = document.getElementById('abandoned-carts-count');
+        const eventsCountElem = document.getElementById('events-count');
+        if (cartsCountElem) cartsCountElem.textContent = `${carts.length} carrinhos`;
+        if (eventsCountElem) eventsCountElem.textContent = `${events.length} eventos`;
+        
+        // Lista de carrinhos abandonados
+        this.renderAbandonedCarts(carts);
+        
+        // Lista de eventos
+        this.renderEvents(events);
+    },
+    
+    // Renderizar carrinhos abandonados
+    renderAbandonedCarts(carts) {
+        const container = document.getElementById('abandoned-carts-list');
+        if (!container) return;
+        
+        if (carts.length === 0) {
+            container.innerHTML = `
+                <div class="p-6 text-center text-gray-500">
+                    <i class="fas fa-inbox text-4xl text-gray-300 mb-2"></i>
+                    <p>Nenhum carrinho abandonado</p>
+                    <p class="text-xs mt-1">Configure o webhook no FacilZap para receber alertas</p>
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = carts.map(cart => {
+            const timeSince = this.getTimeSince(cart.ultima_atualizacao || cart.iniciado_em);
+            const produtos = cart.produtos || [];
+            
+            return `
+                <div class="p-4 hover:bg-gray-50">
+                    <div class="flex justify-between items-start mb-2">
+                        <div>
+                            <p class="font-medium text-gray-800">${cart.cliente?.nome || 'Cliente'}</p>
+                            <p class="text-sm text-gray-500">${cart.cliente?.whatsapp || 'Sem telefone'}</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="font-bold text-orange-600">R$ ${(cart.valor_total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                            <p class="text-xs text-gray-400">${timeSince}</p>
+                        </div>
+                    </div>
+                    <div class="text-xs text-gray-500 mb-2">
+                        ${produtos.slice(0, 2).map(p => `${p.nome}${p.variacao?.nome ? ` (${p.variacao.nome})` : ''}`).join(', ')}
+                        ${produtos.length > 2 ? ` +${produtos.length - 2} itens` : ''}
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="WebhookManager.sendRecoveryMessage('${cart.id}')" class="flex-1 bg-green-600 text-white text-xs px-3 py-1.5 rounded hover:bg-green-700">
+                            <i class="fab fa-whatsapp mr-1"></i> Recuperar
+                        </button>
+                        <button onclick="WebhookManager.removeAbandonedCart('${cart.id}')" class="text-gray-400 hover:text-red-500 px-2">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    },
+    
+    // Renderizar lista de eventos
+    renderEvents(events) {
+        const container = document.getElementById('webhook-events-list');
+        if (!container) return;
+        
+        if (events.length === 0) {
+            container.innerHTML = `
+                <div class="p-6 text-center text-gray-500">
+                    <i class="fas fa-satellite-dish text-4xl text-gray-300 mb-2"></i>
+                    <p>Aguardando eventos...</p>
+                    <p class="text-xs mt-1">Os eventos aparecerão aqui quando o FacilZap enviar</p>
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = events.slice(0, 20).map(event => {
+            const icon = this.getEventIcon(event.evento);
+            const color = this.getEventColor(event.evento);
+            const time = this.getTimeSince(event.receivedAt);
+            const description = this.getEventDescription(event);
+            
+            return `
+                <div class="p-3 hover:bg-gray-50 flex items-start gap-3">
+                    <div class="w-8 h-8 rounded-full ${color} flex items-center justify-center flex-shrink-0">
+                        <i class="${icon} text-white text-sm"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-medium text-gray-800">${event.evento?.replace('_', ' ').toUpperCase()}</p>
+                        <p class="text-xs text-gray-500 truncate">${description}</p>
+                        <p class="text-xs text-gray-400">${time}</p>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    },
+    
+    // Ícone do evento
+    getEventIcon(evento) {
+        const icons = {
+            'pedido_criado': 'fas fa-shopping-cart',
+            'pedido_atualizado': 'fas fa-sync-alt',
+            'pedido_pago': 'fas fa-check',
+            'carrinho_abandonado_criado': 'fas fa-shopping-basket'
+        };
+        return icons[evento] || 'fas fa-bell';
+    },
+    
+    // Cor do evento
+    getEventColor(evento) {
+        const colors = {
+            'pedido_criado': 'bg-green-500',
+            'pedido_atualizado': 'bg-blue-500',
+            'pedido_pago': 'bg-emerald-500',
+            'carrinho_abandonado_criado': 'bg-orange-500'
+        };
+        return colors[evento] || 'bg-gray-500';
+    },
+    
+    // Descrição do evento
+    getEventDescription(event) {
+        const dados = event.dados || {};
+        switch (event.evento) {
+            case 'pedido_criado':
+                return `Pedido #${dados.id || dados.codigo || '?'} - ${dados.cliente?.nome || 'Cliente'} - R$ ${(dados.total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+            case 'pedido_atualizado':
+                return `Pedido #${dados.id || dados.codigo || '?'} atualizado`;
+            case 'pedido_pago':
+                return `Pedido #${dados.id || dados.codigo || '?'} - Pagamento confirmado`;
+            case 'carrinho_abandonado_criado':
+                return `${dados.cliente?.nome || 'Cliente'} - R$ ${(dados.valor_total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+            default:
+                return JSON.stringify(dados).substring(0, 50);
+        }
+    },
+    
+    // Tempo desde o evento
+    getTimeSince(dateString) {
+        if (!dateString) return '';
+        const date = new Date(dateString);
+        const now = new Date();
+        const diff = Math.floor((now - date) / 1000);
+        
+        if (diff < 60) return 'Agora mesmo';
+        if (diff < 3600) return `Há ${Math.floor(diff / 60)} min`;
+        if (diff < 86400) return `Há ${Math.floor(diff / 3600)} horas`;
+        return `Há ${Math.floor(diff / 86400)} dias`;
+    },
+    
+    // Enviar mensagem de recuperação
+    sendRecoveryMessage(cartId) {
+        const cart = this.getAbandonedCarts().find(c => c.id === cartId);
+        if (!cart) return;
+        
+        const phone = cart.cliente?.whatsapp || cart.cliente?.whatsapp_e164;
+        if (!phone) {
+            showToast('Cliente sem telefone cadastrado', 'error');
+            return;
+        }
+        
+        const produtos = (cart.produtos || []).map(p => p.nome).join(', ');
+        const message = `Olá ${cart.cliente?.nome || ''}! 👋
+
+Vi que você deixou alguns itens no carrinho:
+${produtos}
+
+Valor total: R$ ${(cart.valor_total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+
+Posso te ajudar a finalizar sua compra? 🛒`;
+
+        const cleanPhone = phone.replace(/\D/g, '');
+        const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+        window.open(whatsappUrl, '_blank');
+    },
+    
+    // Simular recebimento de webhook (para testes)
+    simulateWebhook(type) {
+        const now = new Date().toISOString();
+        
+        const samples = {
+            pedido_criado: {
+                evento: 'pedido_criado',
+                dados: {
+                    id: Math.floor(Math.random() * 100000),
+                    codigo: 'TEST' + Math.floor(Math.random() * 1000),
+                    total: Math.floor(Math.random() * 500) + 50,
+                    cliente: { nome: 'Cliente Teste', whatsapp: '11999999999' }
+                }
+            },
+            carrinho_abandonado_criado: {
+                evento: 'carrinho_abandonado_criado',
+                dados: {
+                    id: 'cart-' + Math.random().toString(36).substr(2, 9),
+                    cliente: { nome: 'Maria Silva', whatsapp: '11988887777' },
+                    valor_total: Math.floor(Math.random() * 300) + 100,
+                    quantidade_produtos: 2,
+                    produtos: [
+                        { nome: 'Camiseta Básica', variacao: { nome: 'M' }, quantidade: 1 },
+                        { nome: 'Calça Jeans', variacao: null, quantidade: 1 }
+                    ],
+                    iniciado_em: now,
+                    ultima_atualizacao: now
+                }
+            }
+        };
+        
+        const sample = samples[type];
+        if (sample) {
+            this.saveEvent(sample);
+            if (type === 'carrinho_abandonado_criado') {
+                this.saveAbandonedCart(sample.dados);
+            }
+            showToast(`Webhook simulado: ${type}`, 'info');
+        }
+    }
+};
+
+// Inicializar página de Webhooks
+function initWebhooksPage() {
+    // Atualizar UI inicial
+    WebhookManager.updateUI();
+    
+    // Copiar URL
+    document.getElementById('copy-webhook-url-page')?.addEventListener('click', () => {
+        const url = document.getElementById('webhook-url-text')?.textContent;
+        if (url) {
+            navigator.clipboard.writeText(url).then(() => {
+                showToast('URL copiada!', 'success');
+            });
+        }
+    });
+    
+    // Limpar histórico
+    document.getElementById('clear-webhook-events')?.addEventListener('click', () => {
+        if (confirm('Tem certeza que deseja limpar o histórico de eventos?')) {
+            WebhookManager.clearEvents();
+        }
+    });
+}
+
+// Expor WebhookManager globalmente
+window.WebhookManager = WebhookManager;
