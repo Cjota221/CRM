@@ -1305,24 +1305,29 @@ async function syncData() {
         Storage.saveProducts(processedProducts);
         console.log(`[INFO] ${processedProducts.length} produtos salvos no localStorage`);
 
-        // Processar clientes
+        // Processar clientes - capturando TODOS os campos possíveis
         const clientsMap = new Map();
         apiClients.forEach(c => {
             if (!c || !c.id) return;
+            
+            // Extrair telefone de qualquer campo disponível
+            const phone = c.telefone || c.whatsapp || c.celular || '';
+            
             clientsMap.set(String(c.id), {
                 id: String(c.id),
                 name: c.nome || 'Cliente sem nome',
                 email: c.email || '',
-                phone: c.telefone || c.whatsapp || c.celular || '',
-                birthday: c.data_nascimento || null,
-                cpf: c.cpf_cnpj || '',
+                phone: phone,
+                whatsapp: c.whatsapp || phone,
+                birthday: c.data_nascimento || c.nascimento || null,
+                cpf: c.cpf_cnpj || c.cpf || c.cnpj || '',
                 address: c.endereco || '',
-                address_number: '',
-                address_complement: '',
+                address_number: c.numero || '',
+                address_complement: c.complemento || '',
                 address_neighborhood: c.bairro || '',
                 city: c.cidade || '',
-                state: c.estado || '',
-                zip_code: '',
+                state: c.estado || c.uf || '',
+                zip_code: c.cep || '',
                 origin: c.origem || '',
                 lastPurchaseDate: c.ultima_compra || null,
                 totalSpent: 0,
@@ -1338,28 +1343,36 @@ async function syncData() {
         ordersToProcess.forEach(order => {
             if (!order || !order.id) return;
             
-            const clientId = order.cliente?.id ? String(order.cliente.id) : null;
+            // Tentar pegar o cliente_id do pedido ou do objeto cliente
+            const clientId = order.cliente_id 
+                ? String(order.cliente_id) 
+                : (order.cliente?.id ? String(order.cliente.id) : null);
+                
             const orderDate = order.data ? new Date(order.data) : new Date();
-            const orderTotal = parseFloat(order.total) || 0;
+            const orderTotal = parseFloat(order.total) || parseFloat(order.valor_total) || 0;
 
-            // Extrair produtos do pedido
+            // Extrair produtos do pedido - tentar TODOS os campos possíveis
             const orderProducts = [];
-            const productList = order.produtos || order.itens || order.products || order.items || [];
+            const productList = order.itens || order.produtos || order.items || order.products || [];
+            
+            console.log(`[DEBUG] Pedido ${order.id} - ${productList.length} itens encontrados`);
             
             productList.forEach(item => {
                 if (!item) return;
                 const productId = String(item.produto_id || item.id || item.codigo || '');
-                const productName = item.nome || item.name || 'Produto';
+                const productName = item.nome || item.name || item.descricao || item.produto?.nome || 'Produto';
                 const quantity = parseInt(item.quantidade || item.qty || 1) || 1;
-                const itemTotal = parseFloat(item.subtotal || item.valor || item.total || 0);
-                const unitPrice = quantity > 0 ? itemTotal / quantity : 0;
+                const itemTotal = parseFloat(item.valor || item.subtotal || item.total || item.preco || 0);
+                const unitPrice = item.preco_unitario || item.preco || (quantity > 0 ? itemTotal / quantity : 0);
+                const itemImage = item.imagem || item.produto?.imagens?.[0]?.url || null;
 
                 orderProducts.push({
                     productId,
                     productName,
                     quantity,
                     unitPrice,
-                    total: itemTotal
+                    total: itemTotal,
+                    image: itemImage
                 });
 
                 // Atualizar histórico de produtos do cliente
@@ -1385,16 +1398,19 @@ async function syncData() {
                 }
             });
 
-            // Criar registro do pedido
+            // Criar registro do pedido - COMPLETO
             const processedOrder = {
                 id: String(order.id),
-                codigo: order.codigo || order.id,
-                data: order.data || new Date().toISOString(),
+                codigo: order.codigo || String(order.id),
+                data: order.data || order.created_at || new Date().toISOString(),
                 clientId,
                 clientName: order.cliente?.nome || 'Cliente não identificado',
-                clientPhone: order.cliente?.whatsapp || '',
+                clientPhone: order.cliente?.telefone || order.cliente?.whatsapp || '',
+                clientEmail: order.cliente?.email || '',
+                clientCpf: order.cliente?.cpf_cnpj || order.cliente?.cpf || '',
                 total: orderTotal,
                 status: order.status || order.status_pedido || '',
+                formaPagamento: order.forma_pagamento || '',
                 products: orderProducts,
                 origin: order.origem || ''
             };
@@ -2264,18 +2280,25 @@ function renderOrders() {
     filteredOrders.forEach(order => {
         const row = document.createElement('tr');
         row.className = 'hover:bg-gray-50';
+        
+        const itemCount = order.products?.length || 0;
 
         row.innerHTML = `
             <td class="px-6 py-4 whitespace-nowrap font-mono text-sm">#${escapeHtml(order.codigo)}</td>
             <td class="px-6 py-4 whitespace-nowrap">
                 <div class="text-sm font-medium text-gray-900">${escapeHtml(order.clientName)}</div>
-                ${order.clientPhone ? `<div class="text-sm text-gray-500">${escapeHtml(order.clientPhone)}</div>` : ''}
+                ${order.clientPhone ? `<div class="text-sm text-gray-500"><i class="fab fa-whatsapp text-green-500 mr-1"></i>${escapeHtml(order.clientPhone)}</div>` : '<div class="text-sm text-gray-400">Sem telefone</div>'}
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${formatDate(order.data)}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-semibold text-gray-900">${formatCurrency(order.total)}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-center">
+                <span class="px-2 py-1 text-xs rounded-full ${itemCount > 0 ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500'}">
+                    ${itemCount} ${itemCount === 1 ? 'item' : 'itens'}
+                </span>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-semibold text-green-600">${formatCurrency(order.total)}</td>
             <td class="px-6 py-4 whitespace-nowrap text-center">
                 <button class="text-indigo-600 hover:text-indigo-900 view-order-button" data-id="${order.id}">
-                    <i class="fas fa-eye"></i> Ver
+                    <i class="fas fa-eye"></i> Detalhes
                 </button>
             </td>
         `;
@@ -2334,29 +2357,73 @@ function viewOrderDetails(orderId) {
     }
 
     detailsModalTitle.textContent = `Pedido #${escapeHtml(order.codigo)}`;
+    
+    // Buscar dados completos do cliente se disponível
+    const clients = Storage.getClients();
+    const fullClient = order.clientId ? clients.find(c => String(c.id) === String(order.clientId)) : null;
+    
     detailsModalContent.innerHTML = `
         <div class="space-y-4">
-            <div class="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                    <strong class="text-gray-600">Cliente:</strong>
-                    <p>${escapeHtml(order.clientName)}</p>
+            <!-- Informações do Cliente -->
+            <div class="bg-gray-50 rounded-lg p-4">
+                <h4 class="font-semibold mb-3 flex items-center">
+                    <i class="fas fa-user mr-2 text-indigo-500"></i>Dados do Cliente
+                </h4>
+                <div class="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                        <strong class="text-gray-600">Nome:</strong>
+                        <p>${escapeHtml(fullClient?.name || order.clientName || 'N/A')}</p>
+                    </div>
+                    <div>
+                        <strong class="text-gray-600">Telefone:</strong>
+                        <p>
+                            ${escapeHtml(fullClient?.phone || order.clientPhone || 'N/A')}
+                            ${(fullClient?.phone || order.clientPhone) ? 
+                                `<a href="https://wa.me/55${(fullClient?.phone || order.clientPhone).replace(/\\D/g, '')}" target="_blank" class="ml-2 text-green-600"><i class="fab fa-whatsapp"></i></a>` : ''}
+                        </p>
+                    </div>
+                    <div>
+                        <strong class="text-gray-600">E-mail:</strong>
+                        <p>${escapeHtml(fullClient?.email || order.clientEmail || 'N/A')}</p>
+                    </div>
+                    <div>
+                        <strong class="text-gray-600">CPF/CNPJ:</strong>
+                        <p>${escapeHtml(fullClient?.cpf || order.clientCpf || 'N/A')}</p>
+                    </div>
                 </div>
-                <div>
-                    <strong class="text-gray-600">Data:</strong>
-                    <p>${formatDate(order.data)}</p>
+                ${fullClient?.address || fullClient?.city ? `
+                    <div class="mt-3 pt-3 border-t text-sm">
+                        <strong class="text-gray-600"><i class="fas fa-map-marker-alt mr-1"></i>Endereço:</strong>
+                        <p>${escapeHtml([fullClient.address, fullClient.address_neighborhood, fullClient.city, fullClient.state].filter(Boolean).join(', ') || 'N/A')}</p>
+                    </div>
+                ` : ''}
+            </div>
+
+            <!-- Dados do Pedido -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div class="bg-white p-3 rounded-lg border">
+                    <strong class="text-gray-600 block">Data:</strong>
+                    <p class="font-medium">${formatDate(order.data)}</p>
                 </div>
-                <div>
-                    <strong class="text-gray-600">Status:</strong>
-                    <p>${escapeHtml(order.status || 'N/A')}</p>
+                <div class="bg-white p-3 rounded-lg border">
+                    <strong class="text-gray-600 block">Status:</strong>
+                    <p class="font-medium">${escapeHtml(order.status || 'N/A')}</p>
                 </div>
-                <div>
-                    <strong class="text-gray-600">Total:</strong>
-                    <p class="text-lg font-bold text-green-600">${formatCurrency(order.total)}</p>
+                <div class="bg-white p-3 rounded-lg border">
+                    <strong class="text-gray-600 block">Pagamento:</strong>
+                    <p class="font-medium">${escapeHtml(order.formaPagamento || 'N/A')}</p>
+                </div>
+                <div class="bg-green-50 p-3 rounded-lg border border-green-200">
+                    <strong class="text-gray-600 block">Total:</strong>
+                    <p class="text-xl font-bold text-green-600">${formatCurrency(order.total)}</p>
                 </div>
             </div>
             
+            <!-- Produtos -->
             <div class="border-t pt-4">
-                <h4 class="font-semibold mb-3">Produtos do Pedido</h4>
+                <h4 class="font-semibold mb-3 flex items-center">
+                    <i class="fas fa-box mr-2 text-orange-500"></i>Produtos do Pedido (${orderProducts.length})
+                </h4>
                 ${productsHtml}
             </div>
         </div>

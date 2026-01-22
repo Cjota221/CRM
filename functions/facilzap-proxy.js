@@ -105,37 +105,52 @@ exports.handler = async (event) => {
     ]);
     
     // Simplificar dados para reduzir tamanho da resposta (limite Netlify: 6MB)
+    // MANTENDO TODOS OS CAMPOS IMPORTANTES
     const clients = clientsRaw.map(c => ({
       id: c.id,
       nome: c.nome,
-      telefone: c.telefone,
-      email: c.email,
-      endereco: c.endereco,
-      bairro: c.bairro,
-      cidade: c.cidade,
-      estado: c.estado,
+      telefone: c.telefone || c.whatsapp || c.celular || '',
+      whatsapp: c.whatsapp || '',
+      celular: c.celular || '',
+      email: c.email || '',
+      cpf_cnpj: c.cpf_cnpj || c.cpf || c.cnpj || '',
+      data_nascimento: c.data_nascimento || c.nascimento || '',
+      endereco: c.endereco || '',
+      bairro: c.bairro || '',
+      cidade: c.cidade || '',
+      estado: c.estado || c.uf || '',
+      cep: c.cep || '',
+      origem: c.origem || '',
+      ultima_compra: c.ultima_compra || '',
       created_at: c.created_at
     }));
     
     const orders = ordersRaw.map(o => ({
       id: o.id,
+      codigo: o.codigo || o.id,
       cliente_id: o.cliente_id,
       cliente: o.cliente ? { 
         id: o.cliente.id, 
         nome: o.cliente.nome,
-        telefone: o.cliente.telefone || o.cliente.whatsapp || o.cliente.celular || ''
+        telefone: o.cliente.telefone || o.cliente.whatsapp || o.cliente.celular || '',
+        email: o.cliente.email || '',
+        cpf_cnpj: o.cliente.cpf_cnpj || o.cliente.cpf || ''
       } : null,
-      data: o.data,
-      status: o.status,
-      total: o.total,
-      forma_pagamento: o.forma_pagamento,
-      itens: o.itens ? o.itens.map(i => ({
-        produto_id: i.produto_id,
-        nome: i.nome || i.produto?.nome,
-        quantidade: i.quantidade,
-        valor: i.valor,
+      data: o.data || o.created_at,
+      status: o.status || o.status_pedido || '',
+      status_pedido: o.status_pedido || o.status || '',
+      total: o.total || o.valor_total || 0,
+      forma_pagamento: o.forma_pagamento || '',
+      origem: o.origem || '',
+      // Pegar itens de qualquer campo possível
+      itens: (o.itens || o.produtos || o.items || []).map(i => ({
+        produto_id: i.produto_id || i.id || i.codigo,
+        nome: i.nome || i.produto?.nome || i.descricao || 'Produto',
+        quantidade: i.quantidade || i.qty || 1,
+        valor: i.valor || i.subtotal || i.preco || 0,
+        preco_unitario: i.preco_unitario || i.preco || (i.valor / (i.quantidade || 1)) || 0,
         imagem: i.produto?.imagens?.[0]?.url || i.imagem || null
-      })) : []
+      }))
     }));
     
     // Passar produtos completos para não perder nenhum campo
