@@ -60,47 +60,15 @@ exports.handler = async (event) => {
   }
   
   try {
-    console.log("[INFO] A iniciar busca paralela de clientes, pedidos base e produtos.");
+    console.log("[INFO] A iniciar busca paralela de clientes, pedidos e produtos.");
     
-    const [clients, baseOrders, products] = await Promise.all([
+    const [clients, orders, products] = await Promise.all([
       fetchAllPages('https://api.facilzap.app.br/clientes', FACILZAP_TOKEN),
       fetchAllPages('https://api.facilzap.app.br/pedidos', FACILZAP_TOKEN),
       fetchAllPages('https://api.facilzap.app.br/produtos', FACILZAP_TOKEN)
     ]);
-
-    // --- INÍCIO DA NOVA LÓGICA DE DETALHAMENTO DE PEDIDOS ---
-    console.log(`[INFO] Foram encontrados ${baseOrders.length} pedidos. A verificar detalhes para obter produtos...`);
-
-    const detailedOrdersPromises = baseOrders.map(async (order) => {
-      const hasProducts = (order.produtos && order.produtos.length > 0) || (order.itens && order.itens.length > 0);
-      
-      if (!hasProducts && order.id) {
-        try {
-          const detailUrl = `https://api.facilzap.app.br/pedidos/${order.id}`;
-          const detailResponse = await fetch(detailUrl, {
-            headers: { 'Authorization': `Bearer ${FACILZAP_TOKEN}`, 'Content-Type': 'application/json' }
-          });
-          
-          if (detailResponse.ok) {
-            const detailData = await detailResponse.json();
-            console.log(`[INFO] Detalhes do pedido ${order.id} obtidos com sucesso.`);
-            return detailData.data || detailData;
-          } else {
-            console.warn(`[AVISO] Falha ao buscar detalhes para o pedido ${order.id}. Status: ${detailResponse.status}. A usar dados básicos.`);
-            return order;
-          }
-        } catch (e) {
-          console.error(`[ERRO] Erro ao buscar detalhes para o pedido ${order.id}:`, e.message);
-          return order;
-        }
-      }
-      return order;
-    });
-
-    const orders = await Promise.all(detailedOrdersPromises);
-    // --- FIM DA NOVA LÓGICA ---
     
-    console.log(`[INFO] Busca finalizada. ${clients.length} clientes, ${orders.length} pedidos detalhados e ${products.length} produtos encontrados.`);
+    console.log(`[INFO] Busca finalizada. ${clients.length} clientes, ${orders.length} pedidos e ${products.length} produtos encontrados.`);
     
     return {
       statusCode: 200,
