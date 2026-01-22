@@ -1352,6 +1352,17 @@ async function syncData() {
         // Processar pedidos e relacionar com clientes
         const processedOrders = [];
         console.log('[DEBUG] Processando pedidos:', ordersToProcess.length);
+        
+        // Lista de status que indicam pedido CANCELADO ou NÃO PAGO (não conta como compra)
+        const statusCancelado = [
+            'cancelado', 'cancelada', 'cancelled', 'canceled',
+            'recusado', 'recusada', 'refused',
+            'não pago', 'nao pago', 'unpaid',
+            'expirado', 'expired',
+            'estornado', 'refunded',
+            'devolvido', 'returned'
+        ];
+        
         ordersToProcess.forEach(order => {
             if (!order || !order.id) return;
             
@@ -1362,12 +1373,16 @@ async function syncData() {
                 
             const orderDate = order.data ? new Date(order.data) : new Date();
             const orderTotal = parseFloat(order.total) || parseFloat(order.valor_total) || 0;
+            const orderStatus = (order.status || order.status_pedido || '').toLowerCase().trim();
+            
+            // Verificar se o pedido foi cancelado/não pago
+            const isCancelled = statusCancelado.some(s => orderStatus.includes(s));
 
             // Extrair produtos do pedido - tentar TODOS os campos possíveis
             const orderProducts = [];
             const productList = order.itens || order.produtos || order.items || order.products || [];
             
-            console.log(`[DEBUG] Pedido ${order.id} - ${productList.length} itens encontrados`);
+            console.log(`[DEBUG] Pedido ${order.id} - Status: "${orderStatus}" - Cancelado: ${isCancelled} - ${productList.length} itens`);
             
             productList.forEach(item => {
                 if (!item) return;
@@ -1387,8 +1402,8 @@ async function syncData() {
                     image: itemImage
                 });
 
-                // Atualizar histórico de produtos do cliente
-                if (clientId && clientsMap.has(clientId)) {
+                // Atualizar histórico de produtos do cliente - APENAS SE NÃO FOI CANCELADO
+                if (!isCancelled && clientId && clientsMap.has(clientId)) {
                     const client = clientsMap.get(clientId);
                     if (client.products.has(productId)) {
                         const existing = client.products.get(productId);
@@ -1410,7 +1425,7 @@ async function syncData() {
                 }
             });
 
-            // Criar registro do pedido - COMPLETO
+            // Criar registro do pedido - COMPLETO (incluindo cancelados para histórico)
             const processedOrder = {
                 id: String(order.id),
                 codigo: order.codigo || String(order.id),
@@ -1424,12 +1439,13 @@ async function syncData() {
                 status: order.status || order.status_pedido || '',
                 formaPagamento: order.forma_pagamento || '',
                 products: orderProducts,
-                origin: order.origem || ''
+                origin: order.origem || '',
+                isCancelled: isCancelled  // Marcar se foi cancelado
             };
             processedOrders.push(processedOrder);
 
-            // Atualizar estatísticas do cliente
-            if (clientId && clientsMap.has(clientId)) {
+            // Atualizar estatísticas do cliente - APENAS PEDIDOS NÃO CANCELADOS
+            if (!isCancelled && clientId && clientsMap.has(clientId)) {
                 const client = clientsMap.get(clientId);
                 client.totalSpent += orderTotal;
                 client.orderCount++;
