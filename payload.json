@@ -1,0 +1,12 @@
+{
+  "instanceName": "crm_atendimento",
+  "token": "crm_atendimento",
+  "qrcode": true,
+  "integration": "WHATSAPP-BAILEYS",
+  "reject_call": false,
+  "msgCall": "",
+  "groupsIgnore": false,
+  "alwaysOnline": false,
+  "readMessages": false,
+  "readStatus": false
+}

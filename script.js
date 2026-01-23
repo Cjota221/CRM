@@ -965,20 +965,29 @@ function initDOMReferences() {
 // ============================================================================
 
 function setupNavigation() {
-    const navLinks = document.querySelectorAll('.nav-link');
+    const navLinks = document.querySelectorAll('.nav-item');
     const pages = document.querySelectorAll('.page-content');
 
     navLinks.forEach(link => {
         link.addEventListener('click', (e) => {
-            if (link.id === 'sync-button' || link.id === 'open-settings-button') return;
+            // Ignorar botões que não são de navegação
+            if (link.id === 'sync-button' || link.id === 'open-settings-button' || link.id === 'import-legacy-button') return;
+            // Ignorar link de atendimentos (vai para outra página)
+            if (link.href && link.href.includes('atendimentos.html')) return;
             
             e.preventDefault();
             
+            // Remover active de todos os nav-items
             navLinks.forEach(l => l.classList.remove('active'));
             link.classList.add('active');
             
-            pages.forEach(p => p.classList.add('hidden'));
+            // Esconder todas as páginas
+            pages.forEach(p => {
+                p.classList.add('hidden');
+                p.classList.remove('flex');
+            });
             
+            // Mostrar página correspondente
             const pageId = link.id.replace('nav-', '') + '-page';
             const page = document.getElementById(pageId);
             if (page) {
@@ -3900,6 +3909,52 @@ const WebhookManager = {
     STORAGE_KEY: 'crm_webhook_events',
     ABANDONED_CARTS_KEY: 'crm_abandoned_carts',
     
+    // Sincronizar com servidor (busca carrinhos e eventos do backend)
+    async syncFromServer() {
+        try {
+            const response = await fetch('/api/webhook/events');
+            if (response.ok) {
+                const data = await response.json();
+                
+                // Merge carrinhos do servidor com os locais
+                if (data.abandonedCarts?.length > 0) {
+                    const localCarts = this.getAbandonedCarts();
+                    const serverCarts = data.abandonedCarts;
+                    
+                    // Combinar sem duplicar (server tem prioridade)
+                    const mergedCarts = [...serverCarts];
+                    localCarts.forEach(lc => {
+                        if (!mergedCarts.find(sc => sc.id === lc.id)) {
+                            mergedCarts.push(lc);
+                        }
+                    });
+                    
+                    localStorage.setItem(this.ABANDONED_CARTS_KEY, JSON.stringify(mergedCarts.slice(0, 100)));
+                    console.log(`[Webhook] Sincronizado ${serverCarts.length} carrinhos do servidor`);
+                }
+                
+                // Merge eventos
+                if (data.events?.length > 0) {
+                    const localEvents = this.getEvents();
+                    const serverEvents = data.events;
+                    
+                    const mergedEvents = [...serverEvents];
+                    localEvents.forEach(le => {
+                        if (!mergedEvents.find(se => se.id === le.id)) {
+                            mergedEvents.push(le);
+                        }
+                    });
+                    
+                    localStorage.setItem(this.STORAGE_KEY, JSON.stringify(mergedEvents.slice(0, 100)));
+                }
+                
+                this.updateUI();
+            }
+        } catch (error) {
+            console.log('[Webhook] Servidor local não disponível, usando dados locais');
+        }
+    },
+    
     // Obter eventos salvos
     getEvents() {
         try {
@@ -4217,8 +4272,16 @@ Posso te ajudar a finalizar sua compra? 🛒`;
 
 // Inicializar página de Webhooks
 function initWebhooksPage() {
+    // Sincronizar com servidor (busca carrinhos abandonados do backend)
+    WebhookManager.syncFromServer();
+    
     // Atualizar UI inicial
     WebhookManager.updateUI();
+    
+    // Sincronizar a cada 30 segundos (para pegar novos carrinhos)
+    setInterval(() => {
+        WebhookManager.syncFromServer();
+    }, 30000);
     
     // Copiar URL
     document.getElementById('copy-webhook-url-page')?.addEventListener('click', () => {

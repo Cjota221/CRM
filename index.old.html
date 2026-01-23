@@ -1,0 +1,1352 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CRM Inteligente - FacilZap</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <!-- Bibliotecas para importação de planilhas -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .modal-bg { background-color: rgba(0,0,0,0.5); }
+        .status-badge, .tag-badge, .stock-badge {
+            padding: 0.25rem 0.75rem; border-radius: 9999px;
+            font-size: 0.75rem; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .status-ativo { background-color: #dcfce7; color: #166534; }
+        .status-risco { background-color: #fee2e2; color: #991b1b; }
+        .status-inativo { background-color: #f3f4f6; color: #4b5563; }
+        .status-sem-historico { background-color: #e0e7ff; color: #3730a3; }
+        .tag-fiel { background-color: #fef9c3; color: #854d0e; }
+        .stock-in { background-color: #dcfce7; color: #166534; }
+        .stock-out { background-color: #fee2e2; color: #991b1b; }
+        .stock-unmanaged { background-color: #e0e7ff; color: #3730a3; }
+        .nav-link.active { background-color: #4a5568; color: white; }
+        .toast-container { position: fixed; top: 1.5rem; right: 1.5rem; z-index: 1000; }
+        .toast-notification {
+            background-color: #fff; color: #333; padding: 1rem 1.5rem;
+            border-radius: 0.5rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            transform: translateX(120%); transition: transform 0.3s ease-in-out;
+            margin-bottom: 1rem; border-left-width: 4px;
+        }
+        .toast-notification.show { transform: translateX(0); }
+        .toast-success { border-color: #22c55e; }
+        .toast-error { border-color: #ef4444; }
+        .toast-info { border-color: #3b82f6; }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <div class="flex h-screen bg-gray-200">
+        <!-- Sidebar -->
+        <div class="w-64 bg-gray-800 text-white flex flex-col">
+            <div class="px-8 py-6 border-b border-gray-700">
+                <h2 class="text-2xl font-semibold">CRM FacilZap</h2>
+                <p class="text-xs text-gray-400 mt-1">Gerador de Vendas</p>
+            </div>
+            <nav class="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
+                <!-- Dashboard -->
+                <a href="#" id="nav-dashboard" class="nav-link flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200 active">
+                    <i class="fas fa-tachometer-alt w-6 text-center"></i><span class="ml-4">Dashboard</span>
+                    <span id="alerts-badge" class="ml-auto bg-red-500 text-white text-xs px-2 py-0.5 rounded-full hidden">0</span>
+                </a>
+                
+                <!-- Central de Atendimento -->
+                <a href="atendimentos.html" class="flex items-center px-4 py-2 text-white bg-green-600 hover:bg-green-700 rounded-md transition-colors duration-200 shadow-sm mb-2">
+                    <i class="fab fa-whatsapp w-6 text-center"></i><span class="ml-4 font-bold">Atendimento</span>
+                </a>
+                
+                <!-- Clientes -->
+                <a href="#" id="nav-clients" class="nav-link flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
+                    <i class="fas fa-users w-6 text-center"></i><span class="ml-4">Clientes</span>
+                </a>
+                
+                <!-- Campanhas -->
+                <a href="#" id="nav-campaigns" class="nav-link flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
+                    <i class="fas fa-bullhorn w-6 text-center text-orange-400"></i><span class="ml-4">Campanhas</span>
+                </a>
+                
+                <!-- Cupons -->
+                <a href="#" id="nav-coupons" class="nav-link flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
+                    <i class="fas fa-ticket-alt w-6 text-center text-green-400"></i><span class="ml-4">Gestão de Cupons</span>
+                </a>
+                
+                <div class="border-t border-gray-700 pt-4 mt-4 space-y-2">
+                    <p class="px-4 text-xs text-gray-500 uppercase tracking-wider">Dados</p>
+                    
+                    <a href="#" id="nav-products" class="nav-link flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
+                        <i class="fas fa-box-open w-6 text-center"></i><span class="ml-4">Produtos</span>
+                    </a>
+                    <a href="#" id="nav-orders" class="nav-link flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
+                        <i class="fas fa-receipt w-6 text-center"></i><span class="ml-4">Pedidos</span>
+                    </a>
+                    <a href="#" id="nav-webhooks" class="nav-link flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
+                        <i class="fas fa-bolt w-6 text-center text-yellow-400"></i><span class="ml-4">Webhooks</span>
+                        <span id="webhook-badge" class="ml-auto bg-red-500 text-white text-xs px-2 py-0.5 rounded-full hidden">0</span>
+                    </a>
+                </div>
+                
+                <div class="border-t border-gray-700 pt-4 mt-4 space-y-2">
+                    <p class="px-4 text-xs text-gray-500 uppercase tracking-wider">Sistema</p>
+                    
+                    <a href="#" id="sync-button" class="flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
+                        <i class="fas fa-sync-alt w-6 text-center"></i><span class="ml-4">Sincronizar</span>
+                    </a>
+                    
+                    <!-- Supabase Cloud Sync -->
+                    <div class="px-4 py-2">
+                        <p class="text-xs text-gray-500 mb-2">☁️ Nuvem (Supabase)</p>
+                        <div class="flex gap-2">
+                            <button onclick="SupabaseSync.sync()" class="flex-1 bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1.5 rounded" title="Salvar na nuvem">
+                                <i class="fas fa-cloud-upload-alt"></i> Salvar
+                            </button>
+                            <button onclick="SupabaseSync.download()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs px-2 py-1.5 rounded" title="Baixar da nuvem">
+                                <i class="fas fa-cloud-download-alt"></i> Baixar
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <a href="#" id="import-legacy-button" class="flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
+                        <i class="fas fa-file-import w-6 text-center"></i><span class="ml-4">Importar Legado</span>
+                    </a>
+                    <a href="#" id="open-settings-button" class="flex items-center px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors duration-200">
+                        <i class="fas fa-cog w-6 text-center"></i><span class="ml-4">Configurações</span>
+                    </a>
+                </div>
+            </nav>
+        </div>
+
+        <!-- Main content -->
+        <div class="flex-1 flex flex-col"> <!-- CORREÇÃO: Removido 'overflow-hidden' -->
+            
+            <!-- PÁGINA DASHBOARD (ALERTAS DO DIA) -->
+            <div id="dashboard-page" class="page-content flex flex-col h-full">
+                <header class="bg-white shadow-sm">
+                    <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
+                        <div>
+                            <h1 class="text-xl font-semibold text-gray-900"><i class="fas fa-tachometer-alt mr-2 text-indigo-600"></i>Dashboard - Central de Ação</h1>
+                            <p class="text-sm text-gray-500">Oportunidades identificadas pela IA Vigilante</p>
+                        </div>
+                        <button id="run-vigilante-btn" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">
+                            <i class="fas fa-robot mr-2"></i> Rodar IA Vigilante
+                        </button>
+                    </div>
+                </header>
+                <main class="flex-1 overflow-y-auto bg-gray-100 p-6">
+                    <div class="container mx-auto">
+                        <!-- KPIs Principais -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                            <div class="bg-gradient-to-br from-red-500 to-red-600 rounded-lg shadow p-4 text-white">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm opacity-90"><i class="fas fa-fire-alt mr-1"></i>Urgentes Hoje</p>
+                                        <p class="text-3xl font-bold" id="dash-urgent-count">0</p>
+                                        <p class="text-xs opacity-75">Clientes precisam de ação</p>
+                                    </div>
+                                    <i class="fas fa-exclamation-triangle text-4xl opacity-50"></i>
+                                </div>
+                            </div>
+                            <div class="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow p-4 text-white">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm opacity-90"><i class="fas fa-dollar-sign mr-1"></i>Valor em Risco</p>
+                                        <p class="text-3xl font-bold" id="dash-risk-value">R$ 0</p>
+                                        <p class="text-xs opacity-75">Ticket dos inativos</p>
+                                    </div>
+                                    <i class="fas fa-money-bill-wave text-4xl opacity-50"></i>
+                                </div>
+                            </div>
+                            <div class="bg-gradient-to-br from-green-500 to-green-600 rounded-lg shadow p-4 text-white">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm opacity-90"><i class="fas fa-check-circle mr-1"></i>Recuperados (Mês)</p>
+                                        <p class="text-3xl font-bold" id="dash-recovered-count">0</p>
+                                        <p class="text-xs opacity-75">Usaram cupons</p>
+                                    </div>
+                                    <i class="fas fa-user-check text-4xl opacity-50"></i>
+                                </div>
+                            </div>
+                            <div class="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow p-4 text-white">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm opacity-90"><i class="fas fa-chart-line mr-1"></i>ROI Cupons</p>
+                                        <p class="text-3xl font-bold" id="dash-coupon-roi">0%</p>
+                                        <p class="text-xs opacity-75">Taxa de conversão</p>
+                                    </div>
+                                    <i class="fas fa-chart-pie text-4xl opacity-50"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Alertas do Dia -->
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                            <!-- Clientes Urgentes -->
+                            <div class="bg-white rounded-lg shadow">
+                                <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-red-50">
+                                    <h3 class="text-lg font-semibold text-red-800">
+                                        <i class="fas fa-fire text-red-500 mr-2"></i>Clientes Urgentes
+                                    </h3>
+                                    <div class="flex gap-2">
+                                        <button onclick="AIVigilante.exportUrgentCSV()" class="bg-gray-600 text-white text-xs px-3 py-1 rounded hover:bg-gray-700" title="Exportar para planilha">
+                                            <i class="fas fa-file-csv mr-1"></i> Exportar
+                                        </button>
+                                        <button id="action-all-urgent" class="bg-red-600 text-white text-xs px-3 py-1 rounded hover:bg-red-700">
+                                            <i class="fas fa-bolt mr-1"></i> Ação em Massa
+                                        </button>
+                                    </div>
+                                </div>
+                                <div id="urgent-clients-list" class="divide-y divide-gray-200 max-h-80 overflow-y-auto">
+                                    <div class="p-6 text-center text-gray-500">
+                                        <i class="fas fa-check-circle text-4xl text-green-300 mb-2"></i>
+                                        <p>Nenhuma urgência no momento</p>
+                                        <p class="text-xs">Clique em "Rodar IA Vigilante" para analisar</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Oportunidades de Upsell -->
+                            <div class="bg-white rounded-lg shadow">
+                                <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-green-50">
+                                    <h3 class="text-lg font-semibold text-green-800">
+                                        <i class="fas fa-gem text-green-500 mr-2"></i>Oportunidades de Upsell
+                                    </h3>
+                                    <span id="upsell-count" class="text-sm text-gray-500">0 clientes</span>
+                                </div>
+                                <div id="upsell-clients-list" class="divide-y divide-gray-200 max-h-80 overflow-y-auto">
+                                    <div class="p-6 text-center text-gray-500">
+                                        <i class="fas fa-star text-4xl text-yellow-300 mb-2"></i>
+                                        <p>Analisando oportunidades...</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Clientes Atrasados (padrão de compra) -->
+                        <div class="bg-white rounded-lg shadow mb-6">
+                            <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-yellow-50">
+                                <h3 class="text-lg font-semibold text-yellow-800">
+                                    <i class="fas fa-clock text-yellow-500 mr-2"></i>Clientes Atrasados (Fora do Padrão)
+                                </h3>
+                                <span id="late-count" class="text-sm text-gray-500">0 clientes</span>
+                            </div>
+                            <div id="late-clients-list" class="divide-y divide-gray-200 max-h-64 overflow-y-auto">
+                                <div class="p-6 text-center text-gray-500">
+                                    <i class="fas fa-calendar-check text-4xl text-gray-300 mb-2"></i>
+                                    <p>Clientes que compravam regularmente mas atrasaram</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Ações Rápidas -->
+                        <div class="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-lg shadow p-6 text-white">
+                            <h3 class="text-lg font-semibold mb-4"><i class="fas fa-zap mr-2"></i>Ações Rápidas</h3>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <button id="quick-action-inactive" class="bg-white/20 hover:bg-white/30 rounded-lg p-4 text-center transition-colors">
+                                    <i class="fas fa-user-clock text-2xl mb-2"></i>
+                                    <p class="text-sm font-medium">Reativar Inativos</p>
+                                    <p class="text-xs opacity-75" id="quick-inactive-count">0 clientes</p>
+                                </button>
+                                <button id="quick-action-birthday" class="bg-white/20 hover:bg-white/30 rounded-lg p-4 text-center transition-colors">
+                                    <i class="fas fa-birthday-cake text-2xl mb-2"></i>
+                                    <p class="text-sm font-medium">Aniversariantes</p>
+                                    <p class="text-xs opacity-75" id="quick-birthday-count">0 este mês</p>
+                                </button>
+                                <button id="quick-action-vip" class="bg-white/20 hover:bg-white/30 rounded-lg p-4 text-center transition-colors">
+                                    <i class="fas fa-crown text-2xl mb-2"></i>
+                                    <p class="text-sm font-medium">Mimar VIPs</p>
+                                    <p class="text-xs opacity-75" id="quick-vip-count">0 VIPs</p>
+                                </button>
+                                <button id="quick-action-cart" class="bg-white/20 hover:bg-white/30 rounded-lg p-4 text-center transition-colors">
+                                    <i class="fas fa-shopping-cart text-2xl mb-2"></i>
+                                    <p class="text-sm font-medium">Carrinhos Abandonados</p>
+                                    <p class="text-xs opacity-75" id="quick-cart-count">0 carrinhos</p>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </main>
+            </div>
+
+            <!-- PÁGINA DE CLIENTES -->
+            <div id="clients-page" class="page-content hidden flex flex-col h-full">
+                <header class="bg-white shadow-sm">
+                    <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
+                        <div class="flex items-baseline">
+                            <h1 class="text-xl font-semibold text-gray-900">Painel de Clientes</h1>
+                            <span id="client-count-display" class="ml-4 text-sm font-normal text-gray-500"></span>
+                        </div>
+                        <button id="add-client-button" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">
+                            <i class="fas fa-plus mr-2"></i> Adicionar Cliente
+                        </button>
+                    </div>
+                </header>
+                <main class="flex-1 overflow-y-auto bg-gray-100 p-6">
+                    <div class="container mx-auto">
+                        <div class="bg-white p-4 rounded-lg shadow mb-6 flex items-center space-x-4 flex-wrap gap-4">
+                           <div class="flex-1 min-w-[250px]"><div class="relative"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i class="fas fa-search text-gray-400"></i></div><input type="text" id="search-input" class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md" placeholder="Buscar por nome, e-mail..."></div></div>
+                            <div><select id="filter-status" class="rounded-md border-gray-300 shadow-sm"><option value="todos">Todos os Status</option><option value="ativo">Ativo</option><option value="em-risco">Em Risco</option><option value="inativo">Inativo</option><option value="sem-historico">Sem Histórico</option></select></div>
+                            <div><select id="filter-tag" class="rounded-md border-gray-300 shadow-sm"><option value="todos">Todas as Tags</option><option value="cliente-fiel">Cliente Fiel</option></select></div>
+                            <div>
+                                <select id="sort-clients" class="rounded-md border-gray-300 shadow-sm">
+                                    <option value="default">Ordenar por Padrão</option>
+                                    <option value="most-orders">Mais Pedidos</option>
+                                    <option value="least-orders">Menos Pedidos</option>
+                                    <option value="highest-spent">Maior Valor Gasto</option>
+                                    <option value="lowest-spent">Menor Valor Gasto</option>
+                                </select>
+                            </div>
+                            <button onclick="AIVigilante.exportAllClientsCSV()" class="bg-green-600 text-white text-sm px-4 py-2 rounded hover:bg-green-700" title="Exportar clientes com telefone">
+                                <i class="fas fa-file-csv mr-1"></i> Exportar CSV
+                            </button>
+                        </div>
+                        <div id="client-cards-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"></div>
+                        <div id="no-clients-message" class="hidden text-center py-12 px-4 bg-white rounded-lg shadow"><i class="fas fa-user-friends fa-3x text-gray-300"></i><h3 class="mt-2 text-sm font-medium text-gray-900">Nenhum cliente encontrado</h3><p class="mt-1 text-sm text-gray-500">Clique em "Sincronizar Dados" ou adicione um novo cliente.</p></div>
+                    </div>
+                </main>
+            </div>
+            
+            <!-- PÁGINA DE PRODUTOS -->
+            <div id="products-page" class="page-content hidden flex-col h-full">
+                <header class="bg-white shadow-sm">
+                    <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
+                        <div class="flex items-baseline">
+                            <h1 class="text-xl font-semibold text-gray-900">Painel de Produtos</h1>
+                            <span id="product-count-display" class="ml-4 text-sm font-normal text-gray-500"></span>
+                        </div>
+                    </div>
+                </header>
+                <main class="flex-1 overflow-y-auto bg-gray-100 p-6">
+                    <div class="container mx-auto">
+                        <div class="bg-white p-4 rounded-lg shadow mb-6 flex items-center space-x-4 flex-wrap gap-4">
+                           <div class="flex-1 min-w-[250px]"><div class="relative"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i class="fas fa-search text-gray-400"></i></div><input type="text" id="product-search-input" class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md" placeholder="Buscar por nome, SKU..."></div></div>
+                            <div><select id="filter-stock" class="rounded-md border-gray-300 shadow-sm"><option value="todos">Todo o Estoque</option><option value="gerenciado">Gerenciado</option><option value="nao-gerenciado">Não Gerenciado</option><option value="em-estoque">Em Estoque</option><option value="sem-estoque">Sem Estoque</option><option value="com-variacoes">Com Variações</option></select></div>
+                            <div><select id="filter-active" class="rounded-md border-gray-300 shadow-sm"><option value="todos">Todos os Status</option><option value="ativado">Ativado</option><option value="desativado">Desativado</option></select></div>
+                        </div>
+                        <div id="product-cards-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"></div>
+                        <div id="no-products-message" class="hidden text-center py-12 px-4 bg-white rounded-lg shadow"><i class="fas fa-box-open fa-3x text-gray-300"></i><h3 class="mt-2 text-sm font-medium text-gray-900">Nenhum produto encontrado</h3><p class="mt-1 text-sm text-gray-500">Clique em "Sincronizar Dados" para carregar os produtos.</p></div>
+                    </div>
+                </main>
+            </div>
+
+            <!-- PÁGINA DE PEDIDOS -->
+            <div id="orders-page" class="page-content hidden flex-col h-full">
+                <header class="bg-white shadow-sm">
+                    <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
+                        <div class="flex items-baseline">
+                            <h1 class="text-xl font-semibold text-gray-900">Painel de Pedidos</h1>
+                            <span id="order-count-display" class="ml-4 text-sm font-normal text-gray-500"></span>
+                        </div>
+                    </div>
+                </header>
+                <main class="flex-1 overflow-y-auto bg-gray-100 p-6">
+                    <div class="container mx-auto">
+                        <div class="bg-white p-4 rounded-lg shadow mb-6 flex items-center space-x-4 flex-wrap gap-4">
+                           <div class="flex-1 min-w-[250px]"><div class="relative"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i class="fas fa-search text-gray-400"></i></div><input type="text" id="order-search-input" class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md" placeholder="Buscar por Cód. do Pedido ou Nome do Cliente..."></div></div>
+                        </div>
+                        <div class="bg-white rounded-lg shadow overflow-hidden">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cód. Pedido</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data</th>
+                                        <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Itens</th>
+                                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                                        <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="order-list-container" class="bg-white divide-y divide-gray-200">
+                                    <!-- Linhas da tabela de pedidos serão inseridas aqui -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div id="no-orders-message" class="hidden text-center py-12 px-4 bg-white rounded-lg shadow"><i class="fas fa-receipt fa-3x text-gray-300"></i><h3 class="mt-2 text-sm font-medium text-gray-900">Nenhum pedido encontrado</h3><p class="mt-1 text-sm text-gray-500">Clique em "Sincronizar Dados" para carregar os pedidos.</p></div>
+                    </div>
+                </main>
+            </div>
+
+            <!-- PÁGINA DE ANÁLISE ESTRATÉGICA (GROWTH) -->
+            <div id="growth-page" class="page-content hidden flex-col h-full">
+                <header class="bg-white shadow-sm">
+                    <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
+                        <div class="flex items-baseline justify-between">
+                            <div>
+                                <h1 class="text-xl font-semibold text-gray-900"><i class="fas fa-chart-bar mr-2 text-indigo-600"></i>Análise Estratégica</h1>
+                                <p class="text-sm text-gray-500">Seu assistente de Growth com IA</p>
+                            </div>
+                            <button id="refresh-analysis-btn" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                                <i class="fas fa-sync-alt mr-2"></i> Atualizar Análise
+                            </button>
+                        </div>
+                    </div>
+                </header>
+                <main class="flex-1 overflow-y-auto bg-gray-100 p-6">
+                    <div class="container mx-auto">
+                        <!-- KPIs Principais -->
+                        <div id="growth-kpis" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                            <!-- KPIs serão inseridos via JS -->
+                        </div>
+
+                        <!-- Termômetro de Clientes -->
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                            <div id="temp-quente" class="bg-white rounded-lg shadow p-6 cursor-pointer hover:shadow-lg transition-shadow border-l-4 border-red-500">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-500"><i class="fas fa-fire text-red-500 mr-1"></i>Clientes Quentes</p>
+                                        <p class="text-3xl font-bold text-red-600" id="count-quente">0</p>
+                                        <p class="text-xs text-gray-400">Compraram nos últimos 30 dias</p>
+                                    </div>
+                                    <div class="text-4xl text-red-500"><i class="fas fa-fire-alt"></i></div>
+                                </div>
+                            </div>
+                            <div id="temp-morno" class="bg-white rounded-lg shadow p-6 cursor-pointer hover:shadow-lg transition-shadow border-l-4 border-yellow-500">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-500">🌡️ Clientes Mornos</p>
+                                        <p class="text-3xl font-bold text-yellow-600" id="count-morno">0</p>
+                                        <p class="text-xs text-gray-400">30-90 dias sem comprar</p>
+                                    </div>
+                                    <div class="text-4xl">🌡️</div>
+                                </div>
+                            </div>
+                            <div id="temp-frio" class="bg-white rounded-lg shadow p-6 cursor-pointer hover:shadow-lg transition-shadow border-l-4 border-blue-500">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-500">❄️ Clientes Frios</p>
+                                        <p class="text-3xl font-bold text-blue-600" id="count-frio">0</p>
+                                        <p class="text-xs text-gray-400">+90 dias sem comprar (Churn Risk)</p>
+                                    </div>
+                                    <div class="text-4xl">❄️</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                            <!-- Clientes VIP -->
+                            <div class="bg-white rounded-lg shadow p-6">
+                                <h3 class="text-lg font-semibold text-gray-800 mb-4">⭐ Clientes VIP</h3>
+                                <div id="vip-list" class="space-y-3 max-h-64 overflow-y-auto">
+                                    <!-- Lista de VIPs -->
+                                </div>
+                            </div>
+
+                            <!-- Distribuição por Estado -->
+                            <div class="bg-white rounded-lg shadow p-6">
+                                <h3 class="text-lg font-semibold text-gray-800 mb-4">📍 Clientes por Estado</h3>
+                                <div id="state-distribution" class="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto">
+                                    <!-- Distribuição por UF -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Ações com IA -->
+                        <div class="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-lg shadow p-6 mb-6 text-white">
+                            <h3 class="text-lg font-semibold mb-2">🤖 Assistente de IA</h3>
+                            <p class="text-sm opacity-90 mb-4">Deixe a IA analisar seus dados e sugerir estratégias</p>
+                            <div class="flex flex-wrap gap-3">
+                                <button id="ai-suggest-params-btn" class="bg-yellow-400 text-gray-900 px-4 py-2 rounded-md font-medium hover:bg-yellow-300 transition-colors">
+                                    <i class="fas fa-brain mr-2"></i> IA: Sugerir Parâmetros Ideais
+                                </button>
+                                <button id="ai-reactivation-btn" class="bg-white text-indigo-600 px-4 py-2 rounded-md font-medium hover:bg-indigo-50 transition-colors">
+                                    <i class="fas fa-magic mr-2"></i> Gerar Estratégia de Reativação
+                                </button>
+                                <button id="ai-vip-btn" class="bg-white text-purple-600 px-4 py-2 rounded-md font-medium hover:bg-purple-50 transition-colors">
+                                    <i class="fas fa-crown mr-2"></i> Estratégia para VIPs
+                                </button>
+                            </div>
+                            <div id="ai-response" class="mt-4 hidden bg-white/10 rounded-lg p-4">
+                                <!-- Resposta da IA -->
+                            </div>
+                        </div>
+
+                        <!-- Lista de Clientes do Segmento Selecionado -->
+                        <div id="segment-clients" class="bg-white rounded-lg shadow p-6 hidden">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-lg font-semibold text-gray-800" id="segment-title">Clientes do Segmento</h3>
+                                <div class="flex gap-2">
+                                    <button id="bulk-message-btn" class="bg-green-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-green-700">
+                                        <i class="fab fa-whatsapp mr-2"></i> Mensagem em Massa
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="segment-client-list" class="space-y-2 max-h-96 overflow-y-auto">
+                                <!-- Lista de clientes -->
+                            </div>
+                        </div>
+                    </div>
+                </main>
+            </div>
+
+            <!-- PÁGINA DE CAMPANHAS -->
+            <div id="campaigns-page" class="page-content hidden flex-col h-full">
+                <header class="bg-white shadow-sm">
+                    <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
+                        <div>
+                            <h1 class="text-xl font-semibold text-gray-900"><i class="fas fa-bullhorn text-orange-500 mr-2"></i>Campanhas</h1>
+                            <p class="text-sm text-gray-500">Segmente clientes e dispare mensagens em massa</p>
+                        </div>
+                    </div>
+                </header>
+                <main class="flex-1 overflow-y-auto bg-gray-100 p-6">
+                    <div class="container mx-auto">
+                        <!-- Filtros Avançados -->
+                        <div class="bg-white rounded-lg shadow p-6 mb-6">
+                            <h3 class="text-lg font-semibold text-gray-800 mb-4"><i class="fas fa-filter mr-2"></i>Filtros de Segmentação</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Dias sem comprar</label>
+                                    <div class="flex gap-2">
+                                        <input type="number" id="camp-days-min" class="w-full border-gray-300 rounded-md text-sm" placeholder="Mín">
+                                        <input type="number" id="camp-days-max" class="w-full border-gray-300 rounded-md text-sm" placeholder="Máx">
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Ticket Médio (R$)</label>
+                                    <div class="flex gap-2">
+                                        <input type="number" id="camp-ticket-min" class="w-full border-gray-300 rounded-md text-sm" placeholder="Mín">
+                                        <input type="number" id="camp-ticket-max" class="w-full border-gray-300 rounded-md text-sm" placeholder="Máx">
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Qtd. de Pedidos</label>
+                                    <div class="flex gap-2">
+                                        <input type="number" id="camp-orders-min" class="w-full border-gray-300 rounded-md text-sm" placeholder="Mín">
+                                        <input type="number" id="camp-orders-max" class="w-full border-gray-300 rounded-md text-sm" placeholder="Máx">
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Estado (UF)</label>
+                                    <select id="camp-state" class="w-full border-gray-300 rounded-md text-sm">
+                                        <option value="">Todos</option>
+                                        <option value="SP">São Paulo</option>
+                                        <option value="RJ">Rio de Janeiro</option>
+                                        <option value="MG">Minas Gerais</option>
+                                        <option value="PR">Paraná</option>
+                                        <option value="RS">Rio Grande do Sul</option>
+                                        <option value="SC">Santa Catarina</option>
+                                        <option value="BA">Bahia</option>
+                                        <option value="GO">Goiás</option>
+                                        <option value="PE">Pernambuco</option>
+                                        <option value="CE">Ceará</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Status (selecione múltiplos)</label>
+                                    <div class="flex flex-wrap gap-2" id="camp-status-checkboxes">
+                                        <label class="inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" class="camp-status-check rounded border-gray-300 text-green-600" value="ativo">
+                                            <span class="ml-1 text-xs px-2 py-1 bg-green-100 text-green-700 rounded">Ativo</span>
+                                        </label>
+                                        <label class="inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" class="camp-status-check rounded border-gray-300 text-yellow-600" value="em-risco">
+                                            <span class="ml-1 text-xs px-2 py-1 bg-yellow-100 text-yellow-700 rounded">Em Risco</span>
+                                        </label>
+                                        <label class="inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" class="camp-status-check rounded border-gray-300 text-red-600" value="inativo">
+                                            <span class="ml-1 text-xs px-2 py-1 bg-red-100 text-red-700 rounded">Inativo</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Já recebeu cupom?</label>
+                                    <select id="camp-has-coupon" class="w-full border-gray-300 rounded-md text-sm">
+                                        <option value="">Todos</option>
+                                        <option value="no">Nunca recebeu</option>
+                                        <option value="yes">Já recebeu</option>
+                                        <option value="used">Usou cupom</option>
+                                        <option value="not-used">Não usou cupom</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Tag IA Vigilante</label>
+                                    <select id="camp-ai-tag" class="w-full border-gray-300 rounded-md text-sm">
+                                        <option value="">Todas</option>
+                                        <option value="urgente">🚨 Urgente</option>
+                                        <option value="upsell">💎 Upsell</option>
+                                        <option value="fidelidade">🏆 Fidelidade</option>
+                                        <option value="atrasado">⏰ Atrasado</option>
+                                    </select>
+                                </div>
+                                <div class="flex items-end">
+                                    <button id="apply-campaign-filters" class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">
+                                        <i class="fas fa-search mr-2"></i>Aplicar Filtros
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- Filtros Rápidos -->
+                            <div class="flex flex-wrap gap-2 pt-4 border-t">
+                                <span class="text-sm text-gray-500 mr-2">Filtros rápidos:</span>
+                                <button class="quick-filter px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs hover:bg-red-200" data-filter="inactive-300">
+                                    Inativos +300 dias
+                                </button>
+                                <button class="quick-filter px-3 py-1 bg-orange-100 text-orange-700 rounded-full text-xs hover:bg-orange-200" data-filter="risk-high-ticket">
+                                    Em Risco + Ticket Alto
+                                </button>
+                                <button class="quick-filter px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs hover:bg-green-200" data-filter="vip-inactive">
+                                    VIPs Inativos
+                                </button>
+                                <button class="quick-filter px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs hover:bg-blue-200" data-filter="first-purchase">
+                                    Só 1 Compra
+                                </button>
+                                <button class="quick-filter px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs hover:bg-purple-200" data-filter="no-coupon">
+                                    Nunca Recebeu Cupom
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Resultados -->
+                        <div class="bg-white rounded-lg shadow">
+                            <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                                <div>
+                                    <h3 class="text-lg font-semibold text-gray-800">Clientes Filtrados</h3>
+                                    <p class="text-sm text-gray-500"><span id="campaign-result-count">0</span> clientes encontrados</p>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button id="campaign-generate-coupons" class="bg-green-600 text-white px-4 py-2 rounded-md text-sm hover:bg-green-700 disabled:opacity-50" disabled>
+                                        <i class="fas fa-ticket-alt mr-2"></i>Gerar Cupons
+                                    </button>
+                                    <button id="campaign-export" class="bg-blue-600 text-white px-4 py-2 rounded-md text-sm hover:bg-blue-700 disabled:opacity-50" disabled>
+                                        <i class="fas fa-download mr-2"></i>Exportar CSV
+                                    </button>
+                                    <button id="campaign-whatsapp" class="bg-green-500 text-white px-4 py-2 rounded-md text-sm hover:bg-green-600 disabled:opacity-50" disabled>
+                                        <i class="fab fa-whatsapp mr-2"></i>Disparar WhatsApp
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="campaign-results-list" class="divide-y divide-gray-200 max-h-96 overflow-y-auto">
+                                <div class="p-8 text-center text-gray-500">
+                                    <i class="fas fa-users text-5xl text-gray-300 mb-4"></i>
+                                    <p class="text-lg">Configure os filtros acima</p>
+                                    <p class="text-sm">Os clientes filtrados aparecerão aqui</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </main>
+            </div>
+
+            <!-- PÁGINA DE CUPONS -->
+            <div id="coupons-page" class="page-content hidden flex-col h-full">
+                <header class="bg-white shadow-sm">
+                    <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
+                        <div>
+                            <h1 class="text-xl font-semibold text-gray-900"><i class="fas fa-ticket-alt text-green-500 mr-2"></i>Gestão de Cupons</h1>
+                            <p class="text-sm text-gray-500">Crie, rastreie e analise ROI dos seus cupons</p>
+                        </div>
+                        <button id="add-coupon-btn" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700">
+                            <i class="fas fa-plus mr-2"></i> Cadastrar Cupom
+                        </button>
+                    </div>
+                </header>
+                <main class="flex-1 overflow-y-auto bg-gray-100 p-6">
+                    <div class="container mx-auto">
+                        <!-- KPIs de Cupons -->
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                            <div class="bg-white rounded-lg shadow p-4">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-500">Cupons Ativos</p>
+                                        <p class="text-2xl font-bold text-green-600" id="coupon-active-count">0</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                                        <i class="fas fa-check-circle text-green-600"></i>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bg-white rounded-lg shadow p-4">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-500">Cupons Enviados</p>
+                                        <p class="text-2xl font-bold text-blue-600" id="coupon-sent-count">0</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                                        <i class="fas fa-paper-plane text-blue-600"></i>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bg-white rounded-lg shadow p-4">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-500">Cupons Usados</p>
+                                        <p class="text-2xl font-bold text-purple-600" id="coupon-used-count">0</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
+                                        <i class="fas fa-receipt text-purple-600"></i>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bg-white rounded-lg shadow p-4">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-500">Taxa Conversão</p>
+                                        <p class="text-2xl font-bold text-orange-600" id="coupon-conversion-rate">0%</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
+                                        <i class="fas fa-percentage text-orange-600"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Regras de Cupom Automático -->
+                        <div class="bg-gradient-to-r from-green-500 to-emerald-600 rounded-lg shadow p-6 mb-6 text-white">
+                            <h3 class="text-lg font-semibold mb-2"><i class="fas fa-magic mr-2"></i>Regras de Cupom Automático</h3>
+                            <p class="text-sm opacity-90 mb-4">Configure as regras para sugestão automática de cupons</p>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div class="bg-white/20 rounded-lg p-4">
+                                    <p class="font-medium mb-2">💎 Ticket Alto (R$ 500+)</p>
+                                    <p class="text-sm opacity-90">Cupom de 15% para reativação</p>
+                                    <p class="text-xs opacity-75 mt-1">Código: VOLTA15</p>
+                                </div>
+                                <div class="bg-white/20 rounded-lg p-4">
+                                    <p class="font-medium mb-2">📦 Ticket Médio (R$ 200-500)</p>
+                                    <p class="text-sm opacity-90">Cupom de 10%</p>
+                                    <p class="text-xs opacity-75 mt-1">Código: VOLTA10</p>
+                                </div>
+                                <div class="bg-white/20 rounded-lg p-4">
+                                    <p class="font-medium mb-2">🚚 Ticket Baixo (&lt;R$ 200)</p>
+                                    <p class="text-sm opacity-90">Frete Grátis</p>
+                                    <p class="text-xs opacity-75 mt-1">Código: FRETEGRATIS</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <!-- Lista de Cupons -->
+                            <div class="bg-white rounded-lg shadow">
+                                <div class="px-6 py-4 border-b border-gray-200">
+                                    <h3 class="text-lg font-semibold text-gray-800">Cupons Cadastrados</h3>
+                                </div>
+                                <div id="coupons-list" class="divide-y divide-gray-200 max-h-96 overflow-y-auto">
+                                    <div class="p-6 text-center text-gray-500">
+                                        <i class="fas fa-ticket-alt text-4xl text-gray-300 mb-2"></i>
+                                        <p>Nenhum cupom cadastrado</p>
+                                        <p class="text-xs">Clique em "Cadastrar Cupom" para começar</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Histórico de Uso -->
+                            <div class="bg-white rounded-lg shadow">
+                                <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                                    <h3 class="text-lg font-semibold text-gray-800">Histórico de Uso</h3>
+                                    <span class="text-sm text-gray-500" id="coupon-history-count">0 usos</span>
+                                </div>
+                                <div id="coupon-usage-history" class="divide-y divide-gray-200 max-h-96 overflow-y-auto">
+                                    <div class="p-6 text-center text-gray-500">
+                                        <i class="fas fa-history text-4xl text-gray-300 mb-2"></i>
+                                        <p>Nenhum uso registrado</p>
+                                        <p class="text-xs">Os usos aparecerão aqui automaticamente</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Clientes que Receberam Cupom -->
+                        <div class="bg-white rounded-lg shadow mt-6">
+                            <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                                <h3 class="text-lg font-semibold text-gray-800">
+                                    <i class="fas fa-user-tag text-indigo-500 mr-2"></i>Clientes com Cupom Pendente
+                                </h3>
+                                <span class="text-sm text-gray-500" id="pending-coupons-count">0 clientes</span>
+                            </div>
+                            <div id="pending-coupons-list" class="divide-y divide-gray-200 max-h-64 overflow-y-auto">
+                                <div class="p-6 text-center text-gray-500">
+                                    <i class="fas fa-hourglass-half text-4xl text-gray-300 mb-2"></i>
+                                    <p>Nenhum cupom pendente</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </main>
+            </div>
+
+            <!-- PÁGINA DE WEBHOOKS -->
+            <div id="webhooks-page" class="page-content hidden flex-col h-full">
+                <header class="bg-white shadow-sm">
+                    <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
+                        <div class="flex items-baseline">
+                            <h1 class="text-xl font-semibold text-gray-900"><i class="fas fa-bolt text-yellow-500 mr-2"></i>Webhooks - Eventos em Tempo Real</h1>
+                        </div>
+                        <button id="clear-webhook-events" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                            <i class="fas fa-trash-alt mr-2"></i> Limpar Histórico
+                        </button>
+                    </div>
+                </header>
+                <main class="flex-1 overflow-y-auto bg-gray-100 p-6">
+                    <div class="container mx-auto">
+                        <!-- Configuração do Webhook -->
+                        <div class="bg-gradient-to-r from-green-500 to-emerald-600 rounded-lg shadow p-6 mb-6 text-white">
+                            <h3 class="text-lg font-semibold mb-2"><i class="fas fa-link mr-2"></i>URL do Webhook</h3>
+                            <p class="text-sm opacity-90 mb-4">Configure esta URL no FacilZap para receber eventos em tempo real</p>
+                            <div class="bg-white/20 rounded-lg p-3 flex items-center justify-between">
+                                <code class="text-sm font-mono" id="webhook-url-text">https://crmcjota.netlify.app/.netlify/functions/webhook-handler</code>
+                                <button id="copy-webhook-url-page" class="bg-white text-green-600 px-3 py-1 rounded text-sm font-medium hover:bg-green-50">
+                                    <i class="fas fa-copy mr-1"></i> Copiar
+                                </button>
+                            </div>
+                            <div class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <div class="bg-white/10 rounded-lg p-2 text-center">
+                                    <span class="text-2xl">📦</span>
+                                    <p class="text-xs mt-1">pedido_criado</p>
+                                </div>
+                                <div class="bg-white/10 rounded-lg p-2 text-center">
+                                    <span class="text-2xl">🔄</span>
+                                    <p class="text-xs mt-1">pedido_atualizado</p>
+                                </div>
+                                <div class="bg-white/10 rounded-lg p-2 text-center">
+                                    <span class="text-2xl text-green-500"><i class="fas fa-dollar-sign"></i></span>
+                                    <p class="text-xs mt-1">pedido_pago</p>
+                                </div>
+                                <div class="bg-white/10 rounded-lg p-2 text-center">
+                                    <span class="text-2xl">🛒</span>
+                                    <p class="text-xs mt-1">carrinho_abandonado</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- KPIs de Webhooks -->
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                            <div class="bg-white rounded-lg shadow p-4">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-500">Eventos Hoje</p>
+                                        <p class="text-2xl font-bold text-gray-800" id="webhook-events-today">0</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                                        <i class="fas fa-calendar-day text-blue-600"></i>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bg-white rounded-lg shadow p-4">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-500">Novos Pedidos</p>
+                                        <p class="text-2xl font-bold text-green-600" id="webhook-new-orders">0</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                                        <i class="fas fa-shopping-cart text-green-600"></i>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bg-white rounded-lg shadow p-4">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-500">Carrinhos Abandonados</p>
+                                        <p class="text-2xl font-bold text-orange-600" id="webhook-abandoned-carts">0</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
+                                        <i class="fas fa-shopping-basket text-orange-600"></i>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bg-white rounded-lg shadow p-4">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-500">Valor Recuperável</p>
+                                        <p class="text-2xl font-bold text-purple-600" id="webhook-recoverable-value">R$ 0</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
+                                        <i class="fas fa-hand-holding-usd text-purple-600"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <!-- Carrinhos Abandonados -->
+                            <div class="bg-white rounded-lg shadow">
+                                <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                                    <h3 class="text-lg font-semibold text-gray-800">
+                                        <i class="fas fa-shopping-basket text-orange-500 mr-2"></i>Carrinhos Abandonados
+                                    </h3>
+                                    <span class="text-sm text-gray-500" id="abandoned-carts-count">0 carrinhos</span>
+                                </div>
+                                <div id="abandoned-carts-list" class="divide-y divide-gray-200 max-h-96 overflow-y-auto">
+                                    <div class="p-6 text-center text-gray-500">
+                                        <i class="fas fa-inbox text-4xl text-gray-300 mb-2"></i>
+                                        <p>Nenhum carrinho abandonado</p>
+                                        <p class="text-xs mt-1">Configure o webhook no FacilZap para receber alertas</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Histórico de Eventos -->
+                            <div class="bg-white rounded-lg shadow">
+                                <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                                    <h3 class="text-lg font-semibold text-gray-800">
+                                        <i class="fas fa-history text-blue-500 mr-2"></i>Histórico de Eventos
+                                    </h3>
+                                    <span class="text-sm text-gray-500" id="events-count">0 eventos</span>
+                                </div>
+                                <div id="webhook-events-list" class="divide-y divide-gray-200 max-h-96 overflow-y-auto">
+                                    <div class="p-6 text-center text-gray-500">
+                                        <i class="fas fa-satellite-dish text-4xl text-gray-300 mb-2"></i>
+                                        <p>Aguardando eventos...</p>
+                                        <p class="text-xs mt-1">Os eventos aparecerão aqui quando o FacilZap enviar</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Instruções -->
+                        <div class="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-6">
+                            <h4 class="font-semibold text-blue-800 mb-3"><i class="fas fa-info-circle mr-2"></i>Como Configurar no FacilZap</h4>
+                            <ol class="text-sm text-blue-700 space-y-2 list-decimal list-inside">
+                                <li>Acesse sua conta no <strong>FacilZap</strong></li>
+                                <li>No menu lateral, clique em <strong>Integrações</strong></li>
+                                <li>Clique no submenu <strong>Webhooks</strong></li>
+                                <li>Cole a URL acima e <strong>ative</strong> o webhook</li>
+                                <li>Ative os eventos: <strong>Pedido Criado</strong>, <strong>Pedido Atualizado</strong>, <strong>Carrinho Abandonado</strong></li>
+                                <li>Clique em <strong>Salvar</strong></li>
+                            </ol>
+                            <p class="text-xs text-blue-600 mt-3">
+                                <i class="fas fa-exclamation-triangle mr-1"></i>
+                                A URL deve retornar código 200. O FacilZap faz até 3 tentativas em caso de falha.
+                            </p>
+                        </div>
+                    </div>
+                </main>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="client-modal" class="fixed z-10 inset-0 overflow-y-auto hidden"><div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0"><div class="fixed inset-0 transition-opacity" aria-hidden="true"><div class="absolute inset-0 bg-gray-500 opacity-75 modal-bg"></div></div><span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span><div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full"><form id="client-form"><div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4"><h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-title">Adicionar Novo Cliente</h3><input type="hidden" id="client-id"><div class="mt-4 space-y-4"><div><label for="name" class="block text-sm font-medium text-gray-700">Nome</label><input type="text" id="name" class="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" required></div><div><label for="email" class="block text-sm font-medium text-gray-700">Email</label><input type="email" id="email" class="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"></div><div><label for="phone" class="block text-sm font-medium text-gray-700">Telefone</label><input type="tel" id="phone" class="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"></div><div><label for="birthday" class="block text-sm font-medium text-gray-700">Aniversário</label><input type="date" id="birthday" class="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"></div></div></div><div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse"><button type="submit" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 sm:ml-3 sm:w-auto sm:text-sm">Salvar</button><button type="button" id="cancel-button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:w-auto sm:text-sm">Cancelar</button></div></form></div></div></div>
+    <div id="details-modal" class="fixed z-20 inset-0 overflow-y-auto hidden"><div class="flex items-center justify-center min-h-screen p-4 text-center sm:block"><div class="fixed inset-0 transition-opacity" aria-hidden="true"><div class="absolute inset-0 bg-gray-500 opacity-75 modal-bg"></div></div><span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span><div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-3xl sm:w-full"><div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4"><div class="flex justify-between items-start"><h3 class="text-lg leading-6 font-medium text-gray-900" id="details-modal-title">Detalhes do Cliente</h3><button id="close-details-button" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times fa-lg"></i></button></div><div id="details-modal-content" class="mt-4 max-h-[70vh] overflow-y-auto"></div></div></div></div></div>
+    <div id="settings-modal" class="fixed z-10 inset-0 overflow-y-auto hidden">
+        <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 transition-opacity" aria-hidden="true"><div class="absolute inset-0 bg-gray-500 opacity-75 modal-bg"></div></div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
+                <form id="settings-form">
+                    <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4 max-h-[80vh] overflow-y-auto">
+                        <h3 class="text-lg leading-6 font-medium text-gray-900">Configurações</h3>
+                        
+                        <!-- Status dos Clientes -->
+                        <div class="mt-6 border-t border-gray-200 pt-6">
+                            <h4 class="text-md font-medium text-gray-800">Status dos Clientes</h4>
+                            <p class="text-sm text-gray-500 mb-4">Defina os intervalos em dias para cada status.</p>
+                            <div class="space-y-4">
+                                <div>
+                                    <label for="status-ativo-days" class="block text-sm font-medium text-gray-700">Cliente Ativo (até X dias)</label>
+                                    <input type="number" id="status-ativo-days" class="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" required>
+                                </div>
+                                <div>
+                                    <label for="status-risco-days" class="block text-sm font-medium text-gray-700">Cliente em Risco (até X dias)</label>
+                                    <input type="number" id="status-risco-days" class="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" required>
+                                </div>
+                                <p class="text-xs text-gray-500">Acima do valor "Em Risco", o cliente é "Inativo".</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Integração IA -->
+                        <div class="mt-6 border-t border-gray-200 pt-6">
+                            <h4 class="text-md font-medium text-gray-800">🤖 Integração com IA (Groq - Limites Generosos)</h4>
+                            <p class="text-sm text-gray-500 mb-4">Configure sua API Key do Groq (GRATUITO - 14.400 req/dia).</p>
+                            <div>
+                                <label for="groq-api-key" class="block text-sm font-medium text-gray-700">API Key do Groq</label>
+                                <input type="password" id="groq-api-key" class="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" placeholder="gsk_...">
+                            </div>
+                            <p class="text-xs text-gray-400 mt-2">Obtenha GRÁTIS em: console.groq.com/keys</p>
+                        </div>
+                        
+                        <!-- WEBHOOKS -->
+                        <div class="mt-6 border-t border-gray-200 pt-6">
+                            <h4 class="text-md font-medium text-gray-800">
+                                <i class="fas fa-bolt text-yellow-500 mr-1"></i> Webhooks (Tempo Real)
+                            </h4>
+                            <p class="text-sm text-gray-500 mb-4">Receba notificações automáticas quando pedidos são criados ou atualizados.</p>
+                            
+                            <div class="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-4 mb-4">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="text-sm font-medium text-gray-700">URL do Webhook:</span>
+                                    <button type="button" id="copy-webhook-url" class="text-green-600 hover:text-green-800 text-sm">
+                                        <i class="fas fa-copy mr-1"></i> Copiar
+                                    </button>
+                                </div>
+                                <div class="bg-white border border-gray-200 rounded px-3 py-2 font-mono text-sm text-gray-800 break-all" id="webhook-url-display">
+                                    https://crmcjota.netlify.app/.netlify/functions/webhook-handler
+                                </div>
+                            </div>
+                            
+                            <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                                <h5 class="font-medium text-blue-800 mb-2"><i class="fas fa-info-circle mr-1"></i> Como configurar no FacilZap:</h5>
+                                <ol class="text-sm text-blue-700 space-y-1 list-decimal list-inside">
+                                    <li>Acesse sua conta no FacilZap</li>
+                                    <li>No menu lateral, clique em <strong>Integrações</strong></li>
+                                    <li>Clique no submenu <strong>Webhooks</strong></li>
+                                    <li>Cole a URL acima e <strong>ative</strong> o webhook</li>
+                                    <li>Ative os eventos: <strong>Pedido Criado</strong>, <strong>Pedido Atualizado</strong></li>
+                                    <li>Clique em <strong>Salvar</strong></li>
+                                </ol>
+                            </div>
+                            
+                            <div class="grid grid-cols-2 gap-3">
+                                <div class="bg-white border border-gray-200 rounded-lg p-3">
+                                    <div class="flex items-center">
+                                        <span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span>
+                                        <span class="text-sm font-medium text-gray-700">pedido_criado</span>
+                                    </div>
+                                    <p class="text-xs text-gray-500 mt-1">Novo pedido realizado</p>
+                                </div>
+                                <div class="bg-white border border-gray-200 rounded-lg p-3">
+                                    <div class="flex items-center">
+                                        <span class="w-2 h-2 rounded-full bg-blue-500 mr-2"></span>
+                                        <span class="text-sm font-medium text-gray-700">pedido_atualizado</span>
+                                    </div>
+                                    <p class="text-xs text-gray-500 mt-1">Status do pedido alterado</p>
+                                </div>
+                                <div class="bg-white border border-gray-200 rounded-lg p-3">
+                                    <div class="flex items-center">
+                                        <span class="w-2 h-2 rounded-full bg-yellow-500 mr-2"></span>
+                                        <span class="text-sm font-medium text-gray-700">pedido_pago</span>
+                                    </div>
+                                    <p class="text-xs text-gray-500 mt-1">Pagamento confirmado</p>
+                                </div>
+                                <div class="bg-white border border-gray-200 rounded-lg p-3">
+                                    <div class="flex items-center">
+                                        <span class="w-2 h-2 rounded-full bg-orange-500 mr-2"></span>
+                                        <span class="text-sm font-medium text-gray-700">carrinho_abandonado</span>
+                                    </div>
+                                    <p class="text-xs text-gray-500 mt-1">Cliente não finalizou compra</p>
+                                </div>
+                            </div>
+                            
+                            <div class="mt-4 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                                <p class="text-xs text-yellow-700">
+                                    <i class="fas fa-exclamation-triangle mr-1"></i>
+                                    <strong>Importante:</strong> A URL deve retornar código 200. O FacilZap faz até 3 tentativas em caso de falha.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                        <button type="submit" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 sm:ml-3 sm:w-auto sm:text-sm">Salvar</button>
+                        <button type="button" id="cancel-settings-button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:w-auto sm:text-sm">Cancelar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div id="confirm-modal" class="fixed z-30 inset-0 overflow-y-auto hidden"><div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0"><div class="fixed inset-0 transition-opacity" aria-hidden="true"><div class="absolute inset-0 bg-gray-500 opacity-75"></div></div><span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span><div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full"><div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4"><div class="sm:flex sm:items-start"><div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10"><i class="fas fa-exclamation-triangle text-red-600"></i></div><div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left"><h3 class="text-lg leading-6 font-medium text-gray-900">Excluir Cliente</h3><div class="mt-2"><p class="text-sm text-gray-500">Tem certeza que deseja excluir este cliente? Esta ação é irreversível.</p></div></div></div></div><div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse"><button type="button" id="confirm-delete-button" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 sm:ml-3 sm:w-auto sm:text-sm">Excluir</button><button type="button" id="cancel-delete-button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:w-auto sm:text-sm">Cancelar</button></div></div></div></div>
+    
+    <!-- Modal de Mensagem WhatsApp -->
+    <div id="whatsapp-modal" class="fixed z-30 inset-0 overflow-y-auto hidden"><div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0"><div class="fixed inset-0 transition-opacity" aria-hidden="true"><div class="absolute inset-0 bg-gray-500 opacity-75 modal-bg"></div></div><span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span><div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full"><div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4"><div class="flex justify-between items-start mb-4"><h3 class="text-lg leading-6 font-medium text-gray-900"><i class="fab fa-whatsapp text-green-600 mr-2"></i>Enviar Mensagem</h3><button id="close-whatsapp-modal" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button></div><div class="mb-4"><label class="block text-sm font-medium text-gray-700 mb-2">Cliente</label><p id="whatsapp-client-name" class="font-semibold"></p><p id="whatsapp-client-phone" class="text-sm text-gray-500"></p></div><div class="mb-4"><label class="block text-sm font-medium text-gray-700 mb-2">Mensagem</label><textarea id="whatsapp-message" rows="5" class="w-full border border-gray-300 rounded-md p-3 text-sm"></textarea><div class="flex justify-between mt-2"><button id="generate-ai-message" class="text-indigo-600 text-sm hover:text-indigo-800"><i class="fas fa-magic mr-1"></i> Gerar com IA</button><button id="generate-basic-message" class="text-gray-600 text-sm hover:text-gray-800"><i class="fas fa-file-alt mr-1"></i> Template Básico</button></div></div></div><div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse"><button id="send-whatsapp-btn" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-green-600 text-base font-medium text-white hover:bg-green-700 sm:ml-3 sm:w-auto sm:text-sm"><i class="fab fa-whatsapp mr-2"></i> Abrir WhatsApp</button><button type="button" id="cancel-whatsapp-btn" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:w-auto sm:text-sm">Cancelar</button></div></div></div></div>
+
+    <!-- Modal de Importação de Legado -->
+    <div id="import-modal" class="fixed z-40 inset-0 overflow-y-auto hidden">
+        <div class="flex items-center justify-center min-h-screen p-4">
+            <div class="fixed inset-0 bg-gray-500 opacity-75 modal-bg"></div>
+            <div class="relative bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+                <!-- Header -->
+                <div class="bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-4 flex justify-between items-center">
+                    <h3 class="text-xl font-semibold text-white"><i class="fas fa-file-import mr-2"></i>Importar Dados de Legado</h3>
+                    <button id="close-import-modal" class="text-white hover:text-gray-200"><i class="fas fa-times fa-lg"></i></button>
+                </div>
+                
+                <!-- Steps Indicator -->
+                <div class="px-6 py-4 bg-gray-50 border-b">
+                    <div class="flex items-center justify-center space-x-4">
+                        <div id="step1-indicator" class="flex items-center">
+                            <span class="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center text-sm font-medium">1</span>
+                            <span class="ml-2 text-sm font-medium text-indigo-600">Upload</span>
+                        </div>
+                        <div class="w-16 h-1 bg-gray-300" id="step1-line"></div>
+                        <div id="step2-indicator" class="flex items-center opacity-50">
+                            <span class="w-8 h-8 rounded-full bg-gray-300 text-gray-600 flex items-center justify-center text-sm font-medium">2</span>
+                            <span class="ml-2 text-sm font-medium text-gray-500">Mapear Colunas</span>
+                        </div>
+                        <div class="w-16 h-1 bg-gray-300" id="step2-line"></div>
+                        <div id="step3-indicator" class="flex items-center opacity-50">
+                            <span class="w-8 h-8 rounded-full bg-gray-300 text-gray-600 flex items-center justify-center text-sm font-medium">3</span>
+                            <span class="ml-2 text-sm font-medium text-gray-500">Importar</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Content -->
+                <div class="px-6 py-6 overflow-y-auto" style="max-height: 60vh;">
+                    <!-- Step 1: Upload -->
+                    <div id="import-step-1">
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Tipo de dados a importar:</label>
+                            <div class="flex space-x-4">
+                                <label class="flex items-center">
+                                    <input type="radio" name="import-type" value="clientes" class="mr-2" checked>
+                                    <span class="text-sm">Clientes</span>
+                                </label>
+                                <label class="flex items-center">
+                                    <input type="radio" name="import-type" value="pedidos" class="mr-2">
+                                    <span class="text-sm">Pedidos</span>
+                                </label>
+                                <label class="flex items-center">
+                                    <input type="radio" name="import-type" value="produtos" class="mr-2">
+                                    <span class="text-sm">Produtos</span>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div id="dropzone" class="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center hover:border-indigo-500 hover:bg-indigo-50 transition-colors cursor-pointer">
+                            <i class="fas fa-cloud-upload-alt text-5xl text-gray-400 mb-4"></i>
+                            <p class="text-lg font-medium text-gray-700">Arraste seu arquivo aqui</p>
+                            <p class="text-sm text-gray-500 mt-2">ou clique para selecionar</p>
+                            <p class="text-xs text-gray-400 mt-4">Formatos aceitos: CSV, XLSX, XLS</p>
+                            <input type="file" id="file-input" accept=".csv,.xlsx,.xls" class="hidden">
+                        </div>
+                        
+                        <div id="file-info" class="mt-4 hidden">
+                            <div class="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center justify-between">
+                                <div class="flex items-center">
+                                    <i class="fas fa-file-excel text-green-600 text-2xl mr-3"></i>
+                                    <div>
+                                        <p id="file-name" class="font-medium text-gray-800"></p>
+                                        <p id="file-rows" class="text-sm text-gray-500"></p>
+                                    </div>
+                                </div>
+                                <button id="remove-file" class="text-red-500 hover:text-red-700"><i class="fas fa-times"></i></button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Step 2: Mapeamento de Colunas -->
+                    <div id="import-step-2" class="hidden">
+                        <div class="mb-4">
+                            <p class="text-sm text-gray-600 mb-4">
+                                <i class="fas fa-info-circle text-indigo-500 mr-1"></i>
+                                Mapeie as colunas do seu arquivo para os campos do sistema. Campos com <span class="text-red-500">*</span> são obrigatórios.
+                            </p>
+                        </div>
+                        
+                        <div id="mapping-container" class="space-y-3">
+                            <!-- Campos de mapeamento serão inseridos aqui via JS -->
+                        </div>
+                        
+                        <div class="mt-6 bg-gray-50 rounded-lg p-4">
+                            <h4 class="font-medium text-gray-800 mb-2"><i class="fas fa-eye mr-2"></i>Prévia dos Dados (primeiras 3 linhas)</h4>
+                            <div id="data-preview" class="overflow-x-auto">
+                                <table class="min-w-full text-xs">
+                                    <thead id="preview-header"></thead>
+                                    <tbody id="preview-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Step 3: Resultado da Importação -->
+                    <div id="import-step-3" class="hidden">
+                        <div id="import-progress" class="mb-6">
+                            <div class="flex items-center justify-center mb-4">
+                                <i class="fas fa-spinner fa-spin text-4xl text-indigo-600"></i>
+                            </div>
+                            <p class="text-center text-gray-600">Processando importação...</p>
+                            <div class="w-full bg-gray-200 rounded-full h-2.5 mt-4">
+                                <div id="progress-bar" class="bg-indigo-600 h-2.5 rounded-full transition-all" style="width: 0%"></div>
+                            </div>
+                            <p id="progress-text" class="text-center text-sm text-gray-500 mt-2">0%</p>
+                        </div>
+                        
+                        <div id="import-result" class="hidden">
+                            <div class="text-center mb-6">
+                                <i class="fas fa-check-circle text-6xl text-green-500 mb-4"></i>
+                                <h4 class="text-xl font-semibold text-gray-800">Importação Concluída!</h4>
+                            </div>
+                            
+                            <div class="grid grid-cols-3 gap-4 mb-6">
+                                <div class="bg-green-50 rounded-lg p-4 text-center">
+                                    <p class="text-2xl font-bold text-green-600" id="result-new">0</p>
+                                    <p class="text-sm text-gray-600">Novos Registros</p>
+                                </div>
+                                <div class="bg-blue-50 rounded-lg p-4 text-center">
+                                    <p class="text-2xl font-bold text-blue-600" id="result-merged">0</p>
+                                    <p class="text-sm text-gray-600">Registros Mesclados</p>
+                                </div>
+                                <div class="bg-yellow-50 rounded-lg p-4 text-center">
+                                    <p class="text-2xl font-bold text-yellow-600" id="result-skipped">0</p>
+                                    <p class="text-sm text-gray-600">Ignorados (duplicados)</p>
+                                </div>
+                            </div>
+                            
+                            <div id="import-warnings" class="hidden bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                                <h5 class="font-medium text-yellow-800 mb-2"><i class="fas fa-exclamation-triangle mr-2"></i>Avisos</h5>
+                                <ul id="warnings-list" class="text-sm text-yellow-700 list-disc list-inside"></ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Footer -->
+                <div class="bg-gray-50 px-6 py-4 flex justify-between items-center border-t">
+                    <button id="import-back-btn" class="px-4 py-2 text-gray-600 hover:text-gray-800 hidden">
+                        <i class="fas fa-arrow-left mr-2"></i>Voltar
+                    </button>
+                    <div class="flex-1"></div>
+                    <button id="import-next-btn" class="px-6 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                        Próximo <i class="fas fa-arrow-right ml-2"></i>
+                    </button>
+                    <button id="import-finish-btn" class="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 hidden">
+                        <i class="fas fa-check mr-2"></i>Concluir
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Cadastro de Cupom -->
+    <div id="coupon-modal" class="fixed z-30 inset-0 overflow-y-auto hidden">
+        <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 transition-opacity" aria-hidden="true"><div class="absolute inset-0 bg-gray-500 opacity-75 modal-bg"></div></div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                <form id="coupon-form">
+                    <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                        <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">
+                            <i class="fas fa-ticket-alt text-green-500 mr-2"></i>Cadastrar Cupom
+                        </h3>
+                        <p class="text-sm text-gray-500 mb-4">
+                            <i class="fas fa-info-circle mr-1"></i>
+                            Crie o cupom no FacilZap primeiro, depois cadastre aqui para rastrear uso.
+                        </p>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Código do Cupom *</label>
+                                <input type="text" id="coupon-code" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm uppercase" placeholder="Ex: VOLTA15" required>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Descrição</label>
+                                <input type="text" id="coupon-description" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" placeholder="Ex: Cupom de reativação 15%">
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">Tipo de Desconto</label>
+                                    <select id="coupon-type" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
+                                        <option value="percent">Porcentagem (%)</option>
+                                        <option value="fixed">Valor Fixo (R$)</option>
+                                        <option value="shipping">Frete Grátis</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">Valor</label>
+                                    <input type="number" id="coupon-value" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" placeholder="Ex: 15">
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">Validade</label>
+                                    <input type="date" id="coupon-expiry" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">Limite de Uso</label>
+                                    <input type="number" id="coupon-limit" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" placeholder="Ilimitado">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Regra de Aplicação</label>
+                                <select id="coupon-rule" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
+                                    <option value="all">Todos os clientes</option>
+                                    <option value="inactive">Apenas inativos (+90 dias)</option>
+                                    <option value="high-ticket">Ticket alto (+R$ 500)</option>
+                                    <option value="low-ticket">Ticket baixo (-R$ 200)</option>
+                                    <option value="vip">Apenas VIPs</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                        <button type="submit" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-green-600 text-base font-medium text-white hover:bg-green-700 sm:ml-3 sm:w-auto sm:text-sm">
+                            <i class="fas fa-save mr-2"></i>Salvar Cupom
+                        </button>
+                        <button type="button" id="cancel-coupon-btn" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:w-auto sm:text-sm">
+                            Cancelar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Disparo WhatsApp em Massa -->
+    <div id="bulk-whatsapp-modal" class="fixed z-30 inset-0 overflow-y-auto hidden">
+        <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 transition-opacity" aria-hidden="true"><div class="absolute inset-0 bg-gray-500 opacity-75 modal-bg"></div></div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-3xl sm:w-full">
+                <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">
+                        <i class="fab fa-whatsapp text-green-500 mr-2"></i>Disparo em Massa
+                    </h3>
+                    <div class="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <p class="text-sm text-yellow-800">
+                            <i class="fas fa-exclamation-triangle mr-1"></i>
+                            <strong>Atenção:</strong> Os links serão abertos um a um. O WhatsApp não permite automação direta.
+                        </p>
+                    </div>
+                    <div class="mb-4">
+                        <p class="text-sm text-gray-600">
+                            <span id="bulk-client-count" class="font-bold text-indigo-600">0</span> clientes selecionados
+                        </p>
+                    </div>
+                    
+                    <!-- Gerador de Variações com IA -->
+                    <div class="mb-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                        <div class="flex items-center justify-between mb-3">
+                            <span class="text-sm font-medium text-purple-800">
+                                <i class="fas fa-magic mr-1"></i>Gerador de Variações com IA
+                            </span>
+                            <button id="generate-ai-variations" class="px-3 py-1 bg-purple-600 text-white rounded text-xs hover:bg-purple-700">
+                                <i class="fas fa-wand-magic-sparkles mr-1"></i>Gerar 3 Variações
+                            </button>
+                        </div>
+                        <div id="ai-variations-container" class="hidden space-y-2">
+                            <p class="text-xs text-purple-600 mb-2">Clique para usar:</p>
+                            <div id="ai-variations-list" class="space-y-2"></div>
+                        </div>
+                        <p id="ai-variations-loading" class="hidden text-xs text-purple-600">
+                            <i class="fas fa-spinner fa-spin mr-1"></i>Gerando variações com IA...
+                        </p>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Mensagem</label>
+                        <textarea id="bulk-message-text" rows="6" class="w-full border border-gray-300 rounded-md p-3 text-sm" placeholder="Use {nome} para personalizar com o nome do cliente e {cupom} para inserir o código do cupom">Olá {nome}!
+
+Sentimos sua falta! 💚
+
+Preparamos um cupom especial pra você: {cupom}
+
+Aproveite e volte a comprar conosco! 🛒</textarea>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Cupom a incluir</label>
+                        <select id="bulk-coupon-select" class="w-full border-gray-300 rounded-md shadow-sm">
+                            <option value="">Nenhum cupom</option>
+                        </select>
+                    </div>
+                <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                    <button type="button" id="start-bulk-dispatch" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-green-600 text-base font-medium text-white hover:bg-green-700 sm:ml-3 sm:w-auto sm:text-sm">
+                        <i class="fab fa-whatsapp mr-2"></i>Iniciar Disparo
+                    </button>
+                    <button type="button" id="cancel-bulk-btn" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:w-auto sm:text-sm">
+                        Cancelar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast-container" class="toast-container"></div>
+    
+    <script src="script.js"></script>
+</body>
+</html>

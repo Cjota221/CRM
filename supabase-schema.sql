@@ -110,14 +110,27 @@ CREATE TABLE IF NOT EXISTS settings (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Tabela de Webhooks / Carrinhos Abandonados
+-- Tabela de Carrinhos Abandonados (Webhooks do FacilZap)
 CREATE TABLE IF NOT EXISTS abandoned_carts (
     id TEXT PRIMARY KEY,
-    client_name TEXT,
-    client_phone TEXT,
-    products JSONB DEFAULT '[]'::jsonb,
-    total DECIMAL(10,2) DEFAULT 0,
-    recovered BOOLEAN DEFAULT FALSE,
+    cliente_id TEXT,
+    cliente_nome TEXT,
+    cliente_whatsapp TEXT,
+    cliente_email TEXT,
+    valor_total DECIMAL(10,2) DEFAULT 0,
+    quantidade_produtos INTEGER DEFAULT 0,
+    produtos JSONB DEFAULT '[]'::jsonb,
+    iniciado_em TIMESTAMP WITH TIME ZONE,
+    ultima_atualizacao TIMESTAMP WITH TIME ZONE,
+    status TEXT DEFAULT 'pendente', -- 'pendente', 'recuperado', 'expirado'
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Tabela de Eventos de Webhook (histórico)
+CREATE TABLE IF NOT EXISTS webhook_events (
+    id TEXT PRIMARY KEY,
+    evento TEXT NOT NULL,
+    dados JSONB DEFAULT '{}'::jsonb,
     received_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
