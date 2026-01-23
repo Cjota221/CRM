@@ -1,5 +1,18 @@
 [build]
 functions = "functions"
+publish = "."
+
+# Headers para cache de arquivos estáticos
+[[headers]]
+for = "/*.html"
+[headers.values]
+Cache-Control = "no-cache"
+
+[[redirects]]
+from = "/api/anny"
+to = "/.netlify/functions/anny-ai"
+status = 200
+force = true
 
 [[redirects]]
 from = "/api/facilzap-proxy"
