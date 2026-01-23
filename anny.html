@@ -659,11 +659,48 @@
                         </div>
                     `;
                 }
+            },
+            
+            // Verificar se veio da Vigilante com contexto pré-carregado
+            checkVigilanteContext() {
+                const urlParams = new URLSearchParams(window.location.search);
+                const prompt = urlParams.get('prompt');
+                
+                if (prompt) {
+                    // Preencher o input com o prompt da Vigilante
+                    const input = document.getElementById('chat-input');
+                    if (input) {
+                        input.value = decodeURIComponent(prompt);
+                        input.focus();
+                        
+                        // Mostrar notificação
+                        const container = document.getElementById('chat-messages');
+                        const notification = document.createElement('div');
+                        notification.className = 'bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 text-center';
+                        notification.innerHTML = `
+                            <p class="text-amber-700 font-medium text-sm">
+                                <i data-lucide="radar" class="w-4 h-4 inline-block mr-1"></i>
+                                Contexto carregado pela Vigilante
+                            </p>
+                            <p class="text-amber-600 text-xs mt-1">Pressione Enter ou clique em Enviar para processar</p>
+                        `;
+                        container.appendChild(notification);
+                        container.scrollTop = container.scrollHeight;
+                        lucide.createIcons();
+                    }
+                    
+                    // Limpar a URL para não recarregar o prompt
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                }
             }
         };
 
         // Initialize on page load
-        document.addEventListener('DOMContentLoaded', () => AnnyChat.init());
+        document.addEventListener('DOMContentLoaded', () => {
+            AnnyChat.init();
+            // Verificar contexto da Vigilante após inicializar
+            setTimeout(() => AnnyChat.checkVigilanteContext(), 500);
+        });
     </script>
 </body>
 </html>

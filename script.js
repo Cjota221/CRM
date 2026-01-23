@@ -4820,256 +4820,430 @@ Exemplo de resposta:
 window.CampaignManager = CampaignManager;
 
 // ============================================================================
-// IA VIGILANTE
+// IA VIGILANTE v2.0 - CENTRO DE COMANDO FINANCEIRO
 // ============================================================================
 
 const AIVigilante = {
     alerts: [],
+    segments: {
+        uti: [],           // UTI de Vendas (críticos)
+        hot: [],           // Oportunidades Quentes (reposição)
+        c4: [],            // Candidatas C4
+        baleia: [],        // Baleias Adormecidas (atacado pesado)
+        ciclo: [],         // Fora do Ciclo Normal
+        problema: []       // Possível Problema
+    },
     
     run() {
-        console.log('[IA Vigilante] Analisando...');
+        console.log('[IA Vigilante v2.0] 💰 Escaneando dinheiro na mesa...');
         const clients = Storage.getClients();
         const orders = Storage.getOrders();
         this.alerts = [];
+        this.segments = { uti: [], hot: [], c4: [], baleia: [], ciclo: [], problema: [] };
         
-        // DEBUG: Encontrar Milene para diagnóstico
-        const debugTarget = clients.find(c => c.name && c.name.toLowerCase().includes('milene'));
-        if (debugTarget) {
-            console.log(`[DEBUG IA] Análise detalhada para: ${debugTarget.name} (ID: ${debugTarget.id})`);
-            const allOrders = orders.filter(o => String(o.clientId) === String(debugTarget.id));
-            console.log(`[DEBUG IA] Total de pedidos brutos: ${allOrders.length}`);
-            allOrders.forEach(o => {
-                console.log(` > Data: ${o.data} | Status: ${o.status} | Pago: ${o.status_pago} | Cancelado: ${o.isCancelled}`);
-            });
-        }
-        
-        // Calcular stats para cada cliente baseado nos pedidos
+        // Calcular stats avançados para cada cliente
         const clientsWithStats = clients.map(client => {
-            // USAR APENAS PEDIDOS VÁLIDOS (Não cancelados)
             const clientOrders = orders.filter(o => 
-                String(o.clientId) === String(client.id) && 
-                !o.isCancelled
-            );
+                String(o.clientId) === String(client.id) && !o.isCancelled
+            ).sort((a, b) => new Date(b.data || b.date) - new Date(a.data || a.date));
             
             const totalSpent = clientOrders.reduce((sum, o) => sum + (parseFloat(o.total) || 0), 0);
             const totalOrders = clientOrders.length;
             const averageTicket = totalOrders > 0 ? totalSpent / totalOrders : 0;
             
-            // Calcular dias desde última compra (usando a data mais recente dos pedidos VÁLIDOS)
-            let daysSinceLastPurchase = null;
+            // Calcular LTV Mensal (quanto comprava por mês em média)
+            let ltvMensal = 0;
+            let daysSinceLastPurchase = 9999;
+            let avgPurchaseInterval = 0;
+            let monthsAsClient = 1;
             
             if (clientOrders.length > 0) {
-                // Pegar datas válidas
-                const dates = clientOrders
-                    .map(o => new Date(o.data || o.date))
-                    .filter(d => !isNaN(d.getTime()));
-                
+                const dates = clientOrders.map(o => new Date(o.data || o.date)).filter(d => !isNaN(d.getTime()));
                 if (dates.length > 0) {
                     const lastDate = new Date(Math.max(...dates));
-                    const diffTime = new Date() - lastDate;
-                    daysSinceLastPurchase = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    const firstDate = new Date(Math.min(...dates));
+                    daysSinceLastPurchase = Math.ceil((new Date() - lastDate) / (1000 * 60 * 60 * 24));
+                    monthsAsClient = Math.max(1, Math.ceil((lastDate - firstDate) / (1000 * 60 * 60 * 24 * 30)));
+                    ltvMensal = totalSpent / monthsAsClient;
+                    
+                    // Intervalo médio entre compras
+                    if (dates.length >= 2) {
+                        dates.sort((a, b) => a - b);
+                        let totalDays = 0;
+                        for (let i = 1; i < dates.length; i++) {
+                            totalDays += (dates[i] - dates[i-1]) / (1000 * 60 * 60 * 24);
+                        }
+                        avgPurchaseInterval = totalDays / (dates.length - 1);
+                    }
                 }
-            } 
-            
-            // Se não tiver pedidos válidos (ou bug), verificar se tem data de última compra vindo do cadastro (fallback)
-            // Mas apenas se não encontramos nada nos pedidos, pra não sobrescrever dados reais
-            if (daysSinceLastPurchase === null && client.lastPurchaseDate) {
-                 const diffTime = new Date() - new Date(client.lastPurchaseDate);
-                 daysSinceLastPurchase = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
             }
             
-            // Se ainda for null (cliente nunca comprou ou sem dados), definir como Infinity para ordenação
-            const displayDays = daysSinceLastPurchase === null ? 9999 : daysSinceLastPurchase;
+            // Fallback para lastPurchaseDate do cadastro
+            if (daysSinceLastPurchase === 9999 && client.lastPurchaseDate) {
+                daysSinceLastPurchase = Math.ceil((new Date() - new Date(client.lastPurchaseDate)) / (1000 * 60 * 60 * 24));
+            }
             
-            // Calcular intervalo médio entre compras
-            let avgPurchaseInterval = 0;
-            if (clientOrders.length >= 2) {
-                const dates = clientOrders.map(o => new Date(o.data || o.date)).filter(d => !isNaN(d)).sort((a,b) => a-b);
-                if (dates.length >= 2) {
-                    let totalDays = 0;
-                    for (let i = 1; i < dates.length; i++) {
-                        totalDays += (dates[i] - dates[i-1]) / (1000 * 60 * 60 * 24);
-                    }
-                    avgPurchaseInterval = totalDays / (dates.length - 1);
-                }
+            // Calcular LTV PERDIDO (quanto está deixando de ganhar por mês)
+            const ltvPerdido = daysSinceLastPurchase > 30 ? ltvMensal * Math.floor(daysSinceLastPurchase / 30) : 0;
+            
+            // Classificar perfil
+            let perfil = 'varejinho';
+            if (averageTicket >= 1000 || (totalOrders >= 5 && averageTicket >= 500)) {
+                perfil = 'atacadao'; // Baleia - grade fechada
+            } else if (totalOrders >= 4 && avgPurchaseInterval > 0 && avgPurchaseInterval <= 15 && averageTicket <= 300) {
+                perfil = 'c4_potencial'; // Compra frequente, ticket baixo = candidata C4
             }
             
             return {
                 ...client,
                 stats: { 
-                    daysSinceLastPurchase: displayDays, 
-                    realDays: daysSinceLastPurchase, // Para debug
+                    daysSinceLastPurchase, 
                     totalOrders, 
                     averageTicket, 
                     totalSpent, 
-                    avgPurchaseInterval 
+                    avgPurchaseInterval,
+                    ltvMensal,
+                    ltvPerdido,
+                    monthsAsClient,
+                    perfil,
+                    lastOrder: clientOrders[0] || null
                 }
             };
         });
         
-        console.log('[IA Vigilante] Clientes com stats calculados:', clientsWithStats.length);
+        console.log(`[IA Vigilante v2.0] ${clientsWithStats.length} clientes analisados`);
 
-        // ATUALIZAR STATUS DOS CLIENTES NA UI SE NECESSÁRIO
-        // (Isso já é feito pelo renderClients, mas aqui focamos nos alertas)
+        // ========== SEGMENTAÇÃO POR MOTIVO DO RISCO ==========
         
-        // Urgentes (300+ dias, ticket alto OU muitos pedidos)
-        // Ignorar quem tem dias > 5000 (provavelmente nunca comprou)
-        const urgent = clientsWithStats.filter(c => 
-            c.stats.daysSinceLastPurchase >= 300 && 
+        // 1. UTI DE VENDAS - Clientes críticos (90+ dias, com histórico relevante)
+        const uti = clientsWithStats.filter(c => 
+            c.stats.daysSinceLastPurchase >= 60 && 
             c.stats.daysSinceLastPurchase < 2000 &&
-            (c.stats.averageTicket >= 200 || c.stats.totalOrders >= 3)
-        );
+            c.stats.totalOrders >= 2 &&
+            c.stats.ltvMensal >= 100
+        ).sort((a, b) => b.stats.ltvPerdido - a.stats.ltvPerdido); // ORDENAR POR DINHEIRO PERDIDO!
         
-        urgent.forEach(c => this.alerts.push({ 
-            type: 'urgent', priority: 1, client: c, 
-            title: `${c.name} - ${c.stats.daysSinceLastPurchase} dias`,
-            reason: `Ticket: ${formatCurrency(c.stats.averageTicket)} • ${c.stats.totalOrders} pedidos`,
-            suggestedCoupon: CouponManager.suggestCoupon(c) 
-        }));
+        this.segments.uti = uti.slice(0, 20);
         
-        // Também pegar inativos com menos dias mas com histórico relevante
-        const atRisk = clientsWithStats.filter(c => 
-            c.stats.daysSinceLastPurchase >= 90 && 
-            c.stats.daysSinceLastPurchase < 300 &&
-            c.stats.totalOrders >= 2
-        );
+        // 2. OPORTUNIDADES QUENTES - Prontos para reposição (perto do ciclo de compra)
+        const hot = clientsWithStats.filter(c => {
+            const avg = c.stats.avgPurchaseInterval || 30;
+            const days = c.stats.daysSinceLastPurchase;
+            // Está entre 80% e 120% do ciclo normal
+            return days >= avg * 0.8 && days <= avg * 1.5 && c.stats.totalOrders >= 2;
+        }).sort((a, b) => b.stats.averageTicket - a.stats.averageTicket);
         
-        atRisk.slice(0, 10).forEach(c => this.alerts.push({ 
-            type: 'urgent', priority: 2, client: c, 
-            title: `${c.name} - ${c.stats.daysSinceLastPurchase} dias`,
-            reason: `Em risco • ${formatCurrency(c.stats.averageTicket)} • ${c.stats.totalOrders} ped`,
-            suggestedCoupon: CouponManager.suggestCoupon(c) 
-        }));
+        this.segments.hot = hot.slice(0, 20);
         
-        // Upsell - clientes ativos com bom histórico
-        const upsell = clientsWithStats.filter(c => c.stats.daysSinceLastPurchase <= 30 && c.stats.totalOrders >= 3).slice(0, 10);
-        upsell.forEach(c => this.alerts.push({ type: 'upsell', priority: 3, client: c, title: c.name, reason: `${c.stats.totalOrders} ped, ${formatCurrency(c.stats.averageTicket)}` }));
+        // 3. CANDIDATAS C4 - Compram muito frequente mas ticket baixo
+        const c4 = clientsWithStats.filter(c => 
+            c.stats.perfil === 'c4_potencial' ||
+            (c.stats.totalOrders >= 4 && c.stats.averageTicket <= 300 && c.stats.daysSinceLastPurchase <= 30)
+        ).sort((a, b) => b.stats.totalOrders - a.stats.totalOrders);
         
-        // Atrasados - passaram do intervalo normal de compra
-        const late = clientsWithStats.filter(c => {
+        this.segments.c4 = c4.slice(0, 15);
+        
+        // 4. BALEIAS ADORMECIDAS - Atacado pesado que sumiu
+        const baleia = clientsWithStats.filter(c => 
+            c.stats.perfil === 'atacadao' && 
+            c.stats.daysSinceLastPurchase >= 45 &&
+            c.stats.daysSinceLastPurchase < 2000
+        ).sort((a, b) => b.stats.ltvPerdido - a.stats.ltvPerdido);
+        
+        this.segments.baleia = baleia.slice(0, 15);
+        
+        // 5. FORA DO CICLO - Passaram do intervalo normal
+        const ciclo = clientsWithStats.filter(c => {
             const avg = c.stats.avgPurchaseInterval || 0;
-            const days = c.stats.daysSinceLastPurchase || 0;
+            const days = c.stats.daysSinceLastPurchase;
             return avg > 0 && days > avg * 1.5 && c.stats.totalOrders >= 3;
+        }).sort((a, b) => {
+            const aExcesso = a.stats.daysSinceLastPurchase - a.stats.avgPurchaseInterval;
+            const bExcesso = b.stats.daysSinceLastPurchase - b.stats.avgPurchaseInterval;
+            return bExcesso - aExcesso;
         });
-        late.forEach(c => this.alerts.push({ type: 'late', priority: 2, client: c, title: c.name, reason: `Comprava a cada ${Math.round(c.stats.avgPurchaseInterval)}d, há ${c.stats.daysSinceLastPurchase}d` }));
         
-        this.alerts.sort((a, b) => a.priority - b.priority);
-        const totalUrgent = urgent.length + atRisk.length;
-        const riskValue = [...urgent, ...atRisk].reduce((s, c) => s + (c.stats.totalSpent || 0), 0);
+        this.segments.ciclo = ciclo.slice(0, 15);
         
-        this.updateDashboard({ urgentCount: totalUrgent, riskValue, upsellCount: upsell.length, lateCount: late.length });
-        console.log(`[IA Vigilante] Resultado: ${totalUrgent} urgentes, ${upsell.length} upsell, ${late.length} atrasados`);
-        showToast(`IA: ${totalUrgent} clientes precisam de ação!`, totalUrgent > 0 ? 'warning' : 'info');
+        // 6. POSSÍVEL PROBLEMA - Parou abruptamente após último pedido
+        const problema = clientsWithStats.filter(c => {
+            const avg = c.stats.avgPurchaseInterval || 30;
+            const days = c.stats.daysSinceLastPurchase;
+            // Tinha padrão regular e parou de repente (mais de 2x o intervalo)
+            return c.stats.totalOrders >= 3 && avg > 0 && days > avg * 2 && c.stats.averageTicket >= 200;
+        }).sort((a, b) => b.stats.ltvPerdido - a.stats.ltvPerdido);
+        
+        this.segments.problema = problema.slice(0, 10);
+        
+        // ========== CALCULAR MÉTRICAS FINANCEIRAS ==========
+        
+        const ltvEmRisco = this.segments.uti.reduce((s, c) => s + c.stats.ltvPerdido, 0);
+        const oportunidadeValue = this.segments.hot.reduce((s, c) => s + c.stats.averageTicket, 0);
+        const baleiaValue = this.segments.baleia.reduce((s, c) => s + c.stats.ltvPerdido, 0);
+        const cicloValue = this.segments.ciclo.reduce((s, c) => s + c.stats.ltvMensal, 0);
+        const problemaValue = this.segments.problema.reduce((s, c) => s + c.stats.ltvPerdido, 0);
+        
+        // Atualizar Dashboard
+        this.updateDashboardV2({
+            ltvEmRisco,
+            oportunidadeValue,
+            utiCount: this.segments.uti.length,
+            hotCount: this.segments.hot.length,
+            c4Count: this.segments.c4.length,
+            baleiaCount: this.segments.baleia.length,
+            baleiaValue,
+            cicloCount: this.segments.ciclo.length,
+            cicloValue,
+            problemaCount: this.segments.problema.length,
+            problemaValue
+        });
+        
+        console.log(`[IA Vigilante v2.0] 💰 R$ ${ltvEmRisco.toLocaleString('pt-BR')} em LTV perdido identificado!`);
+        showToast(`💰 R$ ${ltvEmRisco.toLocaleString('pt-BR')} em risco identificado!`, ltvEmRisco > 1000 ? 'warning' : 'info');
     },
     
-    updateDashboard(stats) {
+    updateDashboardV2(stats) {
+        // Badge de alertas
         const badge = document.getElementById('alerts-badge');
-        if (badge) { if (stats.urgentCount > 0) { badge.textContent = stats.urgentCount; badge.classList.remove('hidden'); } else badge.classList.add('hidden'); }
+        if (badge) { 
+            if (stats.utiCount > 0) { 
+                badge.textContent = stats.utiCount; 
+                badge.classList.remove('hidden'); 
+            } else badge.classList.add('hidden'); 
+        }
         
-        const u = document.getElementById('dash-urgent-count');
-        const r = document.getElementById('dash-risk-value');
-        if (u) u.textContent = stats.urgentCount;
-        if (r) r.textContent = formatCurrency(stats.riskValue);
+        // KPIs principais
+        const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
         
-        document.getElementById('quick-inactive-count')?.textContent && (document.getElementById('quick-inactive-count').textContent = `${stats.urgentCount} clientes`);
-        document.getElementById('late-count')?.textContent && (document.getElementById('late-count').textContent = `${stats.lateCount} clientes`);
-        document.getElementById('upsell-count')?.textContent && (document.getElementById('upsell-count').textContent = `${stats.upsellCount} clientes`);
-        document.getElementById('quick-cart-count')?.textContent && (document.getElementById('quick-cart-count').textContent = `${WebhookManager.getAbandonedCarts().length} carrinhos`);
+        setEl('dash-ltv-risk', formatCurrency(stats.ltvEmRisco));
+        setEl('dash-ltv-risk-clients', `${stats.utiCount} clientes parados`);
+        setEl('dash-opportunity-value', formatCurrency(stats.oportunidadeValue));
+        setEl('dash-opportunity-count', `${stats.hotCount} prontos para reposição`);
+        setEl('dash-c4-count', stats.c4Count);
         
-        this.renderUrgentList();
-        this.renderUpsellList();
-        this.renderLateList();
+        // UTI Card
+        setEl('uti-badge', stats.utiCount);
+        setEl('uti-total-value', formatCurrency(stats.ltvEmRisco));
+        setEl('uti-subtitle', `${stats.utiCount} clientes em estado crítico`);
+        
+        // Hot Card  
+        setEl('hot-badge', stats.hotCount);
+        setEl('hot-total-value', formatCurrency(stats.oportunidadeValue));
+        
+        // C4 Card
+        setEl('c4-badge', stats.c4Count);
+        setEl('c4-candidates', stats.c4Count);
+        setEl('c4-inactive', '0'); // TODO: implementar C4 inativos
+        
+        // Motivos do Risco
+        setEl('baleia-count', stats.baleiaCount);
+        setEl('baleia-value', formatCurrency(stats.baleiaValue));
+        setEl('ciclo-count', stats.cicloCount);
+        setEl('ciclo-value', formatCurrency(stats.cicloValue));
+        setEl('problema-count', stats.problemaCount);
+        setEl('problema-value', formatCurrency(stats.problemaValue));
+        
+        // Renderizar listas
+        this.renderUTIList();
+        this.renderHotList();
+        this.renderC4List();
     },
     
-    renderUrgentList() {
-        const container = document.getElementById('urgent-clients-list');
+    renderUTIList() {
+        const container = document.getElementById('uti-clients-list');
         if (!container) return;
-        const urgent = this.alerts.filter(a => a.type === 'urgent').slice(0, 10);
-        if (urgent.length === 0) { container.innerHTML = '<div class="p-6 text-center text-gray-500"><i class="fas fa-check-circle text-4xl text-green-300"></i><p>Nenhuma urgência</p></div>'; return; }
-        container.innerHTML = urgent.map(a => `<div class="p-4 hover:bg-red-50 flex justify-between items-center">
-            <div><p class="font-medium">${a.title}</p><p class="text-sm text-gray-500">${a.reason}</p><p class="text-xs text-indigo-600">Sugestão: ${a.suggestedCoupon?.code}</p></div>
-            <div class="flex gap-2">
-                <button onclick="viewClientDetails('${a.client.id}')" class="bg-indigo-600 text-white text-xs px-2 py-1 rounded"><i class="fas fa-eye"></i></button>
-                <button onclick="AIVigilante.sendCoupon('${a.client.id}','${a.suggestedCoupon?.code}')" class="bg-green-600 text-white text-xs px-3 py-1.5 rounded"><i class="fab fa-whatsapp"></i> Enviar</button>
-            </div></div>`).join('');
+        const items = this.segments.uti.slice(0, 8);
+        if (items.length === 0) { 
+            container.innerHTML = '<div class="text-center py-4 text-slate-400 text-sm"><i class="fas fa-check-circle text-2xl text-green-300 mb-2"></i><p>Nenhum cliente em UTI</p></div>'; 
+            return; 
+        }
+        container.innerHTML = items.map(c => `
+            <div class="bg-red-50 rounded-lg p-3 border border-red-100 hover:bg-red-100 transition-all">
+                <div class="flex justify-between items-start">
+                    <div class="flex-1 min-w-0">
+                        <p class="font-semibold text-slate-800 text-sm truncate">${escapeHtml(c.name)}</p>
+                        <p class="text-xs text-red-600 font-bold">💸 ${formatCurrency(c.stats.ltvPerdido)} perdido</p>
+                        <p class="text-xs text-slate-500">${c.stats.daysSinceLastPurchase} dias • ${c.stats.totalOrders} pedidos</p>
+                    </div>
+                    <button onclick="AIVigilante.sendCoupon('${c.id}')" class="bg-green-500 hover:bg-green-600 text-white text-xs px-2 py-1 rounded flex items-center gap-1">
+                        <i class="fab fa-whatsapp"></i>
+                    </button>
+                </div>
+            </div>
+        `).join('');
     },
     
-    renderUpsellList() {
-        const container = document.getElementById('upsell-clients-list');
+    renderHotList() {
+        const container = document.getElementById('hot-clients-list');
         if (!container) return;
-        const upsell = this.alerts.filter(a => a.type === 'upsell');
-        if (upsell.length === 0) { container.innerHTML = '<div class="p-6 text-center text-gray-500"><i class="fas fa-star text-4xl text-yellow-300"></i><p>Analisando...</p></div>'; return; }
-        container.innerHTML = upsell.map(a => `<div class="p-4 hover:bg-green-50 flex justify-between"><div><p class="font-medium">${a.title}</p><p class="text-sm text-gray-500">${a.reason}</p></div>
-            <button onclick="viewClientDetails('${a.client.id}')" class="bg-indigo-600 text-white text-xs px-3 py-1 rounded">Ver</button></div>`).join('');
+        const items = this.segments.hot.slice(0, 8);
+        if (items.length === 0) { 
+            container.innerHTML = '<div class="text-center py-4 text-slate-400 text-sm"><i class="fas fa-clock text-2xl text-amber-300 mb-2"></i><p>Nenhuma oportunidade agora</p></div>'; 
+            return; 
+        }
+        container.innerHTML = items.map(c => `
+            <div class="bg-amber-50 rounded-lg p-3 border border-amber-100 hover:bg-amber-100 transition-all">
+                <div class="flex justify-between items-start">
+                    <div class="flex-1 min-w-0">
+                        <p class="font-semibold text-slate-800 text-sm truncate">${escapeHtml(c.name)}</p>
+                        <p class="text-xs text-amber-600 font-bold">🎯 Ticket médio: ${formatCurrency(c.stats.averageTicket)}</p>
+                        <p class="text-xs text-slate-500">Ciclo: ${Math.round(c.stats.avgPurchaseInterval)}d • Há ${c.stats.daysSinceLastPurchase}d</p>
+                    </div>
+                    <button onclick="AIVigilante.sendReminder('${c.id}')" class="bg-amber-500 hover:bg-amber-600 text-white text-xs px-2 py-1 rounded flex items-center gap-1">
+                        <i class="fab fa-whatsapp"></i>
+                    </button>
+                </div>
+            </div>
+        `).join('');
     },
     
-    renderLateList() {
-        const container = document.getElementById('late-clients-list');
+    renderC4List() {
+        const container = document.getElementById('c4-clients-list');
         if (!container) return;
-        const late = this.alerts.filter(a => a.type === 'late').slice(0, 10);
-        if (late.length === 0) { container.innerHTML = '<div class="p-6 text-center text-gray-500"><i class="fas fa-calendar-check text-4xl text-gray-300"></i><p>Nenhum atrasado</p></div>'; return; }
-        container.innerHTML = late.map(a => `<div class="p-3 hover:bg-yellow-50 flex justify-between"><div><p class="font-medium">${a.title}</p><p class="text-xs text-gray-500">${a.reason}</p></div>
-            <div class="flex gap-2">
-                <button onclick="viewClientDetails('${a.client.id}')" class="bg-indigo-600 text-white text-xs px-2 py-1 rounded"><i class="fas fa-eye"></i></button>
-                <button onclick="AIVigilante.sendReminder('${a.client.id}')" class="bg-yellow-500 text-white text-xs px-3 py-1 rounded"><i class="fab fa-whatsapp"></i></button>
-            </div></div>`).join('');
+        const items = this.segments.c4.slice(0, 6);
+        if (items.length === 0) { 
+            container.innerHTML = '<div class="text-center py-4 text-slate-400 text-sm"><i class="fas fa-rocket text-2xl text-violet-300 mb-2"></i><p>Analisando candidatas...</p></div>'; 
+            return; 
+        }
+        container.innerHTML = items.map(c => `
+            <div class="bg-violet-50 rounded-lg p-3 border border-violet-100 hover:bg-violet-100 transition-all">
+                <div class="flex justify-between items-start">
+                    <div class="flex-1 min-w-0">
+                        <p class="font-semibold text-slate-800 text-sm truncate">${escapeHtml(c.name)}</p>
+                        <p class="text-xs text-violet-600">${c.stats.totalOrders} pedidos • a cada ${Math.round(c.stats.avgPurchaseInterval || 7)}d</p>
+                    </div>
+                    <span class="bg-violet-500 text-white text-xs px-2 py-0.5 rounded">C4</span>
+                </div>
+            </div>
+        `).join('');
+    },
+    
+    // ========== AÇÕES COM INTEGRAÇÃO ANNY ==========
+    
+    askAnny(tipo) {
+        let prompt = '';
+        let clientes = [];
+        
+        switch(tipo) {
+            case 'baleia':
+                clientes = this.segments.baleia;
+                prompt = `A Vigilante identificou ${clientes.length} BALEIAS ADORMECIDAS (clientes de atacado pesado que sumiram). Gere uma mensagem personalizada para cada um oferecendo condições especiais de grade fechada.`;
+                break;
+            case 'ciclo':
+                clientes = this.segments.ciclo;
+                prompt = `A Vigilante identificou ${clientes.length} clientes FORA DO CICLO (passaram do intervalo normal de compra). Gere lembretes gentis de reposição.`;
+                break;
+            case 'problema':
+                clientes = this.segments.problema;
+                prompt = `A Vigilante identificou ${clientes.length} clientes que podem ter tido PROBLEMA (pararam de comprar abruptamente). Gere mensagens de reconquista com tom de "sentimos sua falta".`;
+                break;
+        }
+        
+        const clientesList = clientes.slice(0, 5).map(c => `${c.name} (${c.phone})`).join(', ');
+        const fullPrompt = `${prompt}\n\nClientes: ${clientesList}`;
+        
+        // Redirecionar para Anny com contexto
+        window.location.href = `anny.html?prompt=${encodeURIComponent(fullPrompt)}`;
+    },
+    
+    askAnnyUTI() {
+        const clientes = this.segments.uti.slice(0, 5);
+        const total = clientes.reduce((s, c) => s + c.stats.ltvPerdido, 0);
+        const lista = clientes.map(c => `• ${c.name}: R$ ${c.stats.ltvPerdido.toLocaleString('pt-BR')} perdido (${c.stats.daysSinceLastPurchase} dias)`).join('\n');
+        const prompt = `🚨 UTI DE VENDAS: Temos R$ ${total.toLocaleString('pt-BR')} em LTV perdido com estes ${clientes.length} clientes críticos:\n\n${lista}\n\nGere uma mensagem de RESGATE personalizada para cada um com cupom de desconto especial.`;
+        window.location.href = `anny.html?prompt=${encodeURIComponent(prompt)}`;
+    },
+    
+    askAnnyReposicao() {
+        const clientes = this.segments.hot.slice(0, 5);
+        const lista = clientes.map(c => `• ${c.name}: ticket médio R$ ${c.stats.averageTicket.toLocaleString('pt-BR')}, ciclo ${Math.round(c.stats.avgPurchaseInterval)}d`).join('\n');
+        const prompt = `🔥 OPORTUNIDADES QUENTES: Estes ${clientes.length} clientes estão no momento ideal para reposição:\n\n${lista}\n\nGere lembretes de estoque personalizados para cada um.`;
+        window.location.href = `anny.html?prompt=${encodeURIComponent(prompt)}`;
+    },
+    
+    askAnnyC4() {
+        const clientes = this.segments.c4.slice(0, 5);
+        const lista = clientes.map(c => `• ${c.name}: ${c.stats.totalOrders} pedidos, ticket R$ ${c.stats.averageTicket.toLocaleString('pt-BR')}`).join('\n');
+        const prompt = `🚀 CANDIDATAS C4 FRANQUIAS: Estes ${clientes.length} clientes têm perfil perfeito para virar franqueadas (compram frequente mas ticket baixo):\n\n${lista}\n\nGere uma abordagem de upsell para o programa C4 Franquias.`;
+        window.location.href = `anny.html?prompt=${encodeURIComponent(prompt)}`;
+    },
+    
+    actionAllUTI() {
+        const clientes = this.segments.uti.filter(c => c.phone);
+        if (clientes.length === 0) { showToast('Nenhum cliente com telefone na UTI', 'info'); return; }
+        CampaignManager.filteredClients = clientes;
+        CampaignManager.openBulkWhatsApp();
+    },
+    
+    sendReposicaoReminder() {
+        const clientes = this.segments.hot.filter(c => c.phone);
+        if (clientes.length === 0) { showToast('Nenhum cliente com telefone', 'info'); return; }
+        CampaignManager.filteredClients = clientes;
+        CampaignManager.openBulkWhatsApp();
+    },
+    
+    contactC4Inactive() {
+        const clientes = this.segments.c4.filter(c => c.phone);
+        if (clientes.length === 0) { showToast('Nenhum cliente C4 com telefone', 'info'); return; }
+        CampaignManager.filteredClients = clientes;
+        CampaignManager.openBulkWhatsApp();
     },
     
     sendCoupon(clientId, couponCode) {
         const client = Storage.getClients().find(c => c.id == clientId || String(c.id) === String(clientId));
         if (!client) { showToast('Cliente não encontrado', 'error'); return; }
         if (!client.phone) { showToast('Cliente sem telefone cadastrado', 'error'); return; }
-        CouponManager.assignCoupon(clientId, couponCode, client.name);
-        const msg = `Olá ${client.name?.split(' ')[0]}!\n\nSentimos sua falta!\n\nCupom EXCLUSIVO: ${couponCode}\n\nAproveite!`;
-        window.open(`https://wa.me/55${client.phone.replace(/\\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
-        showToast(`Cupom enviado!`, 'success');
+        
+        const code = couponCode || CouponManager.suggestCoupon(client)?.code || 'VOLTE15';
+        CouponManager.assignCoupon(clientId, code, client.name);
+        
+        const firstName = client.name?.split(' ')[0] || 'amiga';
+        const msg = `Oi ${firstName}! 💕\n\nSentimos MUITO sua falta aqui na CJOTA!\n\nPreparei um cupom EXCLUSIVO pra você: *${code}*\n\nÉ só usar no próximo pedido! 🎁\n\nPosso te ajudar com algo?`;
+        window.open(`https://wa.me/55${client.phone.replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+        showToast(`Cupom ${code} enviado para ${firstName}!`, 'success');
     },
     
     sendReminder(clientId) {
         const client = Storage.getClients().find(c => c.id == clientId || String(c.id) === String(clientId));
         if (!client) { showToast('Cliente não encontrado', 'error'); return; }
         if (!client.phone) { showToast('Cliente sem telefone cadastrado', 'error'); return; }
-        const msg = `Olá ${client.name?.split(' ')[0]}!\n\nTudo bem? Faz um tempinho que não te vemos por aqui!\n\nPosso te ajudar com algo?`;
-        window.open(`https://wa.me/55${client.phone.replace(/\\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+        
+        const firstName = client.name?.split(' ')[0] || 'amiga';
+        const msg = `Oi ${firstName}! Tudo bem? 😊\n\nPassando pra avisar que chegaram NOVIDADES lindas aqui!\n\nQuer dar uma olhadinha? Posso te mandar as fotos! 📸`;
+        window.open(`https://wa.me/55${client.phone.replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
     },
     
-    // NOVA FUNÇÃO: Exportar clientes urgentes para CSV
+    // ========== EXPORTAÇÕES ==========
+    
     exportUrgentCSV() {
-        const urgent = this.alerts.filter(a => a.type === 'urgent' || a.type === 'at_risk');
-        if (urgent.length === 0) { showToast('Nenhum cliente urgente para exportar', 'info'); return; }
+        const urgent = this.segments.uti;
+        if (urgent.length === 0) { showToast('Nenhum cliente na UTI para exportar', 'info'); return; }
         
-        // Coluna 'Números' em vez de 'Telefone'
-        const headers = ['Nome', 'Números', 'Email', 'Último Pedido', 'Total Gasto', 'Qtd Pedidos', 'Dias Inativo', 'Motivo'];
-        const rows = urgent.map(a => {
-            const c = a.client;
-            const stats = a.stats || {};
-            return [
-                c.name || '',
-                c.phone || '',
-                c.email || '',
-                stats.lastPurchaseDate || '',
-                stats.totalSpent || 0,
-                stats.orderCount || 0,
-                stats.daysSincePurchase || 0,
-                a.reason || ''
-            ];
-        });
+        const headers = ['Nome', 'Números', 'Email', 'Dias Inativo', 'LTV Perdido', 'Total Gasto', 'Qtd Pedidos', 'Ticket Médio'];
+        const rows = urgent.map(c => [
+            c.name || '',
+            c.phone || '',
+            c.email || '',
+            c.stats.daysSinceLastPurchase || 0,
+            c.stats.ltvPerdido || 0,
+            c.stats.totalSpent || 0,
+            c.stats.totalOrders || 0,
+            c.stats.averageTicket || 0
+        ]);
         
         const csvContent = [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
         const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        link.download = `clientes_urgentes_${new Date().toISOString().split('T')[0]}.csv`;
+        link.download = `uti_vendas_${new Date().toISOString().split('T')[0]}.csv`;
         link.click();
-        showToast(`${urgent.length} clientes exportados!`, 'success');
+        showToast(`${urgent.length} clientes da UTI exportados!`, 'success');
     },
     
-    // Exportar TODOS os clientes com telefone
     exportAllClientsCSV() {
         const clients = Storage.getClients().filter(c => c.phone);
         if (clients.length === 0) { showToast('Nenhum cliente com telefone', 'info'); return; }
         
-        // Coluna 'Números' em vez de 'Telefone'
         const headers = ['Nome', 'Números', 'Email', 'Cidade', 'Último Pedido', 'Total Gasto', 'Qtd Pedidos', 'Status'];
         const rows = clients.map(c => [
             c.name || '',
@@ -5091,11 +5265,9 @@ const AIVigilante = {
         showToast(`${clients.length} clientes exportados!`, 'success');
     },
     
+    // Manter compatibilidade com código antigo
     actionAllUrgent() {
-        const urgent = this.alerts.filter(a => a.type === 'urgent');
-        if (urgent.length === 0) { showToast('Nenhum urgente', 'info'); return; }
-        CampaignManager.filteredClients = urgent.map(a => a.client).filter(c => c.phone);
-        CampaignManager.openBulkWhatsApp();
+        this.actionAllUTI();
     }
 };
 window.AIVigilante = AIVigilante;
