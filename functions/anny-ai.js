@@ -86,8 +86,9 @@ Você NÃO mostra o JSON ou o nome da função usada.
 - NUNCA invente clientes, quantidades ou resultados se os dados não estiverem disponíveis.
 
 🛠️ QUANDO USAR CADA FERRAMENTA (uso interno):
+- "valor do estoque" / "quanto tem em estoque" / "resumo do estoque" / "produtos cadastrados" → getStockSummary
 - Perguntas sobre produtos específicos ("quem comprou a Soft") → findClientsByProductHistory
-- "girar estoque" / "estoque parado" → analyzeStockOpportunity
+- "girar estoque" / "estoque parado" / "oportunidades de venda" → analyzeStockOpportunity
 - "quem pode ser franqueada" / "C4" → findC4Candidates  
 - "escreva mensagem" / "copy" → generatePersonalizedCopy
 - "como estamos hoje" / "briefing" → getMorningBriefing
@@ -156,11 +157,27 @@ const TOOLS = [
                 properties: {
                     minStock: {
                         type: "integer",
-                        description: "Estoque mínimo para considerar 'parado' (padrão: 30)"
+                        description: "Estoque mínimo para considerar 'parado' (padrão: 10)"
                     },
                     daysWithoutSale: {
                         type: "integer",
                         description: "Dias sem venda para considerar parado (padrão: 30)"
+                    }
+                }
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "getStockSummary",
+            description: "Retorna o valor total do estoque, quantidade de produtos e lista completa. Use quando perguntarem 'qual o valor do estoque', 'quanto tem em estoque', 'resumo do estoque', 'produtos cadastrados'.",
+            parameters: {
+                type: "object",
+                properties: {
+                    onlyWithStock: {
+                        type: "boolean",
+                        description: "Se true, retorna apenas produtos com estoque > 0 (padrão: false)"
                     }
                 }
             }
@@ -343,8 +360,90 @@ const TOOLS = [
 // NOVAS FUNÇÕES CEO - SUPERPODERES
 // ============================================================================
 
+// 0. RESUMO DO ESTOQUE (Stock Summary)
+async function getStockSummary(onlyWithStock = false) {
+    if (!supabase) return { error: 'Banco de dados não configurado' };
+
+    try {
+        // Buscar TODOS os produtos
+        let query = supabase
+            .from('products')
+            .select('*')
+            .order('stock', { ascending: false });
+        
+        if (onlyWithStock) {
+            query = query.gt('stock', 0);
+        }
+
+        const { data: products, error } = await query;
+
+        if (error) throw error;
+
+        if (!products || products.length === 0) {
+            return {
+                summary: '⚠️ Nenhum produto cadastrado na tabela "products" do Supabase.',
+                totalProducts: 0,
+                totalUnits: 0,
+                totalValue: 0,
+                hint: 'A tabela products está vazia. É preciso cadastrar os produtos com estoque para a Anny analisar.'
+            };
+        }
+
+        // Calcular totais
+        let totalUnits = 0;
+        let totalValue = 0;
+        const productList = [];
+
+        for (const product of products) {
+            const stock = product.stock || 0;
+            const price = product.price || product.preco || 0;
+            const value = stock * price;
+            
+            totalUnits += stock;
+            totalValue += value;
+
+            if (stock > 0 || !onlyWithStock) {
+                productList.push({
+                    nome: product.name || product.nome || 'Sem nome',
+                    codigo: product.codigo || product.sku || '-',
+                    estoque: stock,
+                    preco: price,
+                    valorEmEstoque: value
+                });
+            }
+        }
+
+        // Top 10 por valor em estoque
+        const top10ByValue = [...productList]
+            .sort((a, b) => b.valorEmEstoque - a.valorEmEstoque)
+            .slice(0, 10);
+
+        // Produtos sem estoque
+        const withoutStock = productList.filter(p => p.estoque === 0).length;
+        const withStock = productList.length - withoutStock;
+
+        return {
+            summary: `📦 ESTOQUE TOTAL: R$ ${totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+            totalProducts: products.length,
+            productsWithStock: withStock,
+            productsWithoutStock: withoutStock,
+            totalUnits: totalUnits,
+            totalValue: totalValue,
+            top10ByValue: top10ByValue,
+            allProducts: productList,
+            columns: ['nome', 'codigo', 'estoque', 'preco', 'valorEmEstoque'],
+            insight: totalUnits > 0 
+                ? `Você tem ${totalUnits} unidades em ${withStock} produtos diferentes, totalizando R$ ${totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} em estoque.`
+                : 'Todos os produtos estão com estoque zerado.'
+        };
+    } catch (error) {
+        console.error('getStockSummary error:', error);
+        return { error: error.message };
+    }
+}
+
 // 1. ANALISTA DE ESTOQUE VS DEMANDA (Opportunity Finder)
-async function analyzeStockOpportunity(minStock = 30, daysWithoutSale = 30) {
+async function analyzeStockOpportunity(minStock = 10, daysWithoutSale = 30) {
     if (!supabase) return { error: 'Banco de dados não configurado' };
 
     try {
@@ -1290,6 +1389,8 @@ async function processToolCall(toolCall) {
     console.log(`[Anny CEO] Executing tool: ${name}`, args);
 
     switch (name) {
+        case 'getStockSummary':
+            return await getStockSummary(args.onlyWithStock);
         case 'analyzeStockOpportunity':
             return await analyzeStockOpportunity(args.minStock, args.daysWithoutSale);
         case 'findC4Candidates':
