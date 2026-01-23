@@ -99,9 +99,37 @@ Você NÃO mostra o JSON ou o nome da função usada.
 
 📊 OUTROS TIPOS DE ANÁLISE QUE VOCÊ PODE FAZER:
 - Listar clientes por ticket médio, número de compras, período (ex.: "clientes de 2024 que compraram acima de 500 e mais de 2 vezes").
-- Sugerir campanhas com base em ticket médio e cupons cadastrados.
+- Sugerir campanhas com base em relacionamento e valor do produto (NÃO em descontos).
 - Ajudar a encontrar aniversariantes e clientes VIP para mimos.
 - Sugerir listas para disparo em massa (sempre deixando claro que o envio será feito com cuidado, em fila, para evitar bloqueios).
+
+🚫 REGRA ANTI-CUPOM (CRÍTICA!):
+- NUNCA ofereça cupom ou desconto como PRIMEIRA abordagem.
+- Cupom só deve ser usado como ÚLTIMO RECURSO: cliente inativo há mais de 6 MESES E que já recebeu outras mensagens sem sucesso.
+- PRIORIDADE: Sempre tente vender pelo VALOR do produto e RELACIONAMENTO primeiro.
+- Se o usuário pedir "campanha para inativos", ofereça 3 OPÇÕES:
+  1. RELACIONAL: "Vamos mandar mensagem perguntando como foram as vendas do último pedido?"
+  2. ESCASSEZ: "Vamos avisar que a rasteirinha favorita deles está com estoque baixo?"
+  3. ÚLTIMO CASO: "Se nada funcionar, podemos tentar um cupom."
+
+🎯 ESTRATÉGIAS DE CONVERSA (USE ESTES GANCHOS AO INVÉS DE DESCONTO):
+
+GANCHO A - REPOSIÇÃO (Serviço Útil):
+- Quando usar: Cliente que comprou há 30-60 dias
+- Exemplo: "Oi {nome}! Vi que faz um tempinho que você levou a Grade da Soft. Como estão as vendas aí? O estoque baixou? Posso separar uma reposição para não faltar?"
+
+GANCHO B - NOVIDADE EXCLUSIVA (Curiosidade):
+- Quando usar: Cliente que comprava sempre e parou
+- Exemplo: "Oi {nome}, sumida! Acabamos de lançar a coleção nova e lembrei muito do seu gosto. Não postei no Instagram ainda, quer ver em primeira mão?"
+
+GANCHO C - FEEDBACK (Empatia):
+- Quando usar: Cliente que comprou 1 vez e não voltou
+- Exemplo: "Oi {nome}, tudo bem? Vi que você comprou a rasteirinha X mês passado. O que achou do conforto? Queria muito seu feedback para melhorar nossa produção."
+
+POR QUE ESTA ESTRATÉGIA É MELHOR:
+- Gera RESPOSTA: É mais fácil responder "O que você achou?" do que "Compre com 10%"
+- Valoriza a MARCA: Mostra que a Cjota se importa com o negócio da cliente
+- Reativação REAL: Descobre se a cliente teve algum problema que pode ser resolvido
 
 🗣️ TOM DE VOZ:
 - Profissional, direto e parceiro de negócio.
@@ -109,7 +137,7 @@ Você NÃO mostra o JSON ou o nome da função usada.
 - Mas sempre respeitoso e organizado nas respostas.
 - Seja PROATIVA: não espere perguntarem, sugira ações.
 - Sempre apresente AÇÃO CONCRETA, não apenas dados.
-- Inclua a mensagem pronta para copiar quando relevante.
+- Inclua a mensagem pronta para copiar quando relevante (SEM CUPOM como padrão).
 - Termine com próximo passo sugerido.`;
 
 // ============================================================================
@@ -162,14 +190,14 @@ const TOOLS = [
         type: "function",
         function: {
             name: "generatePersonalizedCopy",
-            description: "Gera mensagens personalizadas para diferentes perfis de cliente. Cria 3 variações de copy prontas para usar.",
+            description: "Gera mensagens personalizadas RELACIONAIS para diferentes perfis de cliente. IMPORTANTE: Prioriza relacionamento e valor, NÃO cupons. Cria 3 variações de copy prontas para usar.",
             parameters: {
                 type: "object",
                 properties: {
                     profile: {
                         type: "string",
-                        enum: ["atacadao", "varejinho", "recuperacao", "c4_upsell", "aniversario", "estoque_oportunidade"],
-                        description: "Perfil do cliente para personalizar a mensagem"
+                        enum: ["reposicao", "novidade_exclusiva", "feedback", "atacadao", "varejinho", "c4_upsell", "aniversario", "escassez", "ultimo_caso_cupom"],
+                        description: "Perfil/gancho da mensagem. PRIORIZE: reposicao, novidade_exclusiva, feedback. Use ultimo_caso_cupom APENAS se cliente estiver inativo há 6+ meses E já recebeu outras mensagens."
                     },
                     clientName: {
                         type: "string",
@@ -489,67 +517,125 @@ async function findC4Candidates(minOrders = 4, maxTicket = 300) {
     }
 }
 
-// 3. GERADOR DE COPY PERSONALIZADA (Copywriter Dinâmica)
+// 3. GERADOR DE COPY PERSONALIZADA (Copywriter Dinâmica) - ESTRATÉGIA RELACIONAL
+// PRIORIDADE: Relacionamento > Escassez > Novidade > Cupom (ÚLTIMO CASO)
 async function generatePersonalizedCopy(profile, clientName = '{nome}', productName = '', discountOrOffer = '') {
     const templates = {
-        atacadao: {
-            description: 'Cliente que compra grade fechada, foca em margem',
+        // === GANCHOS RELACIONAIS (PRIORIDADE MÁXIMA) ===
+        reposicao: {
+            description: '🎯 GANCHO A - Serviço Útil: Cliente que comprou há 30-60 dias',
+            priority: 1,
             variations: [
-                `Oi ${clientName}! 💼 Chegou GRADE NOVA ${productName ? `da ${productName}` : ''} direto da fábrica! Preço especial pra quem leva grade completa. ${discountOrOffer || 'Condição exclusiva para atacado'}. Quer que eu separe?`,
-                `${clientName}, bom dia! Lembrei de você quando vi essa ${productName || 'novidade'}. Margem de 100%+ garantida na revenda. ${discountOrOffer || 'Grade fechada com preço de fábrica'}. Mando as fotos?`,
-                `Fala ${clientName}! 🏭 Saiu do forno: ${productName || 'novo modelo'}. Prazo de fabricação: 15 dias com sua LOGO na palmilha. ${discountOrOffer || 'Mínimo 2 grades'}. Vamos fechar?`
+                `Oi ${clientName}! Vi que faz um tempinho que você levou ${productName ? `a ${productName}` : 'o último pedido'}. Como estão as vendas aí? O estoque baixou? Posso separar uma reposição pra não faltar!`,
+                `${clientName}, tudo bem? 😊 Passando pra saber como está o giro ${productName ? `da ${productName}` : 'dos produtos'}. Suas clientes estão gostando? Se precisar repor, é só me avisar que separo rapidinho!`,
+                `Ei ${clientName}! Lembrei de você! ${productName ? `A ${productName}` : 'O modelo'} que você levou está vendendo bem por aí? Se o estoque tiver baixando, me conta que preparo uma reposição especial!`
+            ]
+        },
+        novidade_exclusiva: {
+            description: '🎯 GANCHO B - Curiosidade: Cliente que comprava sempre e parou',
+            priority: 2,
+            variations: [
+                `Oi ${clientName}, sumida! 😊 Acabamos de lançar ${productName || 'a coleção nova'} e lembrei muito do seu gosto. Ainda não postei no Instagram, quer ver em primeira mão?`,
+                `${clientName}! Tenho uma novidade que é a sua cara! 🔥 ${productName || 'Modelo novo'} fresquinho, acabou de sair da produção. Você vai ser a primeira a ver. Mando as fotos?`,
+                `Ei ${clientName}! Tô guardando uma exclusividade pra você! ${productName || 'Lançamento'} que ainda não mostrei pra ninguém. Acho que suas clientes vão amar. Posso te mostrar antes de abrir pro público?`
+            ]
+        },
+        feedback: {
+            description: '🎯 GANCHO C - Empatia: Cliente que comprou 1-2 vezes e não voltou',
+            priority: 3,
+            variations: [
+                `Oi ${clientName}, tudo bem? Vi que você comprou ${productName || 'a rasteirinha'} há um tempo. O que achou do conforto? Queria muito seu feedback pra melhorar nossa produção! 💕`,
+                `${clientName}! Passando pra saber: como foi a experiência com ${productName || 'o pedido'}? Suas clientes gostaram? Sua opinião é super importante pra gente!`,
+                `Ei ${clientName}, tudo certo? 😊 Queria saber se ${productName || 'os produtos'} chegaram direitinho e se você curtiu a qualidade. Me conta! Adoro ouvir feedback das revendedoras.`
+            ]
+        },
+        escassez: {
+            description: '⚡ GATILHO DE ESCASSEZ: Estoque baixo do produto favorito',
+            priority: 4,
+            variations: [
+                `${clientName}! Aviso importante: ${productName || 'aquele modelo que você adora'} está com estoque baixo e não sei quando volta. Se quiser garantir, me avisa que separo!`,
+                `Oi ${clientName}! Lembrei de você porque ${productName || 'a rasteirinha favorita'} está acabando. Últimas unidades! Quer que eu reserve antes que acabe?`,
+                `${clientName}, corre aqui! 🏃‍♀️ ${productName || 'O modelo best-seller'} tá voando e sobrou pouco. Suas clientes vão cobrar se faltar, hein! Reservo pra você?`
+            ]
+        },
+        // === GANCHOS DE VALOR (SEM CUPOM) ===
+        atacadao: {
+            description: 'Cliente que compra grade fechada, foca em margem e qualidade',
+            priority: 5,
+            variations: [
+                `Oi ${clientName}! 💼 Chegou GRADE NOVA ${productName ? `da ${productName}` : ''} direto da fábrica! Margem garantida de 100%+ na revenda. Quer que eu separe?`,
+                `${clientName}, bom dia! Lembrei de você quando vi essa ${productName || 'novidade'}. Qualidade premium, suas clientes vão notar a diferença. Mando as fotos?`,
+                `Fala ${clientName}! 🏭 Saiu do forno: ${productName || 'novo modelo'}. Prazo de fabricação: 15 dias com sua LOGO na palmilha. Exclusividade total! Vamos fechar?`
             ]
         },
         varejinho: {
             description: 'Cliente que compra sortido para Instagram/loja pequena',
+            priority: 5,
             variations: [
-                `Oi ${clientName}! 📸 Chegou a ${productName || 'novidade'} que vai BOMBAR no seu Instagram! Já separei as melhores fotos pra você. ${discountOrOffer || 'A partir de 5 pares'}. Quer ver?`,
-                `${clientName}! As clientes vão pirar! 😍 ${productName || 'Nova coleção'} com cores tendência. Perfeita pro feed! ${discountOrOffer || 'Mix de cores disponível'}. Mando o catálogo?`,
-                `Ei ${clientName}! Sabe aquele modelo que suas clientes pedem? Chegou! ${productName || ''} pronta entrega. ${discountOrOffer || 'Fotos profissionais inclusas'}. Bora?`
-            ]
-        },
-        recuperacao: {
-            description: 'Cliente sumido há 30+ dias',
-            variations: [
-                `Oi ${clientName}! ❤️ Sentimos sua falta por aqui! Preparei algo especial pra você voltar: ${discountOrOffer || 'FRETE GRÁTIS acima de R$ 2.000'}. ${productName ? `A ${productName} está esperando você!` : 'O que acha?'}`,
-                `${clientName}, tudo bem? Faz tempo que não nos falamos! 🥺 Reservei um ${discountOrOffer || 'cupom exclusivo'} só pra você. ${productName ? `Lembra da ${productName} que você adorava?` : ''} Vamos matar a saudade?`,
-                `Oi ${clientName}! Passando pra dizer que você faz falta! 💕 ${discountOrOffer || 'Desconto especial de boas-vindas'} esperando por você. ${productName || 'Novidades incríveis'} na loja. Posso te mostrar?`
+                `Oi ${clientName}! 📸 Chegou a ${productName || 'novidade'} que vai BOMBAR no seu Instagram! Já separei as melhores fotos pra você. Quer ver?`,
+                `${clientName}! As clientes vão pirar! 😍 ${productName || 'Nova coleção'} com cores tendência. Perfeita pro feed! Mando o catálogo?`,
+                `Ei ${clientName}! Sabe aquele modelo que suas clientes pedem? Chegou! ${productName || ''} pronta entrega. Fotos profissionais inclusas. Bora?`
             ]
         },
         c4_upsell: {
             description: 'Candidata a franqueada C4',
+            priority: 5,
             variations: [
                 `${clientName}! 🚀 Você vende MUITO bem! Já pensou em ter seu SITE PRÓPRIO com nosso estoque? No C4 Franquias você tem sua loja online pronta, sem investir em estoque. Quer conhecer?`,
-                `Oi ${clientName}! Vi seu histórico e você é uma das nossas melhores revendedoras! 🌟 Tenho uma proposta: que tal ter sua própria LOJA VIRTUAL com a marca CJOTA? Projeto C4 Franquias. Posso explicar?`,
+                `Oi ${clientName}! Vi seu histórico e você é uma das nossas melhores revendedoras! 🌟 Tenho uma proposta: que tal ter sua própria LOJA VIRTUAL com a marca Cjota? Projeto C4 Franquias. Posso explicar?`,
                 `${clientName}, parabéns pelas vendas! 🎉 Você tem perfil de FRANQUEADA! Imagina ter um site com seu nome, nosso estoque e zero preocupação com logística? É o C4. Bora conversar?`
             ]
         },
         aniversario: {
-            description: 'Cliente aniversariante',
+            description: 'Cliente aniversariante - mimo especial (pode ter brinde, mas foco no carinho)',
+            priority: 5,
             variations: [
-                `${clientName}! 🎂 FELIZ ANIVERSÁRIO! A CJOTA preparou um presente especial: ${discountOrOffer || '15% OFF em qualquer pedido'}! Válido só hoje. O que você quer de presente?`,
-                `Parabéns ${clientName}! 🎉 Seu dia especial merece um mimo da gente: ${discountOrOffer || 'FRETE GRÁTIS + brinde surpresa'}! É nosso presente de aniversário. Aceita?`,
-                `FELIZ ANIVERSÁRIO ${clientName}! 🥳 Não podíamos deixar passar: ${discountOrOffer || 'cupom NIVER20 com 20% OFF'}! Que tal comemorar com ${productName || 'aquele modelo que você ama'}?`
+                `${clientName}! 🎂 FELIZ ANIVERSÁRIO! A Cjota lembrou do seu dia especial! Preparamos um mimo pra você. O que você quer de presente?`,
+                `Parabéns ${clientName}! 🎉 Seu dia especial merece um carinho da gente! Temos um brinde surpresa esperando você. Aceita?`,
+                `FELIZ ANIVERSÁRIO ${clientName}! 🥳 Não podíamos deixar passar! Que tal comemorar escolhendo ${productName || 'aquele modelo que você ama'}? Presente da Cjota pra você!`
             ]
         },
-        estoque_oportunidade: {
-            description: 'Oferta de produto com estoque parado',
+        // === ÚLTIMO CASO (CUPOM) - SÓ USAR SE NADA FUNCIONOU ===
+        ultimo_caso_cupom: {
+            description: '⚠️ ÚLTIMO RECURSO: Cliente inativo há 6+ MESES que já recebeu outras mensagens SEM SUCESSO',
+            priority: 99,
+            warning: 'ATENÇÃO: Só use este perfil se o cliente estiver inativo há mais de 6 meses E já recebeu mensagens de reposição, novidade e feedback sem responder!',
             variations: [
-                `${clientName}! 🔥 OFERTA RELÂMPAGO: ${productName || 'Modelo exclusivo'} com ${discountOrOffer || '20% OFF'}! Poucas unidades disponíveis. Vi que você adora esse estilo. Reservo o seu?`,
-                `Oi ${clientName}! Lembrei de você! A ${productName || 'rasteirinha'} que você comprou está em PROMOÇÃO: ${discountOrOffer || 'preço especial só hoje'}! Suas clientes vão amar. Mando?`,
-                `${clientName}, oportunidade única! ⚡ ${productName || 'Modelo best-seller'} saindo por ${discountOrOffer || 'preço de custo'}! Estoque limitado. Você que é esperta, aproveita!`
+                `Oi ${clientName}! Faz muito tempo que não te vemos... 💕 Preparei um cupom especial só pra você voltar: ${discountOrOffer || 'VOLTE15 com 15% OFF'}. O que acha de matar a saudade?`,
+                `${clientName}, sentimos sua falta! 🥺 Sei que faz tempo, então preparei algo especial: ${discountOrOffer || 'frete grátis no próximo pedido'}. Bora recomeçar?`,
+                `Ei ${clientName}! Última tentativa de te trazer de volta... 😅 ${discountOrOffer || 'Cupom SAUDADE com 20% OFF'} esperando você. Posso te mostrar as novidades?`
             ]
         }
     };
 
-    const template = templates[profile] || templates.recuperacao;
+    const template = templates[profile] || templates.reposicao;
+    
+    // Adiciona aviso se for perfil de cupom
+    const cupomWarning = profile === 'ultimo_caso_cupom' 
+        ? '⚠️ ATENÇÃO: Cupom deve ser ÚLTIMO RECURSO! Só use se: (1) Cliente inativo há 6+ meses E (2) Já tentou mensagens de relacionamento sem sucesso.'
+        : null;
+    
+    // Sugere alternativas relacionais se tentarem usar cupom
+    const alternatives = profile === 'ultimo_caso_cupom' ? {
+        suggestion: '💡 ANTES DO CUPOM, TENTE:',
+        options: [
+            '1. REPOSIÇÃO: Pergunte como estão as vendas do último pedido',
+            '2. NOVIDADE: Ofereça ver a coleção nova em primeira mão',
+            '3. FEEDBACK: Peça opinião sobre o conforto do produto'
+        ]
+    } : null;
 
     return {
         profile,
+        priority: template.priority,
         description: template.description,
         variations: template.variations,
+        warning: cupomWarning,
+        alternatives: alternatives,
         summary: `📝 3 variações de mensagem para perfil "${profile}" geradas!`,
-        tip: 'Dica: Use a variação que mais combina com o histórico do cliente. Personalize o {nome} antes de enviar.'
+        tip: profile === 'ultimo_caso_cupom' 
+            ? '⚠️ CUPOM = ÚLTIMO RECURSO! Priorize sempre relacionamento e valor do produto.'
+            : '💡 Dica: Mensagens relacionais geram mais respostas que cupons! Foque em AJUDAR a cliente, não em vender.'
     };
 }
 
