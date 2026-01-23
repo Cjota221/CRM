@@ -33,57 +33,8 @@ async function fetchPage(endpoint, token, page, extraParams = '') {
   }
 }
 
-// Buscar detalhes de um pedido específico (com itens)
-async function fetchOrderDetails(orderId, token) {
-  const url = `https://api.facilzap.app.br/pedidos/${orderId}`;
-  
-  try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-    
-    const data = await response.json();
-    // A API pode retornar { data: {...} } ou direto o objeto
-    return data.data || data;
-  } catch (err) {
-    console.log(`[ERROR] Erro ao buscar pedido ${orderId}: ${err.message}`);
-    return null;
-  }
-}
-
-// Buscar detalhes de múltiplos pedidos em paralelo (batches de 10)
-async function fetchOrdersDetails(orderIds, token) {
-  console.log(`[DEBUG] Buscando detalhes de ${orderIds.length} pedidos...`);
-  const results = new Map();
-  const batchSize = 10; // Limitar requisições paralelas
-  
-  for (let i = 0; i < orderIds.length; i += batchSize) {
-    const batch = orderIds.slice(i, i + batchSize);
-    const promises = batch.map(id => fetchOrderDetails(id, token));
-    const batchResults = await Promise.all(promises);
-    
-    batch.forEach((id, idx) => {
-      if (batchResults[idx]) {
-        results.set(id, batchResults[idx]);
-      }
-    });
-    
-    if (i % 50 === 0 && i > 0) {
-      console.log(`[DEBUG] Progresso: ${i}/${orderIds.length} pedidos processados`);
-    }
-  }
-  
-  console.log(`[DEBUG] Detalhes obtidos para ${results.size} pedidos`);
-  return results;
-}
+// Functions fetchOrderDetails and fetchOrdersDetails removed as they are no longer needed
+// fetchAllParallel continues below
 
 // Buscar todas as páginas em paralelo (até um limite)
 async function fetchAllParallel(endpoint, token, maxPages = 20, extraParams = '') {
@@ -140,8 +91,8 @@ exports.handler = async (event) => {
     eighteenMonthsAgo.setMonth(eighteenMonthsAgo.getMonth() - 18);
     const dataInicial = eighteenMonthsAgo.toISOString().split('T')[0];
     const dataFinal = new Date().toISOString().split('T')[0];
-    // IMPORTANTE: incluir_produtos=1 para trazer os itens de cada pedido
-    const pedidosParams = `&filtros[data_inicial]=${dataInicial}&filtros[data_final]=${dataFinal}&incluir_produtos=1`;
+    // CORREÇÃO: O parâmetro correto parece ser filtros[incluir_produtos]=1 igual ao server.js local
+    const pedidosParams = `&filtros[data_inicial]=${dataInicial}&filtros[data_final]=${dataFinal}&filtros[incluir_produtos]=1`;
     
     console.log("[DEBUG] Data inicial:", dataInicial);
     console.log("[DEBUG] Data final:", dataFinal);
@@ -156,15 +107,9 @@ exports.handler = async (event) => {
       fetchAllParallel('https://api.facilzap.app.br/produtos', FACILZAP_TOKEN, 5, '')
     ]);
     
-    // SOLUÇÃO: Buscar detalhes dos pedidos individualmente para obter os itens
-    // Pegar os últimos 500 pedidos (mais recentes) para buscar detalhes
-    const recentOrderIds = ordersRaw
-      .sort((a, b) => new Date(b.data || b.created_at) - new Date(a.data || a.created_at))
-      .slice(0, 500)
-      .map(o => o.id);
-    
-    console.log(`[DEBUG] Buscando detalhes de ${recentOrderIds.length} pedidos recentes...`);
-    const orderDetails = await fetchOrdersDetails(recentOrderIds, FACILZAP_TOKEN);
+    // Com o parâmetro correto (filtros[incluir_produtos]=1), os itens já vêm na lista principal
+    // Não é necessário buscar detalhes individualmente
+
     
     // Simplificar dados para reduzir tamanho da resposta (limite Netlify: 6MB)
     // MANTENDO TODOS OS CAMPOS IMPORTANTES
@@ -188,16 +133,12 @@ exports.handler = async (event) => {
     }));
     
     const orders = ordersRaw.map(o => {
-      // Tentar obter itens do detalhe individual ou do pedido original
-      const detail = orderDetails.get(o.id);
-      const rawItems = detail?.itens || detail?.produtos || detail?.items || 
-                       o.itens || o.produtos || o.items || [];
+      // Itens devem vir agora diretamente do objeto, graças ao parâmetro correto
+      const rawItems = o.itens || o.produtos || o.items || [];
       
       // Determinar se o pedido foi pago/válido
-      // status_pago = boolean ou string indicando se foi pago
-      // status pode ser: "cancelado", "pago", "entregue", etc.
-      const statusPago = o.status_pago || detail?.status_pago;
-      const statusEntregue = o.status_entregue || detail?.status_entregue;
+      const statusPago = o.status_pago;
+      const statusEntregue = o.status_entregue;
       
       return {
         id: o.id,
