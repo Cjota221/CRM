@@ -1314,29 +1314,30 @@ async function callGroqAPI(messages, tools = null, retryCount = 0) {
 
 async function processToolCall(toolCall) {
     const { name, arguments: argsString } = toolCall.function;
-    const args = JSON.parse(argsString);
+    // Tratar caso de args vazio/null
+    const args = argsString ? JSON.parse(argsString) : {};
 
     console.log(`[Anny CEO] Executing tool: ${name}`, args);
 
     switch (name) {
         case 'getStockSummary':
-            return await getStockSummary(args.onlyWithStock);
+            return await getStockSummary(args?.onlyWithStock);
         case 'analyzeStockOpportunity':
-            return await analyzeStockOpportunity(args.minStock, args.daysWithoutSale);
+            return await analyzeStockOpportunity(args?.minStock, args?.daysWithoutSale);
         case 'findC4Candidates':
-            return await findC4Candidates(args.minOrders, args.maxTicket);
+            return await findC4Candidates(args?.minOrders, args?.maxTicket);
         case 'generatePersonalizedCopy':
-            return await generatePersonalizedCopy(args.profile, args.clientName, args.productName, args.discountOrOffer);
+            return await generatePersonalizedCopy(args?.profile, args?.clientName, args?.productName, args?.discountOrOffer);
         case 'getMorningBriefing':
             return await getMorningBriefing();
         case 'analyzeCohort':
-            return await analyzeCohort(args.months);
+            return await analyzeCohort(args?.months);
         case 'findClientsByProductHistory':
-            return await findClientsByProductHistory(args.productName, args.minQuantity, args.period);
+            return await findClientsByProductHistory(args?.productName, args?.minQuantity, args?.period);
         case 'findBirthdays':
-            return await findBirthdays(args.month);
+            return await findBirthdays(args?.month);
         case 'findVipClients':
-            return await findVipClients(args.minTicket, args.status, args.inactiveDays);
+            return await findVipClients(args?.minTicket, args?.status, args?.inactiveDays);
         case 'analyzeSalesDrop':
             return await analyzeSalesDrop(args.compareMonths);
         case 'getClientStats':
