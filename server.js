@@ -259,7 +259,39 @@ const evolutionHeaders = {
     'apikey': EVOLUTION_API_KEY,
     'Content-Type': 'application/json'
 };
-
+// 0. DESCONECTAR / LOGOUT - Para trocar de WhatsApp
+app.post('/api/whatsapp/logout', async (req, res) => {
+    try {
+        console.log(`[INFO] Desconectando WhatsApp da instância ${INSTANCE_NAME}...`);
+        
+        // 1. Fazer logout (desconecta o WhatsApp mas mantém a instância)
+        const logoutRes = await fetch(`${EVOLUTION_URL}/instance/logout/${INSTANCE_NAME}`, {
+            method: 'DELETE',
+            headers: evolutionHeaders
+        });
+        
+        const logoutData = await logoutRes.json();
+        console.log('[INFO] Logout response:', logoutData);
+        
+        // 2. Opcional: Deletar a instância completamente para limpar tudo
+        if (req.query.deleteInstance === 'true') {
+            console.log(`[INFO] Deletando instância ${INSTANCE_NAME} completamente...`);
+            await fetch(`${EVOLUTION_URL}/instance/delete/${INSTANCE_NAME}`, {
+                method: 'DELETE',
+                headers: evolutionHeaders
+            });
+        }
+        
+        res.json({ 
+            success: true, 
+            message: 'WhatsApp desconectado! Agora você pode conectar outro número.',
+            data: logoutData
+        });
+    } catch (error) {
+        console.error('[ERRO] Logout:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
 // 1. Verificar/Criar Instância
 app.get('/api/whatsapp/status', async (req, res) => {
     try {

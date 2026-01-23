@@ -52,6 +52,35 @@ async function checkConnection() {
     }
 }
 
+// DESCONECTAR WHATSAPP (para trocar de número)
+async function disconnectWhatsapp() {
+    const confirm = window.confirm('⚠️ ATENÇÃO!\n\nIsso vai DESCONECTAR o WhatsApp atual.\nVocê precisará escanear o QR Code novamente.\n\nDeseja continuar?');
+    if (!confirm) return;
+    
+    const statusEl = document.getElementById('connectionStatus');
+    statusEl.innerHTML = '<span class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span> Desconectando...';
+    
+    try {
+        const res = await fetch(`${API_BASE}/whatsapp/logout`, { method: 'POST' });
+        const data = await res.json();
+        
+        if (data.success) {
+            statusEl.innerHTML = '<span class="w-2 h-2 rounded-full bg-gray-500"></span> Desconectado';
+            // Limpar lista de chats
+            document.getElementById('chatsList').innerHTML = '<p class="text-center text-slate-400 py-8">WhatsApp desconectado</p>';
+            document.getElementById('messagesContainer').innerHTML = '';
+            alert('✅ WhatsApp desconectado!\n\nAgora clique em "Conectar" para escanear o QR Code com o novo número.');
+        } else {
+            alert('Erro ao desconectar: ' + (data.error || 'Erro desconhecido'));
+            checkConnection();
+        }
+    } catch (e) {
+        console.error('Erro ao desconectar:', e);
+        alert('Erro ao desconectar. Verifique o console.');
+        checkConnection();
+    }
+}
+
 async function connectWhatsapp() {
     const statusEl = document.getElementById('connectionStatus');
     statusEl.innerHTML = '<span class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span> Buscando QR...';
