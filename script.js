@@ -3080,6 +3080,91 @@ function setupEventListeners() {
     setupGrowthEvents();
 }
 
+// ============================================================================
+// ANNY AI - Dashboard Insights
+// ============================================================================
+
+const AnnyInsights = {
+    API_URL: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? 'http://localhost:3000/api/anny'
+        : '/.netlify/functions/anny-ai',
+
+    async loadDashboardInsights() {
+        try {
+            // Calcular insights localmente com base nos dados carregados
+            const clients = Storage.getClients();
+            const now = new Date();
+            const currentMonth = now.getMonth() + 1;
+
+            // Aniversariantes do mês
+            const birthdays = clients.filter(c => {
+                if (!c.birthday) return false;
+                const bday = new Date(c.birthday);
+                return (bday.getMonth() + 1) === currentMonth;
+            });
+
+            // Aniversariantes de hoje
+            const todayBirthdays = birthdays.filter(c => {
+                const bday = new Date(c.birthday);
+                return bday.getDate() === now.getDate();
+            });
+
+            // VIPs inativos (ticket > 500 e sem compra há 30+ dias)
+            const thirtyDaysAgo = new Date(now);
+            thirtyDaysAgo.setDate(now.getDate() - 30);
+
+            const vipsInactive = clients.filter(c => {
+                const totalSpent = parseFloat(c.total_spent || 0);
+                const lastPurchase = c.last_purchase_date ? new Date(c.last_purchase_date) : null;
+                const isVip = totalSpent >= 500;
+                const isInactive = !lastPurchase || lastPurchase < thirtyDaysAgo;
+                return isVip && isInactive;
+            });
+
+            // Clientes de grade (compradores de volume - mais de 3 pedidos)
+            const gradeClients = clients.filter(c => (c.order_count || 0) >= 3);
+            const gradeClientsInactive = gradeClients.filter(c => {
+                const lastPurchase = c.last_purchase_date ? new Date(c.last_purchase_date) : null;
+                const fortyFiveDaysAgo = new Date(now);
+                fortyFiveDaysAgo.setDate(now.getDate() - 45);
+                return !lastPurchase || lastPurchase < fortyFiveDaysAgo;
+            });
+
+            // Atualizar UI
+            const birthdayTitle = document.getElementById('anny-birthday-title');
+            const birthdayDesc = document.getElementById('anny-birthday-desc');
+            const vipTitle = document.getElementById('anny-vip-title');
+            const vipDesc = document.getElementById('anny-vip-desc');
+            const gradeTitle = document.getElementById('anny-grade-title');
+            const gradeDesc = document.getElementById('anny-grade-desc');
+
+            if (birthdayTitle) {
+                if (todayBirthdays.length > 0) {
+                    birthdayTitle.textContent = `${todayBirthdays.length} VIP(s) fazem aniversario hoje!`;
+                    birthdayDesc.textContent = 'Oportunidade de enviar cupom especial';
+                } else {
+                    birthdayTitle.textContent = `${birthdays.length} aniversariantes este mes`;
+                    birthdayDesc.textContent = 'Programe cupons de aniversario';
+                }
+            }
+
+            if (vipTitle) {
+                const totalRisk = vipsInactive.reduce((sum, c) => sum + parseFloat(c.total_spent || 0), 0);
+                vipTitle.textContent = `${vipsInactive.length} VIP(s) inativo(s)`;
+                vipDesc.textContent = `R$ ${totalRisk.toLocaleString('pt-BR')} em risco`;
+            }
+
+            if (gradeTitle) {
+                gradeTitle.textContent = `${gradeClientsInactive.length} cliente(s) de grade`;
+                gradeDesc.textContent = `Nao compram ha 45+ dias`;
+            }
+
+        } catch (error) {
+            console.error('[AnnyInsights] Erro ao carregar insights:', error);
+        }
+    }
+};
+
 // Inicialização quando o DOM estiver pronto
 document.addEventListener('DOMContentLoaded', () => {
     console.log('CRM FacilZap - Inicializando...');
@@ -3119,7 +3204,11 @@ document.addEventListener('DOMContentLoaded', () => {
     initCampaigns();
     initCoupons();
     
+    // Carregar insights da Anny no Dashboard
+    AnnyInsights.loadDashboardInsights();
+    
     console.log('CRM FacilZap - Gerador de Vendas Pronto!');
+    console.log('Anny BI disponivel em anny.html');
 });
 
 // ============================================================================

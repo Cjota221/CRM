@@ -546,7 +546,258 @@ app.post('/api/whatsapp/send-message', async (req, res) => {
     }
 });
 
+// ============================================================================
+// ANNY AI - Business Intelligence Assistant (LOCAL DEV)
+// ============================================================================
+
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+
+const ANNY_SYSTEM_PROMPT = `Você é a Anny, a estrategista de vendas da CJOTA Rasteirinhas, uma fábrica atacadista de calçados femininos.
+
+NOSSO NEGÓCIO:
+- Focamos em mulheres (25-45 anos), revendedoras e lojistas
+- Temos pedido mínimo de 5 peças (atacado)
+- Fabricamos grades personalizadas com logo (mínimo 2 grades, 15-20 dias de produção)
+- Temos o projeto 'C4 Franquias' (site pronto para revendedoras)
+- Frete grátis acima de R$ 2.000
+
+SUA MISSÃO:
+- Ajudar a empresa a recuperar o faturamento de R$ 200k/mês (atualmente em R$ 40k)
+- Identificar oportunidades na base de clientes inativos
+- Sugerir ações de venda agressivas mas empáticas
+
+REGRAS DE ANÁLISE:
+- Considere o padrão de compra atacado
+- Se alguém comprava muito (grades fechadas) e parou, é prioridade máxima
+- Use o frete grátis (acima de R$ 2k) como argumento de fechamento
+- Clientes com ticket médio > R$ 500 são VIPs
+- Clientes inativos há mais de 30 dias precisam de atenção
+
+FORMATO DE RESPOSTA:
+- Seja direta e profissional
+- Use dados concretos quando disponíveis
+- Sugira ações específicas
+- Não use emojis excessivos`;
+
+const ANNY_TOOLS = [
+    {
+        type: "function",
+        function: {
+            name: "findClientsByProductHistory",
+            description: "Busca clientes que compraram um produto específico",
+            parameters: {
+                type: "object",
+                properties: {
+                    productName: { type: "string", description: "Nome do produto" },
+                    minQuantity: { type: "integer", description: "Quantidade mínima" }
+                },
+                required: ["productName"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "findBirthdays",
+            description: "Lista aniversariantes do mês",
+            parameters: {
+                type: "object",
+                properties: { month: { type: "integer", description: "Mês (1-12)" } }
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "findVipClients",
+            description: "Busca clientes VIP inativos ou ativos",
+            parameters: {
+                type: "object",
+                properties: {
+                    minTicket: { type: "number", description: "Ticket mínimo" },
+                    status: { type: "string", enum: ["active", "inactive", "all"] },
+                    inactiveDays: { type: "integer", description: "Dias sem comprar" }
+                }
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "analyzeSalesDrop",
+            description: "Analisa queda de vendas e churn",
+            parameters: {
+                type: "object",
+                properties: { compareMonths: { type: "integer" } }
+            }
+        }
+    }
+];
+
+// Funções locais simuladas (usam dados do localStorage/memória)
+// Em produção, a Netlify Function usa Supabase
+async function executeAnnyTool(name, args, clientsData = []) {
+    const now = new Date();
+    
+    switch (name) {
+        case 'findBirthdays': {
+            const month = args.month || (now.getMonth() + 1);
+            const results = clientsData.filter(c => {
+                if (!c.birthday) return false;
+                const bday = new Date(c.birthday);
+                return (bday.getMonth() + 1) === month;
+            });
+            return {
+                data: results.slice(0, 30),
+                columns: ['name', 'phone', 'email', 'birthday', 'total_spent'],
+                summary: `${results.length} aniversariantes no mês ${month}`
+            };
+        }
+        case 'findVipClients': {
+            const minTicket = args.minTicket || 500;
+            const inactiveDays = args.inactiveDays || 30;
+            const status = args.status || 'inactive';
+            
+            let results = clientsData.filter(c => (c.total_spent || 0) >= minTicket);
+            results = results.map(c => {
+                const lastPurchase = c.last_purchase_date ? new Date(c.last_purchase_date) : null;
+                const daysInactive = lastPurchase ? Math.floor((now - lastPurchase) / (1000*60*60*24)) : 999;
+                return { ...c, days_inactive: daysInactive };
+            });
+            
+            if (status === 'inactive') results = results.filter(c => c.days_inactive > inactiveDays);
+            else if (status === 'active') results = results.filter(c => c.days_inactive <= inactiveDays);
+            
+            return {
+                data: results.slice(0, 30),
+                columns: ['name', 'phone', 'total_spent', 'order_count', 'days_inactive', 'last_purchase_date'],
+                summary: `${results.length} clientes VIP ${status === 'inactive' ? 'inativos' : ''}`
+            };
+        }
+        default:
+            return { data: [], summary: 'Função não implementada localmente' };
+    }
+}
+
+app.post('/api/anny', async (req, res) => {
+    try {
+        if (!GROQ_API_KEY) {
+            return res.status(500).json({ error: 'GROQ_API_KEY não configurada no .env' });
+        }
+
+        const { message, history = [], clientsData = [] } = req.body;
+
+        // Construir mensagens
+        const messages = [
+            { role: 'system', content: ANNY_SYSTEM_PROMPT },
+            ...history.map(h => ({ role: h.sender === 'user' ? 'user' : 'assistant', content: h.text })),
+            { role: 'user', content: message }
+        ];
+
+        // Chamar Groq API
+        const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${GROQ_API_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: 'llama-3.3-70b-versatile',
+                messages,
+                tools: ANNY_TOOLS,
+                tool_choice: 'auto',
+                temperature: 0.7,
+                max_tokens: 2048
+            })
+        });
+
+        if (!groqResponse.ok) {
+            const errorText = await groqResponse.text();
+            throw new Error(`Groq API error: ${groqResponse.status} - ${errorText}`);
+        }
+
+        let data = await groqResponse.json();
+        let assistantMessage = data.choices[0].message;
+        let results = null;
+
+        // Processar tool calls se houver
+        if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
+            const toolResults = [];
+
+            for (const toolCall of assistantMessage.tool_calls) {
+                const args = JSON.parse(toolCall.function.arguments);
+                const result = await executeAnnyTool(toolCall.function.name, args, clientsData);
+                
+                toolResults.push({
+                    tool_call_id: toolCall.id,
+                    role: 'tool',
+                    content: JSON.stringify(result)
+                });
+
+                if (result.data) results = result;
+            }
+
+            // Segunda chamada com resultados
+            messages.push(assistantMessage);
+            messages.push(...toolResults);
+
+            const secondResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${GROQ_API_KEY}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: 'llama-3.3-70b-versatile',
+                    messages,
+                    temperature: 0.7,
+                    max_tokens: 2048
+                })
+            });
+
+            data = await secondResponse.json();
+            assistantMessage = data.choices[0].message;
+        }
+
+        res.json({ response: assistantMessage.content, results });
+
+    } catch (error) {
+        console.error('[Anny] Error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Insights endpoint
+app.get('/api/anny', async (req, res) => {
+    const action = req.query.action;
+    
+    if (action === 'insights') {
+        // Retornar insights simulados para dev local
+        res.json({
+            insights: [
+                {
+                    type: 'birthday',
+                    priority: 'high',
+                    title: 'Verifique aniversariantes',
+                    description: 'Sincronize com Supabase para dados reais',
+                    action: 'Quem faz aniversário este mês?'
+                },
+                {
+                    type: 'inactive',
+                    priority: 'high',
+                    title: 'VIPs podem estar inativos',
+                    description: 'Execute análise completa',
+                    action: 'Quais VIPs estão inativos há mais de 30 dias?'
+                }
+            ]
+        });
+    } else {
+        res.json({ status: 'Anny AI online (local dev)' });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`Servidor rodando em http://localhost:${PORT}`);
     console.log('Central de Atendimento pronta.');
+    console.log('Anny AI disponível em /api/anny');
 });

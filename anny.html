@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anny - Assistente de BI | CRM CJOTA</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: { 50: '#f0f4ff', 100: '#e0e7ff', 500: '#1e3a5f', 600: '#162d4d', 700: '#0f1f33' },
+                        anny: { 50: '#fdf4ff', 100: '#fae8ff', 200: '#f5d0fe', 500: '#a855f7', 600: '#9333ea', 700: '#7e22ce' }
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+        body { background-color: #f8fafc; color: #1e293b; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        .nav-item { display: flex; align-items: center; padding: 0.625rem 1rem; border-radius: 0.75rem; color: #64748b; font-size: 0.875rem; font-weight: 500; transition: all 0.15s ease; gap: 0.75rem; }
+        .nav-item:hover { background-color: #f1f5f9; color: #1e293b; }
+        .nav-item.active { background-color: #1e3a5f; color: white; }
+        
+        .card { background: white; border-radius: 1rem; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05); border: 1px solid #f1f5f9; }
+        
+        .btn { display: inline-flex; align-items: center; justify-content: center; padding: 0.625rem 1.25rem; font-size: 0.875rem; font-weight: 500; border-radius: 0.75rem; transition: all 0.15s ease; gap: 0.5rem; }
+        .btn-primary { background-color: #1e3a5f; color: white; }
+        .btn-primary:hover { background-color: #162d4d; }
+        .btn-anny { background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%); color: white; }
+        .btn-anny:hover { background: linear-gradient(135deg, #9333ea 0%, #6b21a8 100%); }
+        .btn-secondary { background-color: #f1f5f9; color: #475569; }
+        .btn-secondary:hover { background-color: #e2e8f0; }
+        .btn-success { background-color: #059669; color: white; }
+        .btn-success:hover { background-color: #047857; }
+        
+        .input { width: 100%; padding: 0.625rem 1rem; font-size: 0.875rem; border: 1px solid #e2e8f0; border-radius: 0.75rem; background: white; transition: all 0.15s ease; }
+        .input:focus { outline: none; border-color: #a855f7; box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.1); }
+        
+        /* Chat Styles */
+        .chat-container { display: flex; flex-direction: column; height: calc(100vh - 180px); }
+        .chat-messages { flex: 1; overflow-y: auto; padding: 1.5rem; space-y: 1rem; }
+        
+        .message { max-width: 85%; margin-bottom: 1rem; }
+        .message-user { margin-left: auto; }
+        .message-anny { margin-right: auto; }
+        
+        .message-bubble { padding: 1rem 1.25rem; border-radius: 1rem; line-height: 1.5; }
+        .message-user .message-bubble { background: linear-gradient(135deg, #1e3a5f 0%, #0f1f33 100%); color: white; border-bottom-right-radius: 0.25rem; }
+        .message-anny .message-bubble { background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%); color: #1e293b; border: 1px solid #e9d5ff; border-bottom-left-radius: 0.25rem; }
+        
+        .message-sender { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem; }
+        .message-user .message-sender { color: #94a3b8; text-align: right; }
+        .message-anny .message-sender { color: #a855f7; }
+        
+        .message-time { font-size: 0.65rem; color: #94a3b8; margin-top: 0.25rem; }
+        .message-user .message-time { text-align: right; }
+        
+        /* Result Table */
+        .result-table { width: 100%; margin-top: 1rem; border-collapse: collapse; font-size: 0.8rem; }
+        .result-table th { background: #f8fafc; padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #64748b; border-bottom: 2px solid #e2e8f0; }
+        .result-table td { padding: 0.75rem 1rem; border-bottom: 1px solid #f1f5f9; }
+        .result-table tr:hover { background: #faf5ff; }
+        .result-table input[type="checkbox"] { width: 1rem; height: 1rem; accent-color: #a855f7; }
+        
+        /* Typing Animation */
+        .typing-indicator { display: flex; gap: 0.25rem; padding: 0.75rem 1rem; }
+        .typing-dot { width: 0.5rem; height: 0.5rem; background: #a855f7; border-radius: 50%; animation: typing 1.4s infinite ease-in-out; }
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes typing { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-0.5rem); } }
+        
+        /* Suggestion Chips */
+        .suggestion-chip { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; background: white; border: 1px solid #e9d5ff; border-radius: 2rem; font-size: 0.8rem; color: #7e22ce; cursor: pointer; transition: all 0.15s; }
+        .suggestion-chip:hover { background: #faf5ff; border-color: #a855f7; }
+        
+        /* Anny Avatar */
+        .anny-avatar { width: 2.5rem; height: 2.5rem; background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%); border-radius: 0.75rem; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 0.9rem; }
+        
+        /* Insight Cards */
+        .insight-card { background: white; border: 1px solid #f1f5f9; border-radius: 0.75rem; padding: 1rem; margin-bottom: 0.75rem; transition: all 0.15s; }
+        .insight-card:hover { border-color: #e9d5ff; box-shadow: 0 4px 6px -1px rgb(168 85 247 / 0.1); }
+        .insight-card.priority-high { border-left: 3px solid #dc2626; }
+        .insight-card.priority-medium { border-left: 3px solid #f59e0b; }
+        .insight-card.priority-low { border-left: 3px solid #10b981; }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+    <div class="flex h-screen">
+        <!-- Sidebar -->
+        <aside class="w-64 bg-white border-r border-slate-100 flex flex-col">
+            <div class="px-6 py-6 border-b border-slate-100">
+                <h1 class="text-xl font-semibold text-slate-800">CRM</h1>
+                <p class="text-xs text-slate-400 mt-0.5">Sistema de Gestão</p>
+            </div>
+            <nav class="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+                <a href="index.html" class="nav-item">
+                    <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a href="atendimentos.html" class="nav-item">
+                    <i data-lucide="message-circle" class="w-5 h-5"></i>
+                    <span>Atendimento</span>
+                </a>
+                <a href="anny.html" class="nav-item active bg-gradient-to-r from-purple-500 to-purple-600 text-white">
+                    <i data-lucide="sparkles" class="w-5 h-5"></i>
+                    <span>Anny BI</span>
+                </a>
+                <a href="index.html#clients" class="nav-item">
+                    <i data-lucide="users" class="w-5 h-5"></i>
+                    <span>Clientes</span>
+                </a>
+                <a href="index.html#campaigns" class="nav-item">
+                    <i data-lucide="megaphone" class="w-5 h-5"></i>
+                    <span>Campanhas</span>
+                </a>
+                <a href="index.html#coupons" class="nav-item">
+                    <i data-lucide="ticket" class="w-5 h-5"></i>
+                    <span>Gestão de Cupons</span>
+                </a>
+                <div class="pt-4 mt-4 border-t border-slate-100">
+                    <p class="px-3 mb-2 text-xs font-medium text-slate-400 uppercase tracking-wider">Dados</p>
+                    <a href="index.html#products" class="nav-item">
+                        <i data-lucide="package" class="w-5 h-5"></i>
+                        <span>Produtos</span>
+                    </a>
+                    <a href="index.html#orders" class="nav-item">
+                        <i data-lucide="receipt" class="w-5 h-5"></i>
+                        <span>Pedidos</span>
+                    </a>
+                </div>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 flex flex-col overflow-hidden">
+            <!-- Header -->
+            <header class="bg-white border-b border-slate-100 px-8 py-5">
+                <div class="flex justify-between items-center">
+                    <div class="flex items-center gap-4">
+                        <div class="anny-avatar">
+                            <i data-lucide="sparkles" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <h1 class="text-xl font-semibold text-slate-800">Anny - Assistente de BI</h1>
+                            <p class="text-sm text-slate-500 mt-0.5">Estrategista de vendas CJOTA Rasteirinhas</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span id="status-indicator" class="flex items-center gap-2 text-xs text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-full">
+                            <span class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+                            Online
+                        </span>
+                        <button onclick="AnnyChat.clearHistory()" class="btn btn-secondary text-xs">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            Limpar Chat
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Content Area -->
+            <div class="flex-1 flex overflow-hidden">
+                <!-- Chat Area -->
+                <div class="flex-1 flex flex-col bg-slate-50">
+                    <!-- Messages -->
+                    <div id="chat-messages" class="flex-1 overflow-y-auto p-6 space-y-4">
+                        <!-- Welcome Message -->
+                        <div class="message message-anny">
+                            <div class="message-sender">Anny</div>
+                            <div class="message-bubble">
+                                <p class="font-medium mb-2">Ola! Sou a Anny, sua estrategista de vendas.</p>
+                                <p class="text-sm text-slate-600 mb-3">Estou aqui para ajudar a CJOTA Rasteirinhas a recuperar o faturamento de R$ 200k/mes. Posso analisar sua base de clientes, identificar oportunidades e sugerir acoes de venda.</p>
+                                <p class="text-sm text-slate-600">Como posso ajudar hoje?</p>
+                            </div>
+                            <div class="message-time">Agora</div>
+                        </div>
+                    </div>
+
+                    <!-- Suggestions -->
+                    <div id="suggestions-area" class="px-6 pb-4">
+                        <div class="flex flex-wrap gap-2">
+                            <button class="suggestion-chip" onclick="AnnyChat.sendSuggestion('Quais clientes VIP estao inativos ha mais de 30 dias?')">
+                                <i data-lucide="users" class="w-4 h-4"></i>
+                                VIPs Inativos
+                            </button>
+                            <button class="suggestion-chip" onclick="AnnyChat.sendSuggestion('Quem faz aniversario este mes?')">
+                                <i data-lucide="cake" class="w-4 h-4"></i>
+                                Aniversariantes
+                            </button>
+                            <button class="suggestion-chip" onclick="AnnyChat.sendSuggestion('Analise a queda de vendas e identifique os clientes que pararam de comprar')">
+                                <i data-lucide="trending-down" class="w-4 h-4"></i>
+                                Analise de Churn
+                            </button>
+                            <button class="suggestion-chip" onclick="AnnyChat.sendSuggestion('Quem comprava Rasteirinha Soft em quantidade?')">
+                                <i data-lucide="package" class="w-4 h-4"></i>
+                                Historico de Produto
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Input Area -->
+                    <div class="bg-white border-t border-slate-100 p-4">
+                        <form id="chat-form" class="flex gap-3">
+                            <input type="text" id="chat-input" class="input flex-1" placeholder="Digite sua pergunta para a Anny..." autocomplete="off">
+                            <button type="submit" class="btn btn-anny">
+                                <i data-lucide="send" class="w-4 h-4"></i>
+                                Enviar
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Insights Sidebar -->
+                <aside class="w-80 bg-white border-l border-slate-100 flex flex-col overflow-hidden">
+                    <div class="px-5 py-4 border-b border-slate-100">
+                        <h3 class="font-semibold text-slate-800 flex items-center gap-2">
+                            <i data-lucide="lightbulb" class="w-4 h-4 text-amber-500"></i>
+                            Insights Proativos
+                        </h3>
+                        <p class="text-xs text-slate-500 mt-0.5">Alertas automaticos da Anny</p>
+                    </div>
+                    <div id="insights-container" class="flex-1 overflow-y-auto p-4">
+                        <div class="text-center py-8 text-slate-400">
+                            <i data-lucide="loader" class="w-8 h-8 mx-auto mb-2 animate-spin"></i>
+                            <p class="text-sm">Carregando insights...</p>
+                        </div>
+                    </div>
+                    <div class="p-4 border-t border-slate-100">
+                        <button onclick="AnnyChat.refreshInsights()" class="btn btn-secondary w-full text-sm">
+                            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                            Atualizar Insights
+                        </button>
+                    </div>
+                </aside>
+            </div>
+        </main>
+    </div>
+
+    <!-- Action Modal (for sending campaigns) -->
+    <div id="action-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm hidden z-50 flex items-center justify-center">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4">
+            <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
+                <h3 class="font-semibold text-slate-800">Enviar Campanha</h3>
+                <button onclick="AnnyChat.closeActionModal()" class="text-slate-400 hover:text-slate-600">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-6">
+                <p id="action-modal-count" class="text-sm text-slate-600 mb-4">0 clientes selecionados</p>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Mensagem</label>
+                    <textarea id="campaign-message" class="input h-32 resize-none" placeholder="Digite a mensagem da campanha..."></textarea>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Cupom (opcional)</label>
+                    <select id="campaign-coupon" class="input">
+                        <option value="">Sem cupom</option>
+                    </select>
+                </div>
+                <div class="flex gap-3">
+                    <button onclick="AnnyChat.closeActionModal()" class="btn btn-secondary flex-1">Cancelar</button>
+                    <button onclick="AnnyChat.sendCampaign()" class="btn btn-success flex-1">
+                        <i data-lucide="send" class="w-4 h-4"></i>
+                        Enviar via WhatsApp
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================================
+        // ANNY CHAT - Business Intelligence Assistant
+        // ============================================================================
+        const AnnyChat = {
+            messages: [],
+            selectedClients: [],
+            isProcessing: false,
+
+            // API Configuration
+            API_URL: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+                ? 'http://localhost:3000/api/anny'
+                : '/.netlify/functions/anny-ai',
+
+            init() {
+                this.loadChatHistory();
+                this.setupEventListeners();
+                this.refreshInsights();
+                lucide.createIcons();
+            },
+
+            setupEventListeners() {
+                document.getElementById('chat-form').addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    const input = document.getElementById('chat-input');
+                    const message = input.value.trim();
+                    if (message && !this.isProcessing) {
+                        this.sendMessage(message);
+                        input.value = '';
+                    }
+                });
+            },
+
+            async sendMessage(message) {
+                this.isProcessing = true;
+                this.addMessage('user', message);
+                this.showTypingIndicator();
+
+                try {
+                    const response = await fetch(this.API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            message,
+                            history: this.messages.slice(-10) // Last 10 messages for context
+                        })
+                    });
+
+                    const data = await response.json();
+                    this.hideTypingIndicator();
+
+                    if (data.error) {
+                        this.addMessage('anny', `Desculpe, ocorreu um erro: ${data.error}`);
+                    } else {
+                        this.addMessage('anny', data.response, data.results);
+                    }
+                } catch (error) {
+                    this.hideTypingIndicator();
+                    this.addMessage('anny', 'Desculpe, nao consegui processar sua solicitacao. Verifique a conexao.');
+                    console.error('Anny Error:', error);
+                }
+
+                this.isProcessing = false;
+            },
+
+            sendSuggestion(text) {
+                document.getElementById('chat-input').value = text;
+                this.sendMessage(text);
+            },
+
+            addMessage(sender, text, results = null) {
+                const messagesContainer = document.getElementById('chat-messages');
+                const timestamp = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+                this.messages.push({ sender, text, results, timestamp });
+                this.saveChatHistory();
+
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message message-${sender}`;
+
+                let content = `
+                    <div class="message-sender">${sender === 'user' ? 'Voce' : 'Anny'}</div>
+                    <div class="message-bubble">
+                        <p>${this.formatText(text)}</p>
+                        ${results ? this.renderResults(results) : ''}
+                    </div>
+                    <div class="message-time">${timestamp}</div>
+                `;
+
+                messageDiv.innerHTML = content;
+                messagesContainer.appendChild(messageDiv);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                lucide.createIcons();
+            },
+
+            formatText(text) {
+                // Convert line breaks and basic formatting
+                return text
+                    .replace(/\n/g, '<br>')
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/\*(.*?)\*/g, '<em>$1</em>');
+            },
+
+            renderResults(results) {
+                if (!results || !results.data || results.data.length === 0) {
+                    return '';
+                }
+
+                const data = results.data;
+                const columns = results.columns || Object.keys(data[0]);
+
+                let html = `
+                    <div class="mt-4 overflow-x-auto">
+                        <table class="result-table">
+                            <thead>
+                                <tr>
+                                    <th><input type="checkbox" onchange="AnnyChat.toggleSelectAll(this)"></th>
+                                    ${columns.map(col => `<th>${this.formatColumnName(col)}</th>`).join('')}
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+
+                data.forEach((row, index) => {
+                    html += `<tr>
+                        <td><input type="checkbox" data-index="${index}" data-client='${JSON.stringify(row)}' onchange="AnnyChat.toggleSelectClient(this)"></td>
+                        ${columns.map(col => `<td>${this.formatCellValue(row[col], col)}</td>`).join('')}
+                    </tr>`;
+                });
+
+                html += `
+                            </tbody>
+                        </table>
+                        <div class="mt-4 flex justify-between items-center">
+                            <span class="text-sm text-slate-500">${data.length} resultado(s) encontrado(s)</span>
+                            <button onclick="AnnyChat.openActionModal()" class="btn btn-anny text-sm">
+                                <i data-lucide="send" class="w-4 h-4"></i>
+                                Enviar Campanha (<span id="selected-count">0</span>)
+                            </button>
+                        </div>
+                    </div>
+                `;
+
+                return html;
+            },
+
+            formatColumnName(col) {
+                const names = {
+                    'id': 'ID',
+                    'name': 'Nome',
+                    'phone': 'Telefone',
+                    'email': 'Email',
+                    'total_spent': 'Total Gasto',
+                    'order_count': 'Pedidos',
+                    'last_purchase_date': 'Ultima Compra',
+                    'days_inactive': 'Dias Inativo',
+                    'birthday': 'Aniversario'
+                };
+                return names[col] || col.charAt(0).toUpperCase() + col.slice(1).replace(/_/g, ' ');
+            },
+
+            formatCellValue(value, col) {
+                if (value === null || value === undefined) return '-';
+                if (col === 'total_spent') return `R$ ${parseFloat(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+                if (col === 'last_purchase_date' || col === 'birthday') return value ? new Date(value).toLocaleDateString('pt-BR') : '-';
+                if (col === 'phone') return value || '-';
+                return value;
+            },
+
+            toggleSelectAll(checkbox) {
+                const checkboxes = document.querySelectorAll('.result-table tbody input[type="checkbox"]');
+                checkboxes.forEach(cb => {
+                    cb.checked = checkbox.checked;
+                    this.toggleSelectClient(cb, false);
+                });
+                this.updateSelectedCount();
+            },
+
+            toggleSelectClient(checkbox, updateCount = true) {
+                const clientData = JSON.parse(checkbox.dataset.client || '{}');
+                if (checkbox.checked) {
+                    if (!this.selectedClients.find(c => c.id === clientData.id)) {
+                        this.selectedClients.push(clientData);
+                    }
+                } else {
+                    this.selectedClients = this.selectedClients.filter(c => c.id !== clientData.id);
+                }
+                if (updateCount) this.updateSelectedCount();
+            },
+
+            updateSelectedCount() {
+                const countEl = document.getElementById('selected-count');
+                if (countEl) countEl.textContent = this.selectedClients.length;
+            },
+
+            openActionModal() {
+                if (this.selectedClients.length === 0) {
+                    alert('Selecione pelo menos um cliente para enviar a campanha.');
+                    return;
+                }
+                document.getElementById('action-modal-count').textContent = `${this.selectedClients.length} cliente(s) selecionado(s)`;
+                document.getElementById('action-modal').classList.remove('hidden');
+            },
+
+            closeActionModal() {
+                document.getElementById('action-modal').classList.add('hidden');
+            },
+
+            async sendCampaign() {
+                const message = document.getElementById('campaign-message').value.trim();
+                if (!message) {
+                    alert('Digite uma mensagem para a campanha.');
+                    return;
+                }
+
+                const couponId = document.getElementById('campaign-coupon').value;
+                
+                // Here you would integrate with WhatsApp sending
+                alert(`Campanha configurada para ${this.selectedClients.length} clientes!\n\nMensagem: ${message}\n\nIntegracao com WhatsApp sera processada.`);
+                
+                this.closeActionModal();
+                this.selectedClients = [];
+                this.updateSelectedCount();
+            },
+
+            showTypingIndicator() {
+                const messagesContainer = document.getElementById('chat-messages');
+                const typingDiv = document.createElement('div');
+                typingDiv.id = 'typing-indicator';
+                typingDiv.className = 'message message-anny';
+                typingDiv.innerHTML = `
+                    <div class="message-sender">Anny</div>
+                    <div class="message-bubble">
+                        <div class="typing-indicator">
+                            <div class="typing-dot"></div>
+                            <div class="typing-dot"></div>
+                            <div class="typing-dot"></div>
+                        </div>
+                    </div>
+                `;
+                messagesContainer.appendChild(typingDiv);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            },
+
+            hideTypingIndicator() {
+                const indicator = document.getElementById('typing-indicator');
+                if (indicator) indicator.remove();
+            },
+
+            async refreshInsights() {
+                const container = document.getElementById('insights-container');
+                
+                try {
+                    const response = await fetch(this.API_URL + '?action=insights');
+                    const data = await response.json();
+                    
+                    if (data.insights && data.insights.length > 0) {
+                        container.innerHTML = data.insights.map(insight => `
+                            <div class="insight-card priority-${insight.priority}">
+                                <div class="flex items-start gap-3">
+                                    <div class="w-8 h-8 rounded-lg ${this.getInsightIconBg(insight.type)} flex items-center justify-center flex-shrink-0">
+                                        <i data-lucide="${this.getInsightIcon(insight.type)}" class="w-4 h-4 ${this.getInsightIconColor(insight.type)}"></i>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <p class="text-sm font-medium text-slate-800">${insight.title}</p>
+                                        <p class="text-xs text-slate-500 mt-0.5">${insight.description}</p>
+                                        ${insight.action ? `
+                                            <button onclick="AnnyChat.sendSuggestion('${insight.action}')" class="mt-2 text-xs text-purple-600 hover:text-purple-700 font-medium">
+                                                Investigar →
+                                            </button>
+                                        ` : ''}
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('');
+                    } else {
+                        container.innerHTML = `
+                            <div class="text-center py-8 text-slate-400">
+                                <i data-lucide="check-circle" class="w-8 h-8 mx-auto mb-2"></i>
+                                <p class="text-sm">Nenhum alerta no momento</p>
+                            </div>
+                        `;
+                    }
+                    lucide.createIcons();
+                } catch (error) {
+                    container.innerHTML = `
+                        <div class="text-center py-8 text-slate-400">
+                            <i data-lucide="alert-triangle" class="w-8 h-8 mx-auto mb-2"></i>
+                            <p class="text-sm">Erro ao carregar insights</p>
+                        </div>
+                    `;
+                    lucide.createIcons();
+                }
+            },
+
+            getInsightIcon(type) {
+                const icons = {
+                    'birthday': 'cake',
+                    'inactive': 'user-x',
+                    'vip': 'crown',
+                    'churn': 'trending-down',
+                    'opportunity': 'target'
+                };
+                return icons[type] || 'info';
+            },
+
+            getInsightIconBg(type) {
+                const bgs = {
+                    'birthday': 'bg-pink-50',
+                    'inactive': 'bg-red-50',
+                    'vip': 'bg-amber-50',
+                    'churn': 'bg-orange-50',
+                    'opportunity': 'bg-emerald-50'
+                };
+                return bgs[type] || 'bg-slate-50';
+            },
+
+            getInsightIconColor(type) {
+                const colors = {
+                    'birthday': 'text-pink-500',
+                    'inactive': 'text-red-500',
+                    'vip': 'text-amber-500',
+                    'churn': 'text-orange-500',
+                    'opportunity': 'text-emerald-500'
+                };
+                return colors[type] || 'text-slate-500';
+            },
+
+            saveChatHistory() {
+                localStorage.setItem('anny_chat_history', JSON.stringify(this.messages.slice(-50)));
+            },
+
+            loadChatHistory() {
+                const saved = localStorage.getItem('anny_chat_history');
+                if (saved) {
+                    const history = JSON.parse(saved);
+                    const container = document.getElementById('chat-messages');
+                    
+                    history.forEach(msg => {
+                        const messageDiv = document.createElement('div');
+                        messageDiv.className = `message message-${msg.sender}`;
+                        messageDiv.innerHTML = `
+                            <div class="message-sender">${msg.sender === 'user' ? 'Voce' : 'Anny'}</div>
+                            <div class="message-bubble">
+                                <p>${this.formatText(msg.text)}</p>
+                                ${msg.results ? this.renderResults(msg.results) : ''}
+                            </div>
+                            <div class="message-time">${msg.timestamp}</div>
+                        `;
+                        container.appendChild(messageDiv);
+                    });
+
+                    this.messages = history;
+                }
+            },
+
+            clearHistory() {
+                if (confirm('Limpar todo o historico do chat?')) {
+                    this.messages = [];
+                    localStorage.removeItem('anny_chat_history');
+                    document.getElementById('chat-messages').innerHTML = `
+                        <div class="message message-anny">
+                            <div class="message-sender">Anny</div>
+                            <div class="message-bubble">
+                                <p class="font-medium mb-2">Ola! Sou a Anny, sua estrategista de vendas.</p>
+                                <p class="text-sm text-slate-600 mb-3">Estou aqui para ajudar a CJOTA Rasteirinhas a recuperar o faturamento de R$ 200k/mes. Posso analisar sua base de clientes, identificar oportunidades e sugerir acoes de venda.</p>
+                                <p class="text-sm text-slate-600">Como posso ajudar hoje?</p>
+                            </div>
+                            <div class="message-time">Agora</div>
+                        </div>
+                    `;
+                }
+            }
+        };
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => AnnyChat.init());
+    </script>
+</body>
+</html>

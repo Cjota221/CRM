@@ -103,6 +103,10 @@
                     <i data-lucide="message-circle" class="w-5 h-5"></i>
                     <span class="font-semibold">Atendimento</span>
                 </a>
+                <a href="anny.html" class="nav-item bg-purple-50 text-purple-700 hover:bg-purple-100">
+                    <i data-lucide="sparkles" class="w-5 h-5"></i>
+                    <span class="font-semibold">Anny BI</span>
+                </a>
                 <a href="#" id="nav-clients" class="nav-item">
                     <i data-lucide="users" class="w-5 h-5"></i>
                     <span>Clientes</span>
@@ -231,6 +235,66 @@
                                 </div>
                             </div>
                         </div>
+
+                        <!-- ANNY AI - Proactive Insights -->
+                        <div class="card mb-8 border-purple-100 bg-gradient-to-r from-purple-50/50 to-white">
+                            <div class="px-6 py-4 border-b border-purple-100 flex justify-between items-center">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center">
+                                        <i data-lucide="sparkles" class="w-5 h-5 text-white"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="font-semibold text-slate-800">Alertas da Anny</h3>
+                                        <p class="text-xs text-slate-500">Sua assistente de BI identificou oportunidades</p>
+                                    </div>
+                                </div>
+                                <a href="anny.html" class="btn text-sm py-2 px-4 bg-gradient-to-r from-purple-500 to-purple-600 text-white hover:from-purple-600 hover:to-purple-700">
+                                    <i data-lucide="message-circle" class="w-4 h-4"></i>
+                                    Falar com Anny
+                                </a>
+                            </div>
+                            <div class="p-4">
+                                <div id="anny-insights-grid" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <!-- Insight: VIPs Aniversariantes -->
+                                    <div class="bg-white rounded-xl border border-pink-100 p-4 hover:shadow-md transition-all cursor-pointer" onclick="window.location.href='anny.html'">
+                                        <div class="flex items-start gap-3">
+                                            <div class="w-8 h-8 rounded-lg bg-pink-50 flex items-center justify-center flex-shrink-0">
+                                                <i data-lucide="cake" class="w-4 h-4 text-pink-500"></i>
+                                            </div>
+                                            <div class="flex-1 min-w-0">
+                                                <p class="text-sm font-medium text-slate-800" id="anny-birthday-title">Carregando...</p>
+                                                <p class="text-xs text-slate-500 mt-0.5" id="anny-birthday-desc">Aniversariantes do mês</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <!-- Insight: VIPs Inativos -->
+                                    <div class="bg-white rounded-xl border border-red-100 p-4 hover:shadow-md transition-all cursor-pointer" onclick="window.location.href='anny.html'">
+                                        <div class="flex items-start gap-3">
+                                            <div class="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center flex-shrink-0">
+                                                <i data-lucide="user-x" class="w-4 h-4 text-red-500"></i>
+                                            </div>
+                                            <div class="flex-1 min-w-0">
+                                                <p class="text-sm font-medium text-slate-800" id="anny-vip-title">Carregando...</p>
+                                                <p class="text-xs text-slate-500 mt-0.5" id="anny-vip-desc">VIPs que pararam de comprar</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <!-- Insight: Grade Fechada -->
+                                    <div class="bg-white rounded-xl border border-amber-100 p-4 hover:shadow-md transition-all cursor-pointer" onclick="window.location.href='anny.html'">
+                                        <div class="flex items-start gap-3">
+                                            <div class="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
+                                                <i data-lucide="crown" class="w-4 h-4 text-amber-500"></i>
+                                            </div>
+                                            <div class="flex-1 min-w-0">
+                                                <p class="text-sm font-medium text-slate-800" id="anny-grade-title">Clientes de Grade</p>
+                                                <p class="text-xs text-slate-500 mt-0.5" id="anny-grade-desc">Compradores de volume</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Alerts -->
                         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
                             <div class="card">
