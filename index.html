@@ -83,6 +83,65 @@
         .metric-value { font-size: 2rem; font-weight: 700; color: #1e293b; line-height: 1; }
         .metric-label { font-size: 0.8rem; font-weight: 500; color: #64748b; margin-bottom: 0.5rem; }
         .metric-sublabel { font-size: 0.7rem; color: #94a3b8; margin-top: 0.25rem; }
+        
+        /* Floating Action Buttons */
+        .fab-container {
+            position: fixed;
+            right: 24px;
+            bottom: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            z-index: 999;
+        }
+        .fab-btn {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 14px 20px;
+            border-radius: 50px;
+            color: white;
+            font-weight: 600;
+            font-size: 0.875rem;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            transition: all 0.3s ease;
+            cursor: pointer;
+            text-decoration: none;
+            border: none;
+        }
+        .fab-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+        }
+        .fab-btn i {
+            width: 20px;
+            height: 20px;
+        }
+        .fab-anny {
+            background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+        }
+        .fab-anny:hover {
+            background: linear-gradient(135deg, #a78bfa 0%, #7c3aed 100%);
+        }
+        .fab-atendimento {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        }
+        .fab-atendimento:hover {
+            background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+        }
+        .fab-badge {
+            background: #ef4444;
+            color: white;
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 999px;
+            margin-left: 4px;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
     </style>
 </head>
 <body class="bg-slate-50 min-h-screen">
@@ -730,6 +789,19 @@ Preparamos um cupom especial pra você: {cupom}
 Aproveite e volte a comprar conosco!</textarea></div><div><label class="block text-sm font-medium text-slate-600 mb-1.5">Cupom a incluir</label><select id="bulk-coupon-select" class="input"><option value="">Nenhum cupom</option></select></div></div><div class="bg-slate-50 px-6 py-4 rounded-b-2xl flex justify-end gap-3"><button type="button" id="cancel-bulk-btn" class="btn btn-secondary">Cancelar</button><button type="button" id="start-bulk-dispatch" class="btn btn-success"><i data-lucide="message-circle" class="w-4 h-4"></i>Iniciar Disparo</button></div></div></div></div>
 
     <div id="toast-container" class="toast-container"></div>
+    
+    <!-- Floating Action Buttons -->
+    <div class="fab-container">
+        <a href="anny.html" class="fab-btn fab-anny" title="Anny BI - Assistente Inteligente">
+            <i data-lucide="sparkles"></i>
+            <span>Anny BI</span>
+        </a>
+        <a href="atendimentos.html" class="fab-btn fab-atendimento" title="Central de Atendimento">
+            <i data-lucide="message-circle"></i>
+            <span>Atendimento</span>
+            <span class="fab-badge" id="fab-unread-badge" style="display:none;">0</span>
+        </a>
+    </div>
     
     <script src="script.js"></script>
     <script>lucide.createIcons();</script>
