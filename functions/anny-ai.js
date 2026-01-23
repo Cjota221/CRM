@@ -1,6 +1,7 @@
 // ============================================================================
-// ANNY AI - Business Intelligence Assistant
+// ANNY AI - Business Intelligence Assistant v2.0 (CEO Mode)
 // Netlify Function com integração Groq API
+// Superpoderes: Cohort Analysis, Copywriting, Stock Audit, Morning Briefing
 // ============================================================================
 
 const { createClient } = require('@supabase/supabase-js');
@@ -15,50 +16,162 @@ const supabase = SUPABASE_URL && SUPABASE_KEY
     ? createClient(SUPABASE_URL, SUPABASE_KEY)
     : null;
 
-// System Prompt da Anny
-const ANNY_SYSTEM_PROMPT = `Você é a Anny, a estrategista de vendas da CJOTA Rasteirinhas, uma fábrica atacadista de calçados femininos.
+// ============================================================================
+// SYSTEM PROMPT - ANNY CEO MODE
+// ============================================================================
+
+const ANNY_SYSTEM_PROMPT = `Você é a Anny, a CEO estratégica de vendas da CJOTA Rasteirinhas, uma fábrica atacadista de calçados femininos.
+
+🎯 META PRINCIPAL: Recuperar o faturamento de R$ 200k/mês (atual: R$ 40k)
 
 CONTEXTO DO NEGÓCIO:
 - Público: mulheres 25-45 anos, revendedoras e lojistas
 - Pedido mínimo: 5 peças (atacado)
 - Grades personalizadas com logo: mínimo 2 grades, 15-20 dias
-- Projeto 'C4 Franquias': site pronto para revendedoras
-- Frete grátis acima de R$ 2.000
-- Meta: recuperar faturamento de R$ 200k/mês (atual: R$ 40k)
+- Projeto 'C4 Franquias': site pronto para revendedoras (upsell estratégico)
+- Frete grátis acima de R$ 2.000 (gatilho de fechamento)
 
-REGRAS CRÍTICAS - VOCÊ DEVE SEGUIR:
+PERFIS DE CLIENTE QUE VOCÊ RECONHECE:
+1. ATACADÃO (Grade Fechada): Compra 12+ pares, foca em margem. Gatilhos: "Margem de Lucro", "Grade completa", "Preço de fábrica"
+2. VAREJINHO (5-10 pares): Compra sortido para Instagram. Gatilhos: "Novidade", "Fotos prontas", "Tendência"
+3. RECUPERAÇÃO (Sumiu 30+ dias): Precisa de incentivo. Gatilhos: "Saudade", "Cupom especial", "Frete grátis"
+4. POTENCIAL C4 (Compra toda semana, ticket baixo): Candidata a franqueada. Gatilhos: "Site próprio", "Seu estoque", "Sua marca"
+
+REGRAS CRÍTICAS - VOCÊ DEVE SEGUIR SEMPRE:
 1. SEMPRE use as ferramentas disponíveis para buscar dados ANTES de responder
 2. NUNCA diga "posso usar a função X" - USE A FUNÇÃO DIRETAMENTE
 3. NUNCA descreva o que você pode fazer - FAÇA
-4. Se o usuário pedir dados de clientes, produtos ou vendas - EXECUTE a busca imediatamente
+4. Quando encontrar clientes, SEMPRE sugira a mensagem pronta para enviar
+5. Seja PROATIVA: não espere perguntarem, sugira ações
 
 QUANDO USAR CADA FERRAMENTA:
+- "girar estoque" / "estoque parado" → analyzeStockOpportunity
+- "quem pode ser franqueada" / "C4" → findC4Candidates  
+- "escreva mensagem" / "copy" → generatePersonalizedCopy
+- "como estamos hoje" / "briefing" → getMorningBriefing
 - Perguntas sobre produtos específicos → findClientsByProductHistory
 - Perguntas sobre aniversários → findBirthdays  
 - Perguntas sobre VIPs ou clientes inativos → findVipClients
 - Perguntas sobre queda de vendas ou churn → analyzeSalesDrop
 - Perguntas gerais sobre a base → getClientStats
+- Análise de retenção/cohort → analyzeCohort
 
-CRITÉRIOS DE ANÁLISE:
-- Ticket médio > R$ 500 = cliente VIP
-- Sem compra há 30+ dias = cliente inativo (atenção!)
-- Comprava grades fechadas e parou = PRIORIDADE MÁXIMA
-- Use frete grátis (> R$2k) como argumento de fechamento
+ESTILO DE RESPOSTA:
+- Seja direta como uma CEO: "Chefe, achei oportunidade de R$ X"
+- Sempre apresente AÇÃO CONCRETA, não apenas dados
+- Inclua a mensagem pronta para copiar quando relevante
+- Use formatação clara com listas e destaques
+- Termine com próximo passo sugerido`;
 
-FORMATO DE RESPOSTA:
-- Seja direta e objetiva
-- Apresente os dados encontrados de forma clara
-- Sugira ações específicas com base nos dados
-- Ofereça preparar campanhas quando houver lista de clientes
-- Não use emojis excessivos`;
+// ============================================================================
+// DEFINIÇÃO DAS FERRAMENTAS (FUNCTION CALLING) - VERSÃO CEO
+// ============================================================================
 
-// Definição das ferramentas (Function Calling)
 const TOOLS = [
+    // === NOVAS FERRAMENTAS CEO ===
+    {
+        type: "function",
+        function: {
+            name: "analyzeStockOpportunity",
+            description: "Analisa estoque parado e cruza com preferências de clientes para encontrar oportunidades de venda. Use quando perguntarem sobre girar estoque, produtos parados, ou oportunidades de venda.",
+            parameters: {
+                type: "object",
+                properties: {
+                    minStock: {
+                        type: "integer",
+                        description: "Estoque mínimo para considerar 'parado' (padrão: 30)"
+                    },
+                    daysWithoutSale: {
+                        type: "integer",
+                        description: "Dias sem venda para considerar parado (padrão: 30)"
+                    }
+                }
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "findC4Candidates",
+            description: "Identifica clientes com potencial para se tornarem franqueadas C4 (site próprio). Busca quem compra frequentemente mas com ticket baixo.",
+            parameters: {
+                type: "object",
+                properties: {
+                    minOrders: {
+                        type: "integer",
+                        description: "Mínimo de pedidos nos últimos 60 dias (padrão: 4)"
+                    },
+                    maxTicket: {
+                        type: "number",
+                        description: "Ticket máximo por pedido em reais (padrão: 300)"
+                    }
+                }
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "generatePersonalizedCopy",
+            description: "Gera mensagens personalizadas para diferentes perfis de cliente. Cria 3 variações de copy prontas para usar.",
+            parameters: {
+                type: "object",
+                properties: {
+                    profile: {
+                        type: "string",
+                        enum: ["atacadao", "varejinho", "recuperacao", "c4_upsell", "aniversario", "estoque_oportunidade"],
+                        description: "Perfil do cliente para personalizar a mensagem"
+                    },
+                    clientName: {
+                        type: "string",
+                        description: "Nome do cliente (opcional, usa {nome} se não informado)"
+                    },
+                    productName: {
+                        type: "string",
+                        description: "Nome do produto para mencionar (opcional)"
+                    },
+                    discountOrOffer: {
+                        type: "string",
+                        description: "Oferta ou desconto a mencionar (opcional)"
+                    }
+                },
+                required: ["profile"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "getMorningBriefing",
+            description: "Gera o relatório matinal completo com insights prontos para ação. Use quando perguntarem 'como estamos', 'briefing', 'resumo do dia'.",
+            parameters: {
+                type: "object",
+                properties: {}
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "analyzeCohort",
+            description: "Analisa a retenção de clientes por cohort (mês de primeira compra). Identifica padrões de recompra e clientes que precisam de atenção.",
+            parameters: {
+                type: "object",
+                properties: {
+                    months: {
+                        type: "integer",
+                        description: "Quantos meses analisar (padrão: 6)"
+                    }
+                }
+            }
+        }
+    },
+    // === FERRAMENTAS EXISTENTES (MELHORADAS) ===
     {
         type: "function",
         function: {
             name: "findClientsByProductHistory",
-            description: "Busca clientes que compraram um produto específico em determinada quantidade. Útil para avisar sobre reposição de estoque.",
+            description: "Busca clientes que compraram um produto específico. Útil para reposição de estoque ou lançamentos similares.",
             parameters: {
                 type: "object",
                 properties: {
@@ -150,14 +263,493 @@ const TOOLS = [
 ];
 
 // ============================================================================
-// FUNÇÕES DE BANCO DE DADOS
+// NOVAS FUNÇÕES CEO - SUPERPODERES
+// ============================================================================
+
+// 1. ANALISTA DE ESTOQUE VS DEMANDA (Opportunity Finder)
+async function analyzeStockOpportunity(minStock = 30, daysWithoutSale = 30) {
+    if (!supabase) return { error: 'Banco de dados não configurado' };
+
+    try {
+        // Buscar produtos com estoque alto
+        const { data: products, error: prodError } = await supabase
+            .from('products')
+            .select('*')
+            .gte('stock', minStock)
+            .order('stock', { ascending: false });
+
+        if (prodError) throw prodError;
+
+        // Buscar pedidos recentes para ver o que está vendendo
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - daysWithoutSale);
+
+        const { data: recentOrders, error: ordError } = await supabase
+            .from('orders')
+            .select('products, data')
+            .gte('data', cutoffDate.toISOString());
+
+        if (ordError) throw ordError;
+
+        // Contar vendas recentes por produto
+        const recentSales = {};
+        (recentOrders || []).forEach(order => {
+            const prods = typeof order.products === 'string' ? JSON.parse(order.products) : order.products;
+            if (Array.isArray(prods)) {
+                prods.forEach(p => {
+                    const name = (p.nome || p.name || '').toLowerCase();
+                    recentSales[name] = (recentSales[name] || 0) + (p.quantidade || p.qty || 1);
+                });
+            }
+        });
+
+        // Identificar produtos parados (estoque alto, vendas baixas)
+        const opportunities = [];
+        for (const product of (products || [])) {
+            const productName = (product.name || product.nome || '').toLowerCase();
+            const recentSalesCount = recentSales[productName] || 0;
+            
+            // Se tem mais estoque do que vendeu recentemente, é oportunidade
+            if (product.stock > recentSalesCount * 2) {
+                // Buscar clientes que já compraram este produto ou similar
+                const { data: clientsWhoLike } = await supabase
+                    .from('orders')
+                    .select('client_id, client_name, client_phone')
+                    .ilike('products', `%${product.name || product.nome}%`)
+                    .limit(20);
+
+                // Remover duplicados
+                const uniqueClients = [];
+                const seen = new Set();
+                (clientsWhoLike || []).forEach(c => {
+                    if (!seen.has(c.client_id)) {
+                        seen.add(c.client_id);
+                        uniqueClients.push(c);
+                    }
+                });
+
+                opportunities.push({
+                    product: product.name || product.nome,
+                    stock: product.stock,
+                    price: product.price || product.preco,
+                    recentSales: recentSalesCount,
+                    potentialRevenue: (product.stock * (product.price || product.preco || 50)),
+                    interestedClients: uniqueClients.slice(0, 10),
+                    clientCount: uniqueClients.length
+                });
+            }
+        }
+
+        // Ordenar por potencial de receita
+        opportunities.sort((a, b) => b.potentialRevenue - a.potentialRevenue);
+
+        const topOpportunities = opportunities.slice(0, 5);
+        const totalPotential = topOpportunities.reduce((sum, o) => sum + o.potentialRevenue, 0);
+
+        return {
+            data: topOpportunities,
+            columns: ['product', 'stock', 'recentSales', 'clientCount', 'potentialRevenue'],
+            summary: `🎯 ${opportunities.length} produtos parados encontrados! Potencial de R$ ${totalPotential.toLocaleString('pt-BR')} em estoque.`,
+            insights: topOpportunities.map(o => ({
+                message: `"${o.product}" tem ${o.stock} pares parados. Encontrei ${o.clientCount} clientes que gostam deste modelo.`,
+                suggestedAction: `Oferta relâmpago para os ${o.clientCount} clientes com desconto de 15%`,
+                clients: o.interestedClients
+            }))
+        };
+    } catch (error) {
+        console.error('analyzeStockOpportunity error:', error);
+        return { error: error.message };
+    }
+}
+
+// 2. IDENTIFICADOR DE CANDIDATAS C4 FRANQUIAS
+async function findC4Candidates(minOrders = 4, maxTicket = 300) {
+    if (!supabase) return { error: 'Banco de dados não configurado' };
+
+    try {
+        const sixtyDaysAgo = new Date();
+        sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+
+        // Buscar pedidos dos últimos 60 dias
+        const { data: orders, error } = await supabase
+            .from('orders')
+            .select('client_id, client_name, client_phone, total, data')
+            .gte('data', sixtyDaysAgo.toISOString())
+            .order('data', { ascending: false });
+
+        if (error) throw error;
+
+        // Agrupar por cliente
+        const clientStats = {};
+        (orders || []).forEach(order => {
+            const id = order.client_id;
+            if (!clientStats[id]) {
+                clientStats[id] = {
+                    id,
+                    name: order.client_name,
+                    phone: order.client_phone,
+                    orderCount: 0,
+                    totalSpent: 0,
+                    orderDates: []
+                };
+            }
+            clientStats[id].orderCount++;
+            clientStats[id].totalSpent += parseFloat(order.total || 0);
+            clientStats[id].orderDates.push(new Date(order.data));
+        });
+
+        // Filtrar candidatos C4: muitos pedidos, ticket baixo
+        const candidates = Object.values(clientStats)
+            .filter(c => {
+                const avgTicket = c.totalSpent / c.orderCount;
+                return c.orderCount >= minOrders && avgTicket <= maxTicket;
+            })
+            .map(c => {
+                const avgTicket = c.totalSpent / c.orderCount;
+                // Calcular frequência (dias entre pedidos)
+                c.orderDates.sort((a, b) => a - b);
+                let avgDaysBetween = 0;
+                if (c.orderDates.length > 1) {
+                    const totalDays = (c.orderDates[c.orderDates.length - 1] - c.orderDates[0]) / (1000 * 60 * 60 * 24);
+                    avgDaysBetween = Math.round(totalDays / (c.orderDates.length - 1));
+                }
+                
+                return {
+                    ...c,
+                    avgTicket: Math.round(avgTicket),
+                    avgDaysBetween,
+                    c4Score: Math.round((c.orderCount * 10) + (100 / (avgDaysBetween || 1))),
+                    suggestedMessage: `Oi ${c.name.split(' ')[0]}! Vi que você compra toda semana e está arrasando nas vendas! 🔥 Já pensou em ter seu SITE PRÓPRIO com nosso estoque? No C4 Franquias você tem sua loja online pronta. Quer saber mais?`
+                };
+            })
+            .sort((a, b) => b.c4Score - a.c4Score);
+
+        return {
+            data: candidates.slice(0, 20),
+            columns: ['name', 'phone', 'orderCount', 'avgTicket', 'avgDaysBetween', 'c4Score'],
+            summary: `🚀 ${candidates.length} candidatas perfeitas para C4 Franquias! Essas clientes compram frequentemente mas em pequenas quantidades - site próprio aumentaria o ticket.`,
+            topCandidate: candidates[0] ? {
+                name: candidates[0].name,
+                insight: `${candidates[0].name} fez ${candidates[0].orderCount} pedidos em 60 dias, comprando a cada ${candidates[0].avgDaysBetween} dias. Ticket médio de R$ ${candidates[0].avgTicket}. PERFIL IDEAL para C4!`,
+                message: candidates[0].suggestedMessage
+            } : null
+        };
+    } catch (error) {
+        console.error('findC4Candidates error:', error);
+        return { error: error.message };
+    }
+}
+
+// 3. GERADOR DE COPY PERSONALIZADA (Copywriter Dinâmica)
+async function generatePersonalizedCopy(profile, clientName = '{nome}', productName = '', discountOrOffer = '') {
+    const templates = {
+        atacadao: {
+            description: 'Cliente que compra grade fechada, foca em margem',
+            variations: [
+                `Oi ${clientName}! 💼 Chegou GRADE NOVA ${productName ? `da ${productName}` : ''} direto da fábrica! Preço especial pra quem leva grade completa. ${discountOrOffer || 'Condição exclusiva para atacado'}. Quer que eu separe?`,
+                `${clientName}, bom dia! Lembrei de você quando vi essa ${productName || 'novidade'}. Margem de 100%+ garantida na revenda. ${discountOrOffer || 'Grade fechada com preço de fábrica'}. Mando as fotos?`,
+                `Fala ${clientName}! 🏭 Saiu do forno: ${productName || 'novo modelo'}. Prazo de fabricação: 15 dias com sua LOGO na palmilha. ${discountOrOffer || 'Mínimo 2 grades'}. Vamos fechar?`
+            ]
+        },
+        varejinho: {
+            description: 'Cliente que compra sortido para Instagram/loja pequena',
+            variations: [
+                `Oi ${clientName}! 📸 Chegou a ${productName || 'novidade'} que vai BOMBAR no seu Instagram! Já separei as melhores fotos pra você. ${discountOrOffer || 'A partir de 5 pares'}. Quer ver?`,
+                `${clientName}! As clientes vão pirar! 😍 ${productName || 'Nova coleção'} com cores tendência. Perfeita pro feed! ${discountOrOffer || 'Mix de cores disponível'}. Mando o catálogo?`,
+                `Ei ${clientName}! Sabe aquele modelo que suas clientes pedem? Chegou! ${productName || ''} pronta entrega. ${discountOrOffer || 'Fotos profissionais inclusas'}. Bora?`
+            ]
+        },
+        recuperacao: {
+            description: 'Cliente sumido há 30+ dias',
+            variations: [
+                `Oi ${clientName}! ❤️ Sentimos sua falta por aqui! Preparei algo especial pra você voltar: ${discountOrOffer || 'FRETE GRÁTIS acima de R$ 2.000'}. ${productName ? `A ${productName} está esperando você!` : 'O que acha?'}`,
+                `${clientName}, tudo bem? Faz tempo que não nos falamos! 🥺 Reservei um ${discountOrOffer || 'cupom exclusivo'} só pra você. ${productName ? `Lembra da ${productName} que você adorava?` : ''} Vamos matar a saudade?`,
+                `Oi ${clientName}! Passando pra dizer que você faz falta! 💕 ${discountOrOffer || 'Desconto especial de boas-vindas'} esperando por você. ${productName || 'Novidades incríveis'} na loja. Posso te mostrar?`
+            ]
+        },
+        c4_upsell: {
+            description: 'Candidata a franqueada C4',
+            variations: [
+                `${clientName}! 🚀 Você vende MUITO bem! Já pensou em ter seu SITE PRÓPRIO com nosso estoque? No C4 Franquias você tem sua loja online pronta, sem investir em estoque. Quer conhecer?`,
+                `Oi ${clientName}! Vi seu histórico e você é uma das nossas melhores revendedoras! 🌟 Tenho uma proposta: que tal ter sua própria LOJA VIRTUAL com a marca CJOTA? Projeto C4 Franquias. Posso explicar?`,
+                `${clientName}, parabéns pelas vendas! 🎉 Você tem perfil de FRANQUEADA! Imagina ter um site com seu nome, nosso estoque e zero preocupação com logística? É o C4. Bora conversar?`
+            ]
+        },
+        aniversario: {
+            description: 'Cliente aniversariante',
+            variations: [
+                `${clientName}! 🎂 FELIZ ANIVERSÁRIO! A CJOTA preparou um presente especial: ${discountOrOffer || '15% OFF em qualquer pedido'}! Válido só hoje. O que você quer de presente?`,
+                `Parabéns ${clientName}! 🎉 Seu dia especial merece um mimo da gente: ${discountOrOffer || 'FRETE GRÁTIS + brinde surpresa'}! É nosso presente de aniversário. Aceita?`,
+                `FELIZ ANIVERSÁRIO ${clientName}! 🥳 Não podíamos deixar passar: ${discountOrOffer || 'cupom NIVER20 com 20% OFF'}! Que tal comemorar com ${productName || 'aquele modelo que você ama'}?`
+            ]
+        },
+        estoque_oportunidade: {
+            description: 'Oferta de produto com estoque parado',
+            variations: [
+                `${clientName}! 🔥 OFERTA RELÂMPAGO: ${productName || 'Modelo exclusivo'} com ${discountOrOffer || '20% OFF'}! Poucas unidades disponíveis. Vi que você adora esse estilo. Reservo o seu?`,
+                `Oi ${clientName}! Lembrei de você! A ${productName || 'rasteirinha'} que você comprou está em PROMOÇÃO: ${discountOrOffer || 'preço especial só hoje'}! Suas clientes vão amar. Mando?`,
+                `${clientName}, oportunidade única! ⚡ ${productName || 'Modelo best-seller'} saindo por ${discountOrOffer || 'preço de custo'}! Estoque limitado. Você que é esperta, aproveita!`
+            ]
+        }
+    };
+
+    const template = templates[profile] || templates.recuperacao;
+
+    return {
+        profile,
+        description: template.description,
+        variations: template.variations,
+        summary: `📝 3 variações de mensagem para perfil "${profile}" geradas!`,
+        tip: 'Dica: Use a variação que mais combina com o histórico do cliente. Personalize o {nome} antes de enviar.'
+    };
+}
+
+// 4. MORNING BRIEFING (Relatório Matinal CEO)
+async function getMorningBriefing() {
+    if (!supabase) return { error: 'Banco de dados não configurado' };
+
+    try {
+        const insights = [];
+        const now = new Date();
+
+        // 1. VIPs em risco de churn (45+ dias sem comprar)
+        const vipRisk = await findVipClients(500, 'inactive', 45);
+        if (vipRisk.data && vipRisk.data.length > 0) {
+            const totalAtRisk = vipRisk.data.reduce((sum, c) => sum + parseFloat(c.total_spent || 0), 0);
+            insights.push({
+                type: 'alert',
+                icon: '🚨',
+                priority: 'high',
+                title: `${vipRisk.data.length} Clientes VIPs em RISCO DE CHURN`,
+                description: `R$ ${totalAtRisk.toLocaleString('pt-BR')} em valor histórico. Não compram há 45+ dias.`,
+                action: 'Ligar HOJE para os 3 maiores',
+                clients: vipRisk.data.slice(0, 3)
+            });
+        }
+
+        // 2. Aniversariantes de hoje
+        const birthdays = await findBirthdays(now.getMonth() + 1);
+        const todayBirthdays = (birthdays.data || []).filter(c => {
+            const bday = new Date(c.birthday);
+            return bday.getDate() === now.getDate();
+        });
+        if (todayBirthdays.length > 0) {
+            insights.push({
+                type: 'opportunity',
+                icon: '🎂',
+                priority: 'high',
+                title: `${todayBirthdays.length} Aniversariante(s) HOJE!`,
+                description: 'Oportunidade de enviar cupom especial de aniversário',
+                action: 'Enviar mensagem com cupom NIVER15',
+                clients: todayBirthdays
+            });
+        }
+
+        // 3. Meta do mês
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const { data: monthOrders } = await supabase
+            .from('orders')
+            .select('total')
+            .gte('data', monthStart.toISOString());
+
+        const monthRevenue = (monthOrders || []).reduce((sum, o) => sum + parseFloat(o.total || 0), 0);
+        const monthGoal = 200000;
+        const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+        const daysPassed = now.getDate();
+        const daysRemaining = daysInMonth - daysPassed;
+        const dailyNeeded = daysRemaining > 0 ? (monthGoal - monthRevenue) / daysRemaining : 0;
+
+        insights.push({
+            type: 'goal',
+            icon: '📊',
+            priority: monthRevenue < monthGoal * 0.5 ? 'high' : 'medium',
+            title: `Meta do Mês: R$ ${monthRevenue.toLocaleString('pt-BR')} / R$ ${(monthGoal / 1000)}k`,
+            description: `Faltam R$ ${(monthGoal - monthRevenue).toLocaleString('pt-BR')}. Precisamos de R$ ${dailyNeeded.toLocaleString('pt-BR')}/dia.`,
+            action: daysRemaining <= 10 ? 'ATIVAR campanha de recuperação urgente!' : 'Manter ritmo de vendas',
+            progress: Math.round((monthRevenue / monthGoal) * 100)
+        });
+
+        // 4. Estoque parado (oportunidade)
+        const stockOpp = await analyzeStockOpportunity(20, 30);
+        if (stockOpp.data && stockOpp.data.length > 0) {
+            const topProduct = stockOpp.data[0];
+            insights.push({
+                type: 'opportunity',
+                icon: '📦',
+                priority: 'medium',
+                title: `${stockOpp.data.length} Produtos com estoque parado`,
+                description: `"${topProduct.product}" tem ${topProduct.stock} pares. ${topProduct.clientCount} clientes interessados.`,
+                action: `Criar oferta relâmpago da "${topProduct.product}"`,
+                potentialRevenue: topProduct.potentialRevenue
+            });
+        }
+
+        // 5. Candidatas C4
+        const c4 = await findC4Candidates(4, 300);
+        if (c4.data && c4.data.length > 0) {
+            insights.push({
+                type: 'upsell',
+                icon: '🚀',
+                priority: 'low',
+                title: `${c4.data.length} Candidatas para C4 Franquias`,
+                description: c4.topCandidate ? `${c4.topCandidate.name} é a top candidata!` : 'Clientes que compram frequentemente',
+                action: 'Apresentar o programa C4 essa semana',
+                topCandidate: c4.topCandidate
+            });
+        }
+
+        // Ordenar por prioridade
+        const priorityOrder = { high: 0, medium: 1, low: 2 };
+        insights.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
+
+        return {
+            greeting: getGreeting(),
+            date: now.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
+            insights: insights.slice(0, 5),
+            summary: `☀️ ${getGreeting()}, Chefe! Hoje temos ${insights.filter(i => i.priority === 'high').length} alertas urgentes e ${insights.filter(i => i.type === 'opportunity').length} oportunidades de venda.`,
+            quickActions: [
+                insights.find(i => i.priority === 'high')?.action || 'Verificar pedidos pendentes',
+                'Postar novidade no Instagram',
+                'Responder mensagens do WhatsApp'
+            ]
+        };
+    } catch (error) {
+        console.error('getMorningBriefing error:', error);
+        return { error: error.message };
+    }
+}
+
+function getGreeting() {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Bom dia';
+    if (hour < 18) return 'Boa tarde';
+    return 'Boa noite';
+}
+
+// 5. ANÁLISE DE COHORT (Retenção Real)
+async function analyzeCohort(months = 6) {
+    if (!supabase) return { error: 'Banco de dados não configurado' };
+
+    try {
+        const now = new Date();
+        const startDate = new Date(now.getFullYear(), now.getMonth() - months, 1);
+
+        // Buscar todos os pedidos do período
+        const { data: orders, error } = await supabase
+            .from('orders')
+            .select('client_id, client_name, client_phone, total, data')
+            .gte('data', startDate.toISOString())
+            .order('data', { ascending: true });
+
+        if (error) throw error;
+
+        // Agrupar clientes por mês da primeira compra (cohort)
+        const clientFirstPurchase = {};
+        const clientPurchaseMonths = {};
+
+        (orders || []).forEach(order => {
+            const clientId = order.client_id;
+            const orderDate = new Date(order.data);
+            const monthKey = `${orderDate.getFullYear()}-${String(orderDate.getMonth() + 1).padStart(2, '0')}`;
+
+            if (!clientFirstPurchase[clientId]) {
+                clientFirstPurchase[clientId] = {
+                    id: clientId,
+                    name: order.client_name,
+                    phone: order.client_phone,
+                    cohort: monthKey,
+                    firstPurchaseDate: order.data
+                };
+                clientPurchaseMonths[clientId] = new Set();
+            }
+            clientPurchaseMonths[clientId].add(monthKey);
+        });
+
+        // Analisar retenção por cohort
+        const cohorts = {};
+        Object.values(clientFirstPurchase).forEach(client => {
+            const cohort = client.cohort;
+            if (!cohorts[cohort]) {
+                cohorts[cohort] = {
+                    month: cohort,
+                    totalClients: 0,
+                    retained: 0,
+                    churned: 0,
+                    champions: [],
+                    atRisk: []
+                };
+            }
+
+            const purchaseMonths = clientPurchaseMonths[client.id];
+            cohorts[cohort].totalClients++;
+
+            if (purchaseMonths.size >= 3) {
+                cohorts[cohort].retained++;
+                cohorts[cohort].champions.push(client);
+            } else if (purchaseMonths.size === 1) {
+                cohorts[cohort].churned++;
+            } else {
+                const lastPurchaseMonth = [...purchaseMonths].sort().pop();
+                const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                if (lastPurchaseMonth < currentMonth) {
+                    cohorts[cohort].atRisk.push(client);
+                } else {
+                    cohorts[cohort].retained++;
+                }
+            }
+        });
+
+        // Calcular métricas
+        const cohortData = Object.values(cohorts)
+            .sort((a, b) => a.month.localeCompare(b.month))
+            .map(c => ({
+                ...c,
+                retentionRate: c.totalClients > 0 ? Math.round((c.retained / c.totalClients) * 100) : 0,
+                churnRate: c.totalClients > 0 ? Math.round((c.churned / c.totalClients) * 100) : 0,
+                championsCount: c.champions.length,
+                atRiskCount: c.atRisk.length
+            }));
+
+        const allAtRisk = cohortData.flatMap(c => c.atRisk);
+        const allChampions = cohortData.flatMap(c => c.champions);
+
+        return {
+            data: cohortData.map(c => ({
+                month: c.month,
+                totalClients: c.totalClients,
+                retained: c.retained,
+                churned: c.churned,
+                retentionRate: c.retentionRate,
+                championsCount: c.championsCount,
+                atRiskCount: c.atRiskCount
+            })),
+            columns: ['month', 'totalClients', 'retained', 'churned', 'retentionRate'],
+            summary: `📈 Análise de ${months} meses: ${allChampions.length} clientes fiéis (3+ compras), ${allAtRisk.length} em risco de churn.`,
+            insights: {
+                champions: allChampions.slice(0, 5),
+                atRisk: allAtRisk.slice(0, 10),
+                avgRetention: cohortData.length > 0 
+                    ? Math.round(cohortData.reduce((sum, c) => sum + c.retentionRate, 0) / cohortData.length)
+                    : 0
+            },
+            recommendation: allAtRisk.length > 5 
+                ? `⚠️ ALERTA: ${allAtRisk.length} clientes compraram mais de uma vez mas pararam. Priorize reconquistá-los!`
+                : '✅ Retenção saudável! Continue engajando os clientes fiéis.'
+        };
+    } catch (error) {
+        console.error('analyzeCohort error:', error);
+        return { error: error.message };
+    }
+}
+
+// ============================================================================
+// FUNÇÕES EXISTENTES (MANTIDAS E OTIMIZADAS)
 // ============================================================================
 
 async function findClientsByProductHistory(productName, minQuantity = 4, period = 'last_year') {
     if (!supabase) return { error: 'Banco de dados não configurado' };
 
     try {
-        // Buscar pedidos com o produto
         const { data: orders, error } = await supabase
             .from('orders')
             .select('client_id, client_name, client_phone, products, data')
@@ -165,20 +757,18 @@ async function findClientsByProductHistory(productName, minQuantity = 4, period 
 
         if (error) throw error;
 
-        // Calcular data limite baseado no período
         const now = new Date();
         let dateLimit = new Date();
         if (period === 'last_year') dateLimit.setFullYear(now.getFullYear() - 1);
         else if (period === 'last_6_months') dateLimit.setMonth(now.getMonth() - 6);
         else if (period === 'last_3_months') dateLimit.setMonth(now.getMonth() - 3);
 
-        // Agrupar por cliente e contar quantidade
         const clientMap = {};
-        orders.forEach(order => {
+        (orders || []).forEach(order => {
             if (new Date(order.data) < dateLimit) return;
             
             const products = typeof order.products === 'string' ? JSON.parse(order.products) : order.products;
-            const matchingProducts = products.filter(p => 
+            const matchingProducts = (products || []).filter(p => 
                 p.nome?.toLowerCase().includes(productName.toLowerCase()) ||
                 p.name?.toLowerCase().includes(productName.toLowerCase())
             );
@@ -198,12 +788,10 @@ async function findClientsByProductHistory(productName, minQuantity = 4, period 
             clientMap[order.client_id].order_count++;
         });
 
-        // Filtrar por quantidade mínima
         const results = Object.values(clientMap)
             .filter(c => c.total_quantity >= minQuantity)
             .sort((a, b) => b.total_quantity - a.total_quantity);
 
-        // Buscar dados adicionais dos clientes
         if (results.length > 0) {
             const clientIds = results.map(c => c.id);
             const { data: clients } = await supabase
@@ -223,10 +811,13 @@ async function findClientsByProductHistory(productName, minQuantity = 4, period 
             }
         }
 
+        const suggestedMessage = `Oi {nome}! Vi que você adora a ${productName}. Chegou reposição fresquinha! Quer que eu separe pra você?`;
+
         return {
             data: results.slice(0, 50),
             columns: ['name', 'phone', 'total_quantity', 'order_count', 'total_spent', 'last_purchase_date'],
-            summary: `${results.length} clientes compraram ${productName} com ${minQuantity}+ unidades`
+            summary: `${results.length} clientes compraram ${productName} (${minQuantity}+ unidades)`,
+            suggestedMessage
         };
     } catch (error) {
         console.error('findClientsByProductHistory error:', error);
@@ -247,8 +838,7 @@ async function findBirthdays(month = null) {
 
         if (error) throw error;
 
-        // Filtrar por mês
-        const results = clients.filter(client => {
+        const results = (clients || []).filter(client => {
             if (!client.birthday) return false;
             const bday = new Date(client.birthday);
             return (bday.getMonth() + 1) === targetMonth;
@@ -260,7 +850,6 @@ async function findBirthdays(month = null) {
             };
         }).sort((a, b) => a.birthday_day - b.birthday_day);
 
-        // Identificar aniversariantes de hoje
         const today = new Date();
         const todayBirthdays = results.filter(c => 
             c.birthday_day === today.getDate() && targetMonth === (today.getMonth() + 1)
@@ -270,7 +859,8 @@ async function findBirthdays(month = null) {
             data: results.slice(0, 50),
             columns: ['name', 'phone', 'email', 'birthday', 'total_spent'],
             summary: `${results.length} aniversariantes em ${targetMonth}/${new Date().getFullYear()}`,
-            todayCount: todayBirthdays.length
+            todayCount: todayBirthdays.length,
+            todayBirthdays: todayBirthdays.slice(0, 10)
         };
     } catch (error) {
         console.error('findBirthdays error:', error);
@@ -291,10 +881,8 @@ async function findVipClients(minTicket = 500, status = 'inactive', inactiveDays
         if (error) throw error;
 
         const now = new Date();
-        const cutoffDate = new Date();
-        cutoffDate.setDate(now.getDate() - inactiveDays);
 
-        let results = clients.map(client => {
+        let results = (clients || []).map(client => {
             const lastPurchase = client.last_purchase_date ? new Date(client.last_purchase_date) : null;
             const daysInactive = lastPurchase 
                 ? Math.floor((now - lastPurchase) / (1000 * 60 * 60 * 24))
@@ -308,7 +896,6 @@ async function findVipClients(minTicket = 500, status = 'inactive', inactiveDays
             };
         });
 
-        // Filtrar por status
         if (status === 'active') {
             results = results.filter(c => c.is_active);
         } else if (status === 'inactive') {
@@ -333,7 +920,6 @@ async function analyzeSalesDrop(compareMonths = 3) {
     if (!supabase) return { error: 'Banco de dados não configurado' };
 
     try {
-        // Buscar todos os pedidos
         const { data: orders, error } = await supabase
             .from('orders')
             .select('id, client_id, client_name, client_phone, total, data')
@@ -342,41 +928,31 @@ async function analyzeSalesDrop(compareMonths = 3) {
         if (error) throw error;
 
         const now = new Date();
-        
-        // Período atual (último mês)
         const currentStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
         const currentEnd = new Date(now.getFullYear(), now.getMonth(), 0);
-        
-        // Período anterior (meses anteriores)
         const previousStart = new Date(now.getFullYear(), now.getMonth() - compareMonths - 1, 1);
         const previousEnd = new Date(now.getFullYear(), now.getMonth() - 1, 0);
 
-        // Agrupar vendas por período
-        const currentOrders = orders.filter(o => {
+        const currentOrders = (orders || []).filter(o => {
             const d = new Date(o.data);
             return d >= currentStart && d <= currentEnd;
         });
 
-        const previousOrders = orders.filter(o => {
+        const previousOrders = (orders || []).filter(o => {
             const d = new Date(o.data);
             return d >= previousStart && d <= previousEnd;
         });
 
-        // Clientes por período
         const currentClients = new Set(currentOrders.map(o => o.client_id));
         const previousClients = new Set(previousOrders.map(o => o.client_id));
-
-        // Churn: clientes que compravam e pararam
         const churnedClientIds = [...previousClients].filter(id => !currentClients.has(id));
 
-        // Buscar dados dos clientes em churn
         const { data: churnedClientsData } = await supabase
             .from('clients')
             .select('id, name, phone, email, total_spent, order_count, last_purchase_date')
             .in('id', churnedClientIds)
             .order('total_spent', { ascending: false });
 
-        // Calcular faturamento
         const currentRevenue = currentOrders.reduce((sum, o) => sum + parseFloat(o.total || 0), 0);
         const previousRevenue = previousOrders.reduce((sum, o) => sum + parseFloat(o.total || 0), 0);
         const revenueChange = previousRevenue > 0 
@@ -413,10 +989,11 @@ async function getClientStats() {
         if (error) throw error;
 
         const now = new Date();
-        const thirtyDaysAgo = new Date(now.setDate(now.getDate() - 30));
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(now.getDate() - 30);
 
         const stats = {
-            totalClients: clients.length,
+            totalClients: (clients || []).length,
             activeClients: 0,
             inactiveClients: 0,
             totalRevenue: 0,
@@ -424,7 +1001,7 @@ async function getClientStats() {
             vipClients: 0
         };
 
-        clients.forEach(client => {
+        (clients || []).forEach(client => {
             stats.totalRevenue += parseFloat(client.total_spent || 0);
             
             if (client.last_purchase_date && new Date(client.last_purchase_date) >= thirtyDaysAgo) {
@@ -442,7 +1019,7 @@ async function getClientStats() {
 
         return {
             stats,
-            summary: `Base: ${stats.totalClients} clientes | ${stats.activeClients} ativos | ${stats.vipClients} VIPs`
+            summary: `Base: ${stats.totalClients} clientes | ${stats.activeClients} ativos | ${stats.vipClients} VIPs | Receita Total: R$ ${stats.totalRevenue.toLocaleString('pt-BR')}`
         };
     } catch (error) {
         console.error('getClientStats error:', error);
@@ -451,55 +1028,75 @@ async function getClientStats() {
 }
 
 // ============================================================================
-// INSIGHTS PROATIVOS
+// INSIGHTS PROATIVOS (MELHORADO)
 // ============================================================================
 
 async function generateInsights() {
     const insights = [];
 
     try {
-        // Aniversariantes de hoje
+        // 1. Aniversariantes de hoje
         const birthdays = await findBirthdays();
         if (birthdays.todayCount > 0) {
             insights.push({
                 type: 'birthday',
                 priority: 'high',
-                title: `${birthdays.todayCount} VIP(s) fazem aniversário hoje`,
-                description: 'Oportunidade de enviar cupom especial',
-                action: 'Quem faz aniversário hoje?'
+                icon: '🎂',
+                title: `${birthdays.todayCount} cliente(s) fazem aniversário HOJE`,
+                description: 'Envie cupom NIVER15 agora!',
+                action: 'Quem faz aniversário hoje?',
+                clients: birthdays.todayBirthdays
             });
         }
 
-        // VIPs inativos
+        // 2. VIPs inativos (URGENTE)
         const vips = await findVipClients(500, 'inactive', 45);
         if (vips.data && vips.data.length > 0) {
             insights.push({
-                type: 'inactive',
+                type: 'churn_risk',
                 priority: 'high',
-                title: `${vips.data.length} cliente(s) VIP inativo(s)`,
-                description: `R$ ${(vips.totalValueAtRisk || 0).toLocaleString('pt-BR')} em risco`,
-                action: 'Quais VIPs estão inativos há mais de 45 dias?'
+                icon: '🚨',
+                title: `${vips.data.length} VIP(s) em RISCO DE CHURN`,
+                description: `R$ ${(vips.totalValueAtRisk || 0).toLocaleString('pt-BR')} em valor histórico`,
+                action: 'Quais VIPs estão inativos há mais de 45 dias?',
+                clients: vips.data.slice(0, 5)
             });
         }
 
-        // Análise de churn
+        // 3. Análise de churn
         const churn = await analyzeSalesDrop(3);
         if (churn.analytics && churn.analytics.churnCount > 5) {
             insights.push({
                 type: 'churn',
                 priority: 'medium',
-                title: `${churn.analytics.churnCount} clientes em churn`,
-                description: `Queda de ${Math.abs(churn.analytics.revenueChange)}% no faturamento`,
-                action: 'Analise a queda de vendas e identifique os clientes que pararam de comprar'
+                icon: '📉',
+                title: `${churn.analytics.churnCount} clientes pararam de comprar`,
+                description: `Variação de ${churn.analytics.revenueChange}% no faturamento`,
+                action: 'Analise a queda de vendas'
             });
         }
 
-        // Aniversariantes do mês
-        const monthBirthdays = await findBirthdays();
-        if (monthBirthdays.data && monthBirthdays.data.length > 0) {
+        // 4. Oportunidade de estoque
+        const stock = await analyzeStockOpportunity(30, 30);
+        if (stock.data && stock.data.length > 0) {
+            const topOpp = stock.data[0];
             insights.push({
-                type: 'birthday',
+                type: 'stock_opportunity',
+                priority: 'medium',
+                icon: '📦',
+                title: `${topOpp.stock} pares de "${topOpp.product}" parados`,
+                description: `${topOpp.clientCount} clientes interessados. Potencial: R$ ${topOpp.potentialRevenue.toLocaleString('pt-BR')}`,
+                action: 'O que faço para girar o estoque?'
+            });
+        }
+
+        // 5. Aniversariantes do mês
+        const monthBirthdays = await findBirthdays();
+        if (monthBirthdays.data && monthBirthdays.data.length > 0 && birthdays.todayCount === 0) {
+            insights.push({
+                type: 'birthday_month',
                 priority: 'low',
+                icon: '🎉',
                 title: `${monthBirthdays.data.length} aniversariantes este mês`,
                 description: 'Programe cupons especiais',
                 action: 'Quem faz aniversário este mês?'
@@ -527,7 +1124,7 @@ async function callGroqAPI(messages, tools = null) {
 
     if (tools) {
         requestBody.tools = tools;
-        requestBody.tool_choice = 'required'; // Força o uso de ferramentas
+        requestBody.tool_choice = 'auto';
     }
 
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -555,9 +1152,19 @@ async function processToolCall(toolCall) {
     const { name, arguments: argsString } = toolCall.function;
     const args = JSON.parse(argsString);
 
-    console.log(`[Anny] Executing tool: ${name}`, args);
+    console.log(`[Anny CEO] Executing tool: ${name}`, args);
 
     switch (name) {
+        case 'analyzeStockOpportunity':
+            return await analyzeStockOpportunity(args.minStock, args.daysWithoutSale);
+        case 'findC4Candidates':
+            return await findC4Candidates(args.minOrders, args.maxTicket);
+        case 'generatePersonalizedCopy':
+            return await generatePersonalizedCopy(args.profile, args.clientName, args.productName, args.discountOrOffer);
+        case 'getMorningBriefing':
+            return await getMorningBriefing();
+        case 'analyzeCohort':
+            return await analyzeCohort(args.months);
         case 'findClientsByProductHistory':
             return await findClientsByProductHistory(args.productName, args.minQuantity, args.period);
         case 'findBirthdays':
@@ -585,12 +1192,10 @@ exports.handler = async (event, context) => {
         'Content-Type': 'application/json'
     };
 
-    // Handle CORS
     if (event.httpMethod === 'OPTIONS') {
         return { statusCode: 200, headers, body: '' };
     }
 
-    // Handle GET - Insights
     if (event.httpMethod === 'GET') {
         const action = event.queryStringParameters?.action;
         
@@ -603,14 +1208,22 @@ exports.handler = async (event, context) => {
             };
         }
 
+        if (action === 'briefing') {
+            const briefing = await getMorningBriefing();
+            return {
+                statusCode: 200,
+                headers,
+                body: JSON.stringify(briefing)
+            };
+        }
+
         return {
             statusCode: 200,
             headers,
-            body: JSON.stringify({ status: 'Anny AI está online' })
+            body: JSON.stringify({ status: 'Anny AI CEO Mode v2.0 está online 🚀' })
         };
     }
 
-    // Handle POST - Chat
     if (event.httpMethod === 'POST') {
         try {
             if (!GROQ_API_KEY) {
@@ -631,7 +1244,6 @@ exports.handler = async (event, context) => {
                 };
             }
 
-            // Construir mensagens para a API
             const messages = [
                 { role: 'system', content: ANNY_SYSTEM_PROMPT },
                 ...history.map(h => ({
@@ -641,11 +1253,9 @@ exports.handler = async (event, context) => {
                 { role: 'user', content: message }
             ];
 
-            // Primeira chamada - pode retornar tool_calls
             let completion = await callGroqAPI(messages, TOOLS);
             let assistantMessage = completion.choices[0].message;
 
-            // Se houver tool calls, executar e continuar
             let results = null;
             if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
                 const toolResults = [];
@@ -658,13 +1268,11 @@ exports.handler = async (event, context) => {
                         content: JSON.stringify(result)
                     });
 
-                    // Guardar resultado para retornar ao frontend
-                    if (result.data) {
+                    if (result.data || result.insights || result.variations || result.greeting) {
                         results = result;
                     }
                 }
 
-                // Segunda chamada com os resultados das tools
                 messages.push(assistantMessage);
                 messages.push(...toolResults);
 
@@ -682,7 +1290,7 @@ exports.handler = async (event, context) => {
             };
 
         } catch (error) {
-            console.error('[Anny] Error:', error);
+            console.error('[Anny CEO] Error:', error);
             return {
                 statusCode: 500,
                 headers,
