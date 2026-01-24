@@ -32,6 +32,50 @@ let audioElement = null;
 
 const API_BASE = 'http://localhost:3000/api';
 
+// ============================================================================
+// FUNÇÃO GLOBAL: FORMATAÇÃO DE TELEFONE
+// ============================================================================
+function formatPhone(rawNumber) {
+    if (!rawNumber) return 'Sem número';
+    
+    // Limpar: remover tudo que não é dígito
+    let cleaned = rawNumber.replace(/\D/g, '');
+    
+    // Se tiver DDI 55 (Brasil), remover para exibição
+    if (cleaned.startsWith('55') && cleaned.length >= 12) {
+        cleaned = cleaned.substring(2);
+    }
+    
+    // Aplicar máscara visual (DD) NNNNN-NNNN
+    if (cleaned.length === 11) {
+        // Celular: (XX) XXXXX-XXXX
+        return `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 7)}-${cleaned.substring(7)}`;
+    } else if (cleaned.length === 10) {
+        // Fixo: (XX) XXXX-XXXX
+        return `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 6)}-${cleaned.substring(6)}`;
+    } else if (cleaned.length >= 8) {
+        // Formato básico com hífen
+        return `${cleaned.substring(0, cleaned.length - 4)}-${cleaned.substring(cleaned.length - 4)}`;
+    }
+    
+    return cleaned || rawNumber;
+}
+
+// Função para extrair apenas números do telefone (para busca no banco)
+function cleanPhoneForSearch(rawNumber) {
+    if (!rawNumber) return '';
+    let cleaned = rawNumber.replace(/\D/g, '');
+    // Remover DDI 55 se tiver
+    if (cleaned.startsWith('55') && cleaned.length >= 12) {
+        cleaned = cleaned.substring(2);
+    }
+    return cleaned;
+}
+
+// ============================================================================
+// INICIALIZAÇÃO
+// ============================================================================
+
 // Inicializar tags padrão se não existirem
 if (allTags.length === 0) {
     allTags = [
@@ -1936,21 +1980,75 @@ function renderProductList(products) {
         return;
     }
     
-    container.innerHTML = products.slice(0, 50).map(p => `
-        <div class="flex items-center gap-3 p-2 border rounded hover:bg-gray-50">
-            <img src="${p.imagem || 'https://via.placeholder.com/40'}" class="w-10 h-10 object-cover rounded">
+    container.innerHTML = products.slice(0, 50).map(p => {
+        const preco = parseFloat(p.preco || 0);
+        const imagem = p.imagem || 'https://via.placeholder.com/60x60?text=Sem+Foto';
+        const nome = p.nome || 'Produto sem nome';
+        const link = p.link_oficial || '#';
+        
+        return `
+        <div class="flex items-center gap-3 p-3 border rounded-lg hover:bg-slate-50 transition">
+            <img src="${imagem}" 
+                 onerror="this.src='https://via.placeholder.com/60x60?text=Sem+Foto'" 
+                 class="w-16 h-16 object-cover rounded-lg border border-slate-200 flex-shrink-0" 
+                 alt="${escapeHtml(nome)}">
             <div class="flex-1 min-w-0">
-                <h5 class="font-medium text-sm truncate">${p.nome}</h5>
-                <p class="text-xs text-gray-500">R$ ${parseFloat(p.preco || 0).toFixed(2)}</p>
+                <h5 class="font-semibold text-sm text-slate-800 truncate">${escapeHtml(nome)}</h5>
+                <p class="text-lg font-bold text-emerald-600 mt-1">R$ ${preco.toFixed(2)}</p>
             </div>
-            <button onclick="sendProductLink('${escapeHtml(p.nome)}', '${p.link_oficial || '#'}')" 
-                    class="bg-blue-600 text-white px-3 py-1 rounded text-xs hover:bg-blue-700">
+            <button onclick="sendProductMessage('${escapeHtml(nome)}', ${preco}, '${imagem}', '${link}')" 
+                    class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition flex items-center gap-2 flex-shrink-0">
+                <i data-lucide="send" class="w-4 h-4"></i>
                 Enviar
             </button>
         </div>
-    `).join('');
+    `}).join('');
+    
+    lucide.createIcons();
 }
 
+async function sendProductMessage(name, preco, imageUrl, link) {
+    if (!currentChatId) {
+        alert('Nenhuma conversa selecionada');
+        return;
+    }
+    
+    closeProductModal();
+    
+    try {
+        // Montar mensagem formatada
+        const caption = `*${name}*\n\n💰 Apenas *R$ ${preco.toFixed(2)}*\n\n👇 Compre aqui:\n${link}`;
+        
+        // Enviar imagem com legenda
+        const phoneNumber = currentChatId.replace('@s.whatsapp.net', '').replace('@g.us', '');
+        
+        const response = await fetch(`${API_BASE}/whatsapp/send-media`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                phoneNumber,
+                media: imageUrl,
+                mediaType: 'image',
+                caption: caption
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.error) {
+            throw new Error(result.error);
+        }
+        
+        // Recarregar mensagens
+        setTimeout(() => loadMessages(currentChatId), 1000);
+        
+    } catch (error) {
+        console.error('Erro ao enviar produto:', error);
+        alert('Erro ao enviar produto: ' + error.message);
+    }
+}
+
+// Manter função antiga por compatibilidade (se existir em outros lugares)
 async function sendProductLink(name, link) {
     // Monta a mensagem
     const message = `Olha esse produto: ${name} – ${link}`;
@@ -1972,11 +2070,6 @@ async function sendProductLink(name, link) {
 }
 
 // Helpers
-function formatPhone(jid) {
-    if (!jid) return 'Desconhecido';
-    return jid.replace('@s.whatsapp.net', '').replace('@g.us', '');
-}
-
 function escapeHtml(text) {
     if (!text) return '';
     return text.replace(/&/g, "&amp;")
