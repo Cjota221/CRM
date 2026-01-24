@@ -400,25 +400,79 @@ app.get('/api/whatsapp/connect', async (req, res) => {
     }
 });
 
-// 3. Listar Chats
+// 3. Listar Chats (com nomes dos contatos)
 app.get('/api/whatsapp/chats', async (req, res) => {
     try {
-        const url = `${EVOLUTION_URL}/chat/findChats/${INSTANCE_NAME}`;
-        // Evolution v2 usa POST para findChats
-        const response = await fetch(url, { 
-            method: 'POST',
-            headers: evolutionHeaders,
-            body: JSON.stringify({
-                where: {},
-                options: { 
-                    limit: 50,
-                    order: "DESC"
-                }
+        // Buscar chats e contatos em paralelo
+        const [chatsResponse, contactsResponse] = await Promise.all([
+            fetch(`${EVOLUTION_URL}/chat/findChats/${INSTANCE_NAME}`, { 
+                method: 'POST',
+                headers: evolutionHeaders,
+                body: JSON.stringify({
+                    where: {},
+                    options: { limit: 50, order: "DESC" }
+                })
+            }),
+            fetch(`${EVOLUTION_URL}/chat/findContacts/${INSTANCE_NAME}`, { 
+                method: 'POST',
+                headers: evolutionHeaders,
+                body: JSON.stringify({})
             })
+        ]);
+        
+        const chatsData = await chatsResponse.json();
+        const contactsData = await contactsResponse.json();
+        
+        const chats = Array.isArray(chatsData) ? chatsData : (chatsData.data || []);
+        const contacts = Array.isArray(contactsData) ? contactsData : (contactsData.data || []);
+        
+        // Criar mapa de contatos por remoteJid
+        const contactsMap = {};
+        contacts.forEach(c => {
+            if (c.remoteJid && c.pushName) {
+                contactsMap[c.remoteJid] = c.pushName;
+            }
         });
-        const data = await response.json();
-        // Garantir que seja array
-        res.json(Array.isArray(data) ? data : (data.data || []));
+        
+        // Enriquecer chats com nomes dos contatos
+        const enrichedChats = chats.map(chat => {
+            const jid = chat.remoteJid || chat.id;
+            
+            // Tentar pegar nome de várias fontes
+            let name = chat.pushName || 
+                       chat.name || 
+                       contactsMap[jid] ||
+                       chat.lastMessage?.pushName;
+            
+            // Se ainda não tem nome, verificar se é @lid (Lead ID do Meta)
+            if (!name && jid && jid.includes('@lid')) {
+                // Para leads do Meta, pegar do remoteJidAlt se existir
+                const altJid = chat.lastMessage?.key?.remoteJidAlt;
+                if (altJid && contactsMap[altJid]) {
+                    name = contactsMap[altJid];
+                } else {
+                    name = 'Lead (Anúncio)';
+                }
+            }
+            
+            // Se ainda não tem nome, formatar telefone
+            if (!name && jid) {
+                const phone = jid.replace('@s.whatsapp.net', '').replace('@lid', '');
+                if (phone.length > 8) {
+                    name = `+${phone.slice(0,2)} ${phone.slice(2)}`;
+                } else {
+                    name = phone;
+                }
+            }
+            
+            return {
+                ...chat,
+                name: name || 'Desconhecido',
+                pushName: name || chat.pushName
+            };
+        });
+        
+        res.json(enrichedChats);
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: error.message });
@@ -554,11 +608,13 @@ app.post('/api/whatsapp/send-message', async (req, res) => {
     try {
         const { number, text } = req.body; 
         
-        // Normalizar número
+        // Normalizar número (aceitar @lid ou @s.whatsapp.net)
         let remoteJid = number;
         if (!remoteJid.includes('@')) {
             remoteJid = remoteJid + '@s.whatsapp.net';
         }
+        
+        console.log(`[WhatsApp] Enviando mensagem para: ${remoteJid}`);
 
         const url = `${EVOLUTION_URL}/message/sendText/${INSTANCE_NAME}`;
         const response = await fetch(url, {
@@ -572,8 +628,16 @@ app.post('/api/whatsapp/send-message', async (req, res) => {
         });
         
         const data = await response.json();
-        res.json(data);
+        console.log(`[WhatsApp] Resposta:`, JSON.stringify(data).slice(0, 200));
+        
+        // Verificar se houve erro
+        if (data.error || data.status === 'error') {
+            return res.status(400).json({ error: data.message || data.error || 'Erro ao enviar mensagem' });
+        }
+        
+        res.json({ success: true, ...data });
     } catch (error) {
+        console.error('[WhatsApp] Erro ao enviar:', error.message);
         res.status(500).json({ error: error.message });
     }
 });
