@@ -668,8 +668,69 @@ app.post('/api/whatsapp/messages/fetch', async (req, res) => {
         });
         
         const data = await response.json();
+        
+        // Processar mensagens para adicionar URLs de mídia acessíveis
+        if (data && Array.isArray(data.messages)) {
+            data.messages = await Promise.all(data.messages.map(async (msg) => {
+                // Se tem audioMessage com mediaKey, gerar URL de download
+                if (msg.message?.audioMessage) {
+                    const audioMsg = msg.message.audioMessage;
+                    if (audioMsg.url) {
+                        // URL direta da Evolution API (já acessível)
+                        audioMsg.playableUrl = audioMsg.url;
+                    } else if (msg.key?.id) {
+                        // Criar URL de proxy local para baixar o áudio
+                        audioMsg.playableUrl = `/api/whatsapp/media/${msg.key.id}`;
+                    }
+                }
+                return msg;
+            }));
+        }
+        
         res.json(data);
     } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Endpoint para baixar mídia (proxy)
+app.get('/api/whatsapp/media/:messageId', async (req, res) => {
+    try {
+        const { messageId } = req.params;
+        
+        // Tentar baixar mídia da Evolution API
+        const url = `${EVOLUTION_URL}/chat/getBase64FromMediaMessage/${INSTANCE_NAME}`;
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: evolutionHeaders,
+            body: JSON.stringify({
+                message: {
+                    key: {
+                        id: messageId
+                    }
+                },
+                convertToMp4: false
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.base64) {
+            // Converter base64 para buffer e enviar
+            const base64Data = data.base64.includes(',') ? data.base64.split(',')[1] : data.base64;
+            const buffer = Buffer.from(base64Data, 'base64');
+            
+            // Detectar tipo de mídia
+            const mimeType = data.mimetype || 'audio/ogg';
+            
+            res.set('Content-Type', mimeType);
+            res.set('Content-Length', buffer.length);
+            res.send(buffer);
+        } else {
+            res.status(404).json({ error: 'Mídia não encontrada' });
+        }
+    } catch (error) {
+        console.error('[WhatsApp] Erro ao baixar mídia:', error.message);
         res.status(500).json({ error: error.message });
     }
 });
@@ -864,15 +925,17 @@ app.post('/api/whatsapp/send-media', async (req, res) => {
                 break;
             case 'audio':
                 endpoint = 'sendWhatsAppAudio';
-                // Evolution API v2 - áudio deve ser URL ou base64 válido
-                // Remover prefixo data: se existir e recriar no formato correto
+                // Evolution API v2 - converter base64 em buffer direto
                 let audioBase64 = media;
                 if (audioBase64.includes(',')) {
                     audioBase64 = audioBase64.split(',')[1]; // Pegar só o base64
                 }
-                // Enviar como data URI
-                body.audio = `data:audio/mp4;base64,${audioBase64}`;
+                
+                // Tentar enviar como base64 puro (sem data URI)
+                body.audio = audioBase64;
+                
                 console.log('[WhatsApp] Áudio base64 length:', audioBase64.length);
+                console.log('[WhatsApp] Body sendo enviado:', JSON.stringify({...body, audio: 'BASE64_OMITIDO'}).slice(0, 100));
                 break;
             case 'document':
                 endpoint = 'sendMedia';

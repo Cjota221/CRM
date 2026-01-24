@@ -626,7 +626,28 @@ async function loadMessages(remoteJid, isUpdate = false) {
                 const caption = m.videoMessage.caption || '';
                 content = `<div class="flex items-center gap-2"><span class="text-lg">🎬</span> <span>Vídeo${caption ? ': ' + caption : ''}</span></div>`;
             } else if (m?.audioMessage) {
-                content = `<div class="flex items-center gap-2"><span class="text-lg">🎵</span> <span>Áudio</span></div>`;
+                // Renderizar player de áudio
+                const audioUrl = m.audioMessage.playableUrl || m.audioMessage.url || '';
+                const duration = m.audioMessage.seconds || 0;
+                
+                if (audioUrl) {
+                    content = `
+                        <div class="flex flex-col gap-2">
+                            <div class="flex items-center gap-2">
+                                <span class="text-lg">🎵</span>
+                                <span class="text-xs text-gray-500">${duration}s</span>
+                            </div>
+                            <audio controls class="w-full max-w-xs h-8" preload="metadata" style="height: 32px;">
+                                <source src="${audioUrl}" type="audio/ogg; codecs=opus">
+                                <source src="${audioUrl}" type="audio/mpeg">
+                                <source src="${audioUrl}" type="audio/mp4">
+                                Seu navegador não suporta áudio.
+                            </audio>
+                        </div>
+                    `;
+                } else {
+                    content = `<div class="flex items-center gap-2"><span class="text-lg">🎵</span> <span>Áudio (${duration}s)</span></div>`;
+                }
             } else if (m?.documentMessage) {
                 const fileName = m.documentMessage.fileName || 'Documento';
                 content = `<div class="flex items-center gap-2"><span class="text-lg">📄</span> <span>${fileName}</span></div>`;
