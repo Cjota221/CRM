@@ -479,6 +479,180 @@ app.get('/api/whatsapp/chats', async (req, res) => {
     }
 });
 
+// 3.1 Listar Grupos
+app.get('/api/whatsapp/groups', async (req, res) => {
+    try {
+        const response = await fetch(`${EVOLUTION_URL}/group/fetchAllGroups/${INSTANCE_NAME}?getParticipants=true`, {
+            method: 'GET',
+            headers: evolutionHeaders
+        });
+        
+        const data = await response.json();
+        const groups = Array.isArray(data) ? data : (data.data || []);
+        
+        // Formatar grupos para o padrão do chat
+        const formattedGroups = groups.map(group => ({
+            remoteJid: group.id,
+            name: group.subject,
+            isGroup: true,
+            isCommunity: group.isCommunity || false,
+            profilePicUrl: group.pictureUrl || null,
+            participants: group.participants || [],
+            participantsCount: group.participants?.length || group.size || 0,
+            owner: group.owner,
+            creation: group.creation,
+            description: group.desc
+        }));
+        
+        res.json(formattedGroups);
+    } catch (error) {
+        console.error('[Grupos] Erro:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 3.2 Listar Chats + Grupos combinados
+app.get('/api/whatsapp/all-chats', async (req, res) => {
+    try {
+        // Buscar chats, contatos e grupos em paralelo
+        const [chatsResponse, contactsResponse, groupsResponse] = await Promise.all([
+            fetch(`${EVOLUTION_URL}/chat/findChats/${INSTANCE_NAME}`, { 
+                method: 'POST',
+                headers: evolutionHeaders,
+                body: JSON.stringify({
+                    where: {},
+                    options: { limit: 100, order: "DESC" }
+                })
+            }),
+            fetch(`${EVOLUTION_URL}/chat/findContacts/${INSTANCE_NAME}`, { 
+                method: 'POST',
+                headers: evolutionHeaders,
+                body: JSON.stringify({})
+            }),
+            fetch(`${EVOLUTION_URL}/group/fetchAllGroups/${INSTANCE_NAME}`, {
+                method: 'GET',
+                headers: evolutionHeaders
+            })
+        ]);
+        
+        const chatsData = await chatsResponse.json();
+        const contactsData = await contactsResponse.json();
+        const groupsData = await groupsResponse.json();
+        
+        const chats = Array.isArray(chatsData) ? chatsData : (chatsData.data || []);
+        const contacts = Array.isArray(contactsData) ? contactsData : (contactsData.data || []);
+        const groups = Array.isArray(groupsData) ? groupsData : (groupsData.data || []);
+        
+        // Criar mapa de contatos
+        const contactsMap = {};
+        contacts.forEach(c => {
+            if (c.remoteJid && c.pushName) {
+                contactsMap[c.remoteJid] = c.pushName;
+            }
+        });
+        
+        // Criar mapa de grupos
+        const groupsMap = {};
+        groups.forEach(g => {
+            groupsMap[g.id] = {
+                name: g.subject,
+                pictureUrl: g.pictureUrl,
+                isCommunity: g.isCommunity,
+                participantsCount: g.participants?.length || g.size || 0
+            };
+        });
+        
+        // Enriquecer chats
+        const enrichedChats = chats.map(chat => {
+            const jid = chat.remoteJid || chat.id;
+            const isGroup = jid?.includes('@g.us');
+            
+            let name, profilePicUrl, isGroupChat = isGroup, isCommunity = false, participantsCount = 0;
+            
+            if (isGroup && groupsMap[jid]) {
+                // É um grupo
+                name = groupsMap[jid].name;
+                profilePicUrl = groupsMap[jid].pictureUrl;
+                isCommunity = groupsMap[jid].isCommunity;
+                participantsCount = groupsMap[jid].participantsCount;
+            } else {
+                // É um contato individual
+                name = chat.pushName || 
+                       chat.name || 
+                       contactsMap[jid] ||
+                       chat.lastMessage?.pushName;
+                
+                if (!name && jid && jid.includes('@lid')) {
+                    const altJid = chat.lastMessage?.key?.remoteJidAlt;
+                    if (altJid && contactsMap[altJid]) {
+                        name = contactsMap[altJid];
+                    } else {
+                        name = 'Lead (Anúncio)';
+                    }
+                }
+                
+                if (!name && jid) {
+                    const phone = jid.replace('@s.whatsapp.net', '').replace('@lid', '');
+                    if (phone.length > 8) {
+                        name = `+${phone.slice(0,2)} ${phone.slice(2)}`;
+                    } else {
+                        name = phone;
+                    }
+                }
+                
+                profilePicUrl = chat.profilePicUrl;
+            }
+            
+            return {
+                ...chat,
+                name: name || 'Desconhecido',
+                pushName: name || chat.pushName,
+                profilePicUrl,
+                isGroup: isGroupChat,
+                isCommunity,
+                participantsCount
+            };
+        });
+        
+        // Adicionar grupos que não estão na lista de chats (sem mensagens recentes)
+        groups.forEach(group => {
+            if (!chats.find(c => (c.remoteJid || c.id) === group.id)) {
+                enrichedChats.push({
+                    remoteJid: group.id,
+                    name: group.subject,
+                    isGroup: true,
+                    isCommunity: group.isCommunity || false,
+                    profilePicUrl: group.pictureUrl,
+                    participantsCount: group.participants?.length || group.size || 0,
+                    lastMessage: null
+                });
+            }
+        });
+        
+        res.json(enrichedChats);
+    } catch (error) {
+        console.error('[All Chats] Erro:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 3.3 Buscar participantes de um grupo
+app.get('/api/whatsapp/group/:groupId/participants', async (req, res) => {
+    try {
+        const groupId = req.params.groupId;
+        const response = await fetch(`${EVOLUTION_URL}/group/participants/${INSTANCE_NAME}?groupJid=${groupId}`, {
+            method: 'GET',
+            headers: evolutionHeaders
+        });
+        
+        const data = await response.json();
+        res.json(data);
+    } catch (error) {
+        console.error('[Group Participants] Erro:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // 4. Listar Mensagens de um Chat
 app.post('/api/whatsapp/messages/fetch', async (req, res) => {
     try {
@@ -613,6 +787,11 @@ app.post('/api/whatsapp/send-message', async (req, res) => {
         if (phoneNumber.includes('@s.whatsapp.net')) {
             phoneNumber = phoneNumber.replace('@s.whatsapp.net', '');
         }
+        // Para grupos, manter @g.us
+        if (phoneNumber.includes('@g.us')) {
+            // Para grupos, enviar como está
+            phoneNumber = number;
+        }
         // Manter @lid se for lead do Meta
         if (phoneNumber.includes('@lid')) {
             // Para @lid, enviar como está
@@ -645,6 +824,78 @@ app.post('/api/whatsapp/send-message', async (req, res) => {
         res.json({ success: true, ...data });
     } catch (error) {
         console.error('[WhatsApp] Erro ao enviar:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 5.1 Enviar Mídia (Imagem, Vídeo, Áudio, Documento)
+app.post('/api/whatsapp/send-media', async (req, res) => {
+    try {
+        const { number, mediaType, media, caption, fileName } = req.body;
+        
+        // Normalizar número
+        let phoneNumber = number;
+        if (phoneNumber.includes('@s.whatsapp.net')) {
+            phoneNumber = phoneNumber.replace('@s.whatsapp.net', '');
+        }
+        // Manter @g.us para grupos
+        if (!phoneNumber.includes('@g.us') && !phoneNumber.includes('@lid')) {
+            phoneNumber = phoneNumber.replace(/@.*/, '');
+        }
+        
+        console.log(`[WhatsApp] Enviando ${mediaType} para: ${phoneNumber}`);
+        
+        // Determinar endpoint correto baseado no tipo de mídia
+        let endpoint;
+        let body = { number: phoneNumber };
+        
+        switch (mediaType) {
+            case 'image':
+                endpoint = 'sendMedia';
+                body.mediatype = 'image';
+                body.media = media;
+                body.caption = caption || '';
+                break;
+            case 'video':
+                endpoint = 'sendMedia';
+                body.mediatype = 'video';
+                body.media = media;
+                body.caption = caption || '';
+                break;
+            case 'audio':
+                endpoint = 'sendWhatsAppAudio';
+                body.audio = media;
+                break;
+            case 'document':
+                endpoint = 'sendMedia';
+                body.mediatype = 'document';
+                body.media = media;
+                body.caption = caption || '';
+                body.fileName = fileName || 'documento';
+                break;
+            default:
+                return res.status(400).json({ error: 'Tipo de mídia inválido' });
+        }
+        
+        const url = `${EVOLUTION_URL}/message/${endpoint}/${INSTANCE_NAME}`;
+        
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: evolutionHeaders,
+            body: JSON.stringify(body)
+        });
+        
+        const data = await response.json();
+        console.log(`[WhatsApp] Resposta mídia:`, JSON.stringify(data).slice(0, 200));
+        
+        if (data.error || data.status === 400 || data.status === 'error') {
+            console.error('[WhatsApp] Erro ao enviar mídia:', data);
+            return res.status(400).json({ error: data.response?.message || data.message || data.error || 'Erro ao enviar mídia' });
+        }
+        
+        res.json({ success: true, ...data });
+    } catch (error) {
+        console.error('[WhatsApp] Erro ao enviar mídia:', error.message);
         res.status(500).json({ error: error.message });
     }
 });

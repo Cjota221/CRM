@@ -4,6 +4,8 @@ let currentClient = null;
 let allClients = [];
 let allProducts = [];
 let allOrders = [];
+let allChats = []; // Armazena todos os chats para filtro
+let currentFilter = 'all'; // 'all', 'chats', 'groups'
 let chatRefreshInterval = null;
 
 const API_BASE = 'http://localhost:3000/api';
@@ -152,77 +154,45 @@ async function loadCRMData() {
 // ============================================================================
 // LISTAGEM DE CHATS
 // ============================================================================
+
+// Função de filtro das abas
+function filterChats(filter) {
+    currentFilter = filter;
+    
+    // Atualizar visual das abas
+    const tabs = ['filterAll', 'filterChats', 'filterGroups'];
+    tabs.forEach(tabId => {
+        const tab = document.getElementById(tabId);
+        if (tab) {
+            if ((filter === 'all' && tabId === 'filterAll') ||
+                (filter === 'chats' && tabId === 'filterChats') ||
+                (filter === 'groups' && tabId === 'filterGroups')) {
+                tab.classList.add('filter-tab-active');
+                tab.classList.remove('text-slate-500');
+            } else {
+                tab.classList.remove('filter-tab-active');
+                tab.classList.add('text-slate-500');
+            }
+        }
+    });
+    
+    // Re-renderizar lista filtrada
+    renderChatsList(allChats);
+    lucide.createIcons();
+}
+
 async function loadChats() {
     const listEl = document.getElementById('chatsList');
     try {
-        const res = await fetch(`${API_BASE}/whatsapp/chats`);
+        // Usar endpoint que inclui grupos
+        const res = await fetch(`${API_BASE}/whatsapp/all-chats`);
         const chats = await res.json();
         
-        listEl.innerHTML = '';
+        // Armazenar para filtros
+        allChats = Array.isArray(chats) ? chats : [];
         
-        if (!Array.isArray(chats) || chats.length === 0) {
-            listEl.innerHTML = '<p class="text-center text-gray-400 text-sm p-4">Nenhuma conversa encontrada.</p>';
-            return;
-        }
-
-        // Ordenar por data (assumindo campo date ou conversationTimestamp)
-        // Adjuste conforme retorno exato da sua versão da Evolution
-        
-        chats.forEach(chat => {
-            // Formatação básica: Usa remoteJid se id estiver vazio
-            const chatId = chat.id || chat.remoteJid;
-            const name = chat.name || chat.pushName || formatPhone(chatId);
-            const lastMsg = chat.lastMessage?.message?.conversation || 
-                           chat.lastMessage?.message?.extendedTextMessage?.text || 
-                           (chat.lastMessage?.message?.imageMessage ? '📷 Imagem' : 
-                           chat.lastMessage?.message?.audioMessage ? '🎵 Áudio' : 
-                           chat.lastMessage?.message?.videoMessage ? '🎬 Vídeo' : 
-                           chat.lastMessage?.message?.documentMessage ? '📄 Documento' : 
-                           'Mídia');
-            
-            // Formatar hora da última mensagem
-            const timestamp = chat.lastMessage?.messageTimestamp || chat.updatedAt;
-            let time = '';
-            if (timestamp) {
-                const date = typeof timestamp === 'number' ? new Date(timestamp * 1000) : new Date(timestamp);
-                const now = new Date();
-                const isToday = date.toDateString() === now.toDateString();
-                time = isToday ? date.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'}) : 
-                                 date.toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit'});
-            }
-            
-            // Foto do perfil
-            const profilePic = chat.profilePicUrl;
-            const avatarHtml = profilePic 
-                ? `<img src="${profilePic}" alt="${name}" class="w-10 h-10 rounded-full object-cover" onerror="this.outerHTML='<div class=\\'w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center font-bold text-gray-600\\'>${name.charAt(0).toUpperCase()}</div>'">`
-                : `<div class="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center font-bold text-gray-600">${name.charAt(0).toUpperCase()}</div>`;
-            
-            const div = document.createElement('div');
-            div.className = 'flex items-center gap-3 p-3 border-b hover:bg-gray-100 cursor-pointer transition-colors';
-            // Passa o objeto chat, mas garante que ele tenha ID para o click
-            chat.id = chatId; 
-            div.onclick = () => openChat(chat);
-            
-            // Indicador de mensagem não lida
-            const unreadBadge = chat.unreadCount > 0 
-                ? `<span class="bg-green-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">${chat.unreadCount}</span>` 
-                : '';
-            
-            div.innerHTML = `
-                ${avatarHtml}
-                <div class="flex-1 min-w-0">
-                    <div class="flex justify-between items-baseline">
-                        <h4 class="font-medium text-gray-800 truncate text-sm">${name}</h4>
-                        <span class="text-xs text-gray-400">${time}</span>
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <p class="text-xs text-gray-500 truncate flex-1">${lastMsg}</p>
-                        ${unreadBadge}
-                    </div>
-                </div>
-            `;
-            listEl.appendChild(div);
-        });
+        renderChatsList(allChats);
+        lucide.createIcons();
 
     } catch (e) {
         listEl.innerHTML = '<p class="text-center text-red-400 text-sm p-4">Erro ao listar chats.</p>';
@@ -230,11 +200,117 @@ async function loadChats() {
     }
 }
 
+function renderChatsList(chats) {
+    const listEl = document.getElementById('chatsList');
+    listEl.innerHTML = '';
+    
+    if (!Array.isArray(chats) || chats.length === 0) {
+        listEl.innerHTML = '<p class="text-center text-gray-400 text-sm p-4">Nenhuma conversa encontrada.</p>';
+        return;
+    }
+    
+    // Aplicar filtro
+    let filteredChats = chats;
+    if (currentFilter === 'chats') {
+        filteredChats = chats.filter(c => !c.isGroup);
+    } else if (currentFilter === 'groups') {
+        filteredChats = chats.filter(c => c.isGroup);
+    }
+    
+    if (filteredChats.length === 0) {
+        const msg = currentFilter === 'groups' ? 'Nenhum grupo encontrado.' : 'Nenhuma conversa individual encontrada.';
+        listEl.innerHTML = `<p class="text-center text-gray-400 text-sm p-4">${msg}</p>`;
+        return;
+    }
+    
+    filteredChats.forEach(chat => {
+        const chatId = chat.id || chat.remoteJid;
+        const name = chat.name || chat.pushName || formatPhone(chatId);
+        const isGroup = chat.isGroup || chatId?.includes('@g.us');
+        const isCommunity = chat.isCommunity;
+        
+        // Última mensagem
+        const lastMsg = chat.lastMessage?.message?.conversation || 
+                       chat.lastMessage?.message?.extendedTextMessage?.text || 
+                       (chat.lastMessage?.message?.imageMessage ? '📷 Imagem' : 
+                       chat.lastMessage?.message?.audioMessage ? '🎵 Áudio' : 
+                       chat.lastMessage?.message?.videoMessage ? '🎬 Vídeo' : 
+                       chat.lastMessage?.message?.documentMessage ? '📄 Documento' : 
+                       chat.lastMessage?.message?.stickerMessage ? '✨ Figurinha' :
+                       chat.lastMessage?.message?.contactMessage ? '👤 Contato' :
+                       chat.lastMessage?.message?.locationMessage ? '📍 Localização' :
+                       (chat.lastMessage ? 'Mídia' : ''));
+        
+        // Formatar hora
+        const timestamp = chat.lastMessage?.messageTimestamp || chat.updatedAt;
+        let time = '';
+        if (timestamp) {
+            const date = typeof timestamp === 'number' ? new Date(timestamp * 1000) : new Date(timestamp);
+            const now = new Date();
+            const isToday = date.toDateString() === now.toDateString();
+            time = isToday ? date.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'}) : 
+                             date.toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit'});
+        }
+        
+        // Avatar - diferencia grupo de contato
+        let avatarHtml;
+        if (isGroup) {
+            const iconClass = isCommunity ? 'community-icon' : 'group-icon';
+            const iconName = isCommunity ? 'building-2' : 'users';
+            if (chat.profilePicUrl) {
+                avatarHtml = `<img src="${chat.profilePicUrl}" alt="${name}" class="w-10 h-10 rounded-full object-cover" onerror="this.outerHTML='<div class=\\'w-10 h-10 rounded-full ${iconClass} flex items-center justify-center\\'><i data-lucide=\\'${iconName}\\' class=\\'w-5 h-5 text-white\\'></i></div>'">`;
+            } else {
+                avatarHtml = `<div class="w-10 h-10 rounded-full ${iconClass} flex items-center justify-center"><i data-lucide="${iconName}" class="w-5 h-5 text-white"></i></div>`;
+            }
+        } else {
+            const profilePic = chat.profilePicUrl;
+            avatarHtml = profilePic 
+                ? `<img src="${profilePic}" alt="${name}" class="w-10 h-10 rounded-full object-cover" onerror="this.outerHTML='<div class=\\'w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center font-bold text-gray-600\\'>${name.charAt(0).toUpperCase()}</div>'">`
+                : `<div class="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center font-bold text-gray-600">${name.charAt(0).toUpperCase()}</div>`;
+        }
+        
+        const div = document.createElement('div');
+        div.className = 'flex items-center gap-3 p-3 border-b hover:bg-gray-100 cursor-pointer transition-colors';
+        chat.id = chatId;
+        div.onclick = () => openChat(chat);
+        
+        // Indicador de mensagem não lida
+        const unreadBadge = chat.unreadCount > 0 
+            ? `<span class="bg-green-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">${chat.unreadCount}</span>` 
+            : '';
+        
+        // Indicador de participantes para grupos
+        const participantsInfo = isGroup && chat.participantsCount 
+            ? `<span class="text-xs text-slate-400">${chat.participantsCount} participantes</span>` 
+            : '';
+        
+        div.innerHTML = `
+            ${avatarHtml}
+            <div class="flex-1 min-w-0">
+                <div class="flex justify-between items-baseline">
+                    <h4 class="font-medium text-gray-800 truncate text-sm flex items-center gap-1">
+                        ${name}
+                        ${isCommunity ? '<span class="text-xs bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded">Comunidade</span>' : ''}
+                    </h4>
+                    <span class="text-xs text-gray-400">${time}</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <p class="text-xs text-gray-500 truncate flex-1">${lastMsg || participantsInfo}</p>
+                    ${unreadBadge}
+                </div>
+            </div>
+        `;
+        listEl.appendChild(div);
+    });
+}
+
 // ============================================================================
 // CHAT ATIVO
 // ============================================================================
 async function openChat(chat) {
     currentChatId = chat.id; // remoteJid
+    const isGroup = chat.isGroup || chat.id?.includes('@g.us');
+    const isCommunity = chat.isCommunity;
     
     // UI Update
     document.getElementById('chatHeader').classList.remove('hidden');
@@ -244,34 +320,97 @@ async function openChat(chat) {
     // Header Info
     const name = chat.name || chat.pushName || formatPhone(chat.id);
     document.getElementById('headerName').innerText = name;
-    document.getElementById('headerNumber').innerText = formatPhone(chat.id);
     
-    // Foto de perfil no header
+    // Subtítulo: número ou info do grupo
+    const headerNumber = document.getElementById('headerNumber');
+    if (isGroup) {
+        const participantsText = chat.participantsCount ? `${chat.participantsCount} participantes` : 'Grupo';
+        headerNumber.innerText = isCommunity ? `Comunidade • ${participantsText}` : participantsText;
+    } else {
+        headerNumber.innerText = formatPhone(chat.id);
+    }
+    
+    // Avatar no header
     const headerAvatar = document.getElementById('headerAvatar');
     const headerInitials = document.getElementById('headerInitials');
-    if (chat.profilePicUrl) {
-        if (headerAvatar) {
-            headerAvatar.src = chat.profilePicUrl;
-            headerAvatar.classList.remove('hidden');
+    
+    if (isGroup) {
+        // Avatar de grupo
+        if (chat.profilePicUrl) {
+            if (headerAvatar) {
+                headerAvatar.src = chat.profilePicUrl;
+                headerAvatar.classList.remove('hidden');
+            }
+            if (headerInitials) headerInitials.classList.add('hidden');
+        } else {
+            // Ícone de grupo
+            if (headerAvatar) headerAvatar.classList.add('hidden');
+            if (headerInitials) {
+                headerInitials.classList.remove('hidden');
+                headerInitials.innerHTML = isCommunity ? '🏢' : '👥';
+            }
         }
-        if (headerInitials) headerInitials.classList.add('hidden');
     } else {
-        if (headerAvatar) headerAvatar.classList.add('hidden');
-        if (headerInitials) {
-            headerInitials.classList.remove('hidden');
-            headerInitials.innerText = name.charAt(0).toUpperCase();
+        // Avatar de contato individual
+        if (chat.profilePicUrl) {
+            if (headerAvatar) {
+                headerAvatar.src = chat.profilePicUrl;
+                headerAvatar.classList.remove('hidden');
+            }
+            if (headerInitials) headerInitials.classList.add('hidden');
+        } else {
+            if (headerAvatar) headerAvatar.classList.add('hidden');
+            if (headerInitials) {
+                headerInitials.classList.remove('hidden');
+                headerInitials.innerText = name.charAt(0).toUpperCase();
+            }
         }
     }
     
     // Carregar Mensagens
     await loadMessages(currentChatId);
     
-    // Buscar Dados CRM
-    findAndRenderClientCRM(chat.id);
+    // Buscar Dados CRM (só para contatos individuais)
+    if (!isGroup) {
+        findAndRenderClientCRM(chat.id);
+    } else {
+        // Mostrar info do grupo no painel lateral
+        renderGroupInfo(chat);
+    }
     
     // Auto refresh (simples - polling a cada 5s)
     if (chatRefreshInterval) clearInterval(chatRefreshInterval);
     chatRefreshInterval = setInterval(() => loadMessages(currentChatId, true), 10000);
+}
+
+// Renderizar info do grupo no painel lateral
+function renderGroupInfo(group) {
+    const crmContainer = document.getElementById('crmDataContainer');
+    if (!crmContainer) return;
+    
+    const participantsHtml = group.participantsCount 
+        ? `<p class="text-sm text-slate-600"><strong>Participantes:</strong> ${group.participantsCount}</p>` 
+        : '';
+    
+    const descHtml = group.description 
+        ? `<p class="text-sm text-slate-600 mt-2"><strong>Descrição:</strong><br>${group.description}</p>` 
+        : '';
+    
+    crmContainer.innerHTML = `
+        <div class="space-y-3">
+            <div class="flex items-center gap-2">
+                <i data-lucide="users" class="w-5 h-5 text-emerald-500"></i>
+                <h3 class="font-semibold text-slate-800">${group.isCommunity ? 'Comunidade' : 'Grupo'}</h3>
+            </div>
+            <p class="text-sm text-slate-700 font-medium">${group.name}</p>
+            ${participantsHtml}
+            ${descHtml}
+            <div class="pt-3 border-t border-slate-200">
+                <p class="text-xs text-slate-400">Grupos não possuem dados no CRM</p>
+            </div>
+        </div>
+    `;
+    lucide.createIcons();
 }
 
 async function loadMessages(remoteJid, isUpdate = false) {
@@ -314,12 +453,44 @@ async function loadMessages(remoteJid, isUpdate = false) {
         
         sortedMsgs.forEach(msg => {
             const isMe = msg.key.fromMe;
-            const content = msg.message?.conversation || 
-                          msg.message?.extendedTextMessage?.text || 
-                          (msg.message?.imageMessage ? '[Imagem]' : '[Mídia/Outro]');
+            
+            // Extrair conteúdo da mensagem
+            let content = '';
+            const m = msg.message;
+            
+            if (m?.conversation) {
+                content = m.conversation;
+            } else if (m?.extendedTextMessage?.text) {
+                content = m.extendedTextMessage.text;
+            } else if (m?.imageMessage) {
+                const caption = m.imageMessage.caption || '';
+                content = `<div class="flex items-center gap-2"><span class="text-lg">📷</span> <span>Imagem${caption ? ': ' + caption : ''}</span></div>`;
+            } else if (m?.videoMessage) {
+                const caption = m.videoMessage.caption || '';
+                content = `<div class="flex items-center gap-2"><span class="text-lg">🎬</span> <span>Vídeo${caption ? ': ' + caption : ''}</span></div>`;
+            } else if (m?.audioMessage) {
+                content = `<div class="flex items-center gap-2"><span class="text-lg">🎵</span> <span>Áudio</span></div>`;
+            } else if (m?.documentMessage) {
+                const fileName = m.documentMessage.fileName || 'Documento';
+                content = `<div class="flex items-center gap-2"><span class="text-lg">📄</span> <span>${fileName}</span></div>`;
+            } else if (m?.stickerMessage) {
+                content = `<div class="flex items-center gap-2"><span class="text-lg">✨</span> <span>Figurinha</span></div>`;
+            } else if (m?.contactMessage) {
+                const name = m.contactMessage.displayName || 'Contato';
+                content = `<div class="flex items-center gap-2"><span class="text-lg">👤</span> <span>${name}</span></div>`;
+            } else if (m?.locationMessage) {
+                content = `<div class="flex items-center gap-2"><span class="text-lg">📍</span> <span>Localização</span></div>`;
+            } else {
+                content = '<span class="text-slate-400 italic">Mensagem não suportada</span>';
+            }
+            
+            // Converter links em clicáveis
+            if (typeof content === 'string' && !content.includes('<')) {
+                content = content.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" class="underline">$1</a>');
+            }
             
             const div = document.createElement('div');
-            div.className = `p-3 max-w-[70%] text-sm shadow-sm ${isMe ? 'msg-out bg-green-100' : 'msg-in bg-white'}`;
+            div.className = `p-3 max-w-[70%] text-sm shadow-sm ${isMe ? 'msg-out' : 'msg-in'}`;
             div.innerHTML = `<p>${content}</p>`;
             
             // Container flex para alinhamento
@@ -341,6 +512,13 @@ async function loadMessages(remoteJid, isUpdate = false) {
 async function sendMessage() {
     const input = document.getElementById('inputMessage');
     const text = input.value.trim();
+    
+    // Verificar se há arquivo selecionado
+    if (selectedFile) {
+        await sendMedia();
+        return;
+    }
+    
     if (!text || !currentChatId) return;
     
     // UI otimista
@@ -348,7 +526,7 @@ async function sendMessage() {
     const container = document.getElementById('messagesContainer');
     const wrap = document.createElement('div');
     wrap.className = 'w-full flex justify-end opacity-50'; // Opacity indica enviando
-    wrap.innerHTML = `<div class="p-3 max-w-[70%] text-sm shadow-sm msg-out bg-green-50"><p>${text}</p></div>`;
+    wrap.innerHTML = `<div class="p-3 max-w-[70%] text-sm shadow-sm msg-out"><p>${text}</p></div>`;
     container.appendChild(wrap);
     container.scrollTop = container.scrollHeight;
 
@@ -364,6 +542,153 @@ async function sendMessage() {
         alert('Erro ao enviar');
         wrap.remove();
     }
+}
+
+// ============================================================================
+// ENVIO DE MÍDIA
+// ============================================================================
+let selectedFile = null;
+let selectedMediaType = null;
+
+function toggleAttachMenu() {
+    const menu = document.getElementById('attachMenu');
+    menu.classList.toggle('hidden');
+}
+
+function selectFile(type) {
+    const fileInput = document.getElementById('fileInput');
+    selectedMediaType = type;
+    
+    // Configurar aceita
+    switch (type) {
+        case 'image':
+            fileInput.accept = 'image/*';
+            break;
+        case 'video':
+            fileInput.accept = 'video/*';
+            break;
+        case 'audio':
+            fileInput.accept = 'audio/*';
+            break;
+        case 'document':
+            fileInput.accept = '.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.rar';
+            break;
+    }
+    
+    fileInput.click();
+    toggleAttachMenu();
+}
+
+function handleFileSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    selectedFile = file;
+    
+    // Mostrar preview
+    const preview = document.getElementById('filePreview');
+    const thumb = document.getElementById('filePreviewThumb');
+    const name = document.getElementById('filePreviewName');
+    const size = document.getElementById('filePreviewSize');
+    
+    name.textContent = file.name;
+    size.textContent = formatFileSize(file.size);
+    
+    // Preview de imagem
+    if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            thumb.innerHTML = `<img src="${e.target.result}" class="w-full h-full object-cover">`;
+        };
+        reader.readAsDataURL(file);
+    } else if (file.type.startsWith('video/')) {
+        thumb.innerHTML = '<i data-lucide="video" class="w-6 h-6 text-blue-500"></i>';
+    } else if (file.type.startsWith('audio/')) {
+        thumb.innerHTML = '<i data-lucide="music" class="w-6 h-6 text-purple-500"></i>';
+    } else {
+        thumb.innerHTML = '<i data-lucide="file-text" class="w-6 h-6 text-orange-500"></i>';
+    }
+    
+    preview.classList.remove('hidden');
+    lucide.createIcons();
+}
+
+function clearFilePreview() {
+    selectedFile = null;
+    selectedMediaType = null;
+    document.getElementById('fileInput').value = '';
+    document.getElementById('filePreview').classList.add('hidden');
+    document.getElementById('fileCaption').value = '';
+}
+
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+async function sendMedia() {
+    if (!selectedFile || !currentChatId) return;
+    
+    const caption = document.getElementById('fileCaption')?.value || '';
+    const container = document.getElementById('messagesContainer');
+    
+    // UI otimista
+    const wrap = document.createElement('div');
+    wrap.className = 'w-full flex justify-end opacity-50';
+    wrap.innerHTML = `
+        <div class="p-3 max-w-[70%] text-sm shadow-sm msg-out">
+            <div class="flex items-center gap-2">
+                <i class="fas fa-spinner fa-spin"></i>
+                <span>Enviando ${selectedFile.name}...</span>
+            </div>
+        </div>
+    `;
+    container.appendChild(wrap);
+    container.scrollTop = container.scrollHeight;
+    
+    try {
+        // Converter arquivo para base64
+        const base64 = await fileToBase64(selectedFile);
+        
+        const response = await fetch(`${API_BASE}/whatsapp/send-media`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                number: currentChatId,
+                mediaType: selectedMediaType,
+                media: base64,
+                caption: caption,
+                fileName: selectedFile.name
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        
+        // Limpar preview e recarregar mensagens
+        clearFilePreview();
+        setTimeout(() => loadMessages(currentChatId), 1000);
+        
+    } catch (e) {
+        console.error('Erro ao enviar mídia:', e);
+        alert('Erro ao enviar arquivo: ' + e.message);
+        wrap.remove();
+    }
+}
+
+function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = error => reject(error);
+    });
 }
 
 // ============================================================================
