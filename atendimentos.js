@@ -174,9 +174,28 @@ async function loadChats() {
             const name = chat.name || chat.pushName || formatPhone(chatId);
             const lastMsg = chat.lastMessage?.message?.conversation || 
                            chat.lastMessage?.message?.extendedTextMessage?.text || 
-                           'Imagem/Audio';
-            // Converter timestamp se existir
-            const time = ''; // Implementar formatação de hora
+                           (chat.lastMessage?.message?.imageMessage ? '📷 Imagem' : 
+                           chat.lastMessage?.message?.audioMessage ? '🎵 Áudio' : 
+                           chat.lastMessage?.message?.videoMessage ? '🎬 Vídeo' : 
+                           chat.lastMessage?.message?.documentMessage ? '📄 Documento' : 
+                           'Mídia');
+            
+            // Formatar hora da última mensagem
+            const timestamp = chat.lastMessage?.messageTimestamp || chat.updatedAt;
+            let time = '';
+            if (timestamp) {
+                const date = typeof timestamp === 'number' ? new Date(timestamp * 1000) : new Date(timestamp);
+                const now = new Date();
+                const isToday = date.toDateString() === now.toDateString();
+                time = isToday ? date.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'}) : 
+                                 date.toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit'});
+            }
+            
+            // Foto do perfil
+            const profilePic = chat.profilePicUrl;
+            const avatarHtml = profilePic 
+                ? `<img src="${profilePic}" alt="${name}" class="w-10 h-10 rounded-full object-cover" onerror="this.outerHTML='<div class=\\'w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center font-bold text-gray-600\\'>${name.charAt(0).toUpperCase()}</div>'">`
+                : `<div class="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center font-bold text-gray-600">${name.charAt(0).toUpperCase()}</div>`;
             
             const div = document.createElement('div');
             div.className = 'flex items-center gap-3 p-3 border-b hover:bg-gray-100 cursor-pointer transition-colors';
@@ -184,16 +203,22 @@ async function loadChats() {
             chat.id = chatId; 
             div.onclick = () => openChat(chat);
             
+            // Indicador de mensagem não lida
+            const unreadBadge = chat.unreadCount > 0 
+                ? `<span class="bg-green-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">${chat.unreadCount}</span>` 
+                : '';
+            
             div.innerHTML = `
-                <div class="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center font-bold text-gray-600">
-                    ${name.charAt(0).toUpperCase()}
-                </div>
+                ${avatarHtml}
                 <div class="flex-1 min-w-0">
                     <div class="flex justify-between items-baseline">
                         <h4 class="font-medium text-gray-800 truncate text-sm">${name}</h4>
                         <span class="text-xs text-gray-400">${time}</span>
                     </div>
-                    <p class="text-xs text-gray-500 truncate h-4">${lastMsg}</p>
+                    <div class="flex justify-between items-center">
+                        <p class="text-xs text-gray-500 truncate flex-1">${lastMsg}</p>
+                        ${unreadBadge}
+                    </div>
                 </div>
             `;
             listEl.appendChild(div);
@@ -219,8 +244,24 @@ async function openChat(chat) {
     // Header Info
     const name = chat.name || chat.pushName || formatPhone(chat.id);
     document.getElementById('headerName').innerText = name;
-    document.getElementById('headerInitials').innerText = name.charAt(0).toUpperCase();
     document.getElementById('headerNumber').innerText = formatPhone(chat.id);
+    
+    // Foto de perfil no header
+    const headerAvatar = document.getElementById('headerAvatar');
+    const headerInitials = document.getElementById('headerInitials');
+    if (chat.profilePicUrl) {
+        if (headerAvatar) {
+            headerAvatar.src = chat.profilePicUrl;
+            headerAvatar.classList.remove('hidden');
+        }
+        if (headerInitials) headerInitials.classList.add('hidden');
+    } else {
+        if (headerAvatar) headerAvatar.classList.add('hidden');
+        if (headerInitials) {
+            headerInitials.classList.remove('hidden');
+            headerInitials.innerText = name.charAt(0).toUpperCase();
+        }
+    }
     
     // Carregar Mensagens
     await loadMessages(currentChatId);
