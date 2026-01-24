@@ -608,22 +608,28 @@ app.post('/api/whatsapp/send-message', async (req, res) => {
     try {
         const { number, text } = req.body; 
         
-        // Normalizar número (aceitar @lid ou @s.whatsapp.net)
-        let remoteJid = number;
-        if (!remoteJid.includes('@')) {
-            remoteJid = remoteJid + '@s.whatsapp.net';
+        // Normalizar número - remover @s.whatsapp.net se presente (a API adiciona automaticamente)
+        let phoneNumber = number;
+        if (phoneNumber.includes('@s.whatsapp.net')) {
+            phoneNumber = phoneNumber.replace('@s.whatsapp.net', '');
+        }
+        // Manter @lid se for lead do Meta
+        if (phoneNumber.includes('@lid')) {
+            // Para @lid, enviar como está
+            phoneNumber = number;
         }
         
-        console.log(`[WhatsApp] Enviando mensagem para: ${remoteJid}`);
+        console.log(`[WhatsApp] Enviando mensagem para: ${phoneNumber}`);
 
         const url = `${EVOLUTION_URL}/message/sendText/${INSTANCE_NAME}`;
+        
+        // Evolution API v2 - formato correto
         const response = await fetch(url, {
             method: 'POST',
             headers: evolutionHeaders,
             body: JSON.stringify({
-                number: remoteJid,
-                options: { delay: 1200, presence: 'composing' },
-                textMessage: { text: text }
+                number: phoneNumber,
+                text: text
             })
         });
         
@@ -631,8 +637,9 @@ app.post('/api/whatsapp/send-message', async (req, res) => {
         console.log(`[WhatsApp] Resposta:`, JSON.stringify(data).slice(0, 200));
         
         // Verificar se houve erro
-        if (data.error || data.status === 'error') {
-            return res.status(400).json({ error: data.message || data.error || 'Erro ao enviar mensagem' });
+        if (data.error || data.status === 400 || data.status === 'error') {
+            console.error('[WhatsApp] Erro na resposta:', data);
+            return res.status(400).json({ error: data.response?.message || data.message || data.error || 'Erro ao enviar mensagem' });
         }
         
         res.json({ success: true, ...data });
