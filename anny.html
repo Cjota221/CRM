@@ -51,6 +51,8 @@
         .btn-secondary:hover { background-color: #e2e8f0; }
         .btn-success { background-color: #059669; color: white; }
         .btn-success:hover { background-color: #047857; }
+        .btn-recording { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important; color: white !important; animation: pulse-recording 1.5s infinite; }
+        @keyframes pulse-recording { 0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); } 50% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } }
         
         .input { width: 100%; padding: 0.625rem 1rem; font-size: 0.875rem; border: 1px solid #e2e8f0; border-radius: 0.75rem; background: white; transition: all 0.15s ease; }
         .input:focus { outline: none; border-color: #a855f7; box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.1); }
@@ -220,12 +222,18 @@
                     <!-- Input Area -->
                     <div class="bg-white border-t border-slate-100 p-4">
                         <form id="chat-form" class="flex gap-3">
-                            <input type="text" id="chat-input" class="input flex-1" placeholder="Digite sua pergunta para a Anny..." autocomplete="off">
+                            <input type="text" id="chat-input" class="input flex-1" placeholder="Digite ou clique no microfone para falar..." autocomplete="off">
+                            <button type="button" id="voice-btn" onclick="toggleVoiceRecognition()" class="btn btn-secondary" title="Falar com a Anny">
+                                <i data-lucide="mic" class="w-4 h-4" id="mic-icon"></i>
+                            </button>
                             <button type="submit" class="btn btn-anny">
                                 <i data-lucide="send" class="w-4 h-4"></i>
                                 Enviar
                             </button>
                         </form>
+                        <div id="voice-status" class="text-xs text-center mt-2 hidden">
+                            <span class="text-purple-600 animate-pulse">🎤 Ouvindo... Fale agora!</span>
+                        </div>
                     </div>
                 </div>
 
@@ -695,9 +703,149 @@
             }
         };
 
+        // ============================================================================
+        // RECONHECIMENTO DE VOZ - Fale com a Anny!
+        // ============================================================================
+        let recognition = null;
+        let isRecording = false;
+
+        function initVoiceRecognition() {
+            // Verificar suporte do navegador
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            
+            if (!SpeechRecognition) {
+                console.warn('Navegador não suporta reconhecimento de voz');
+                const voiceBtn = document.getElementById('voice-btn');
+                if (voiceBtn) {
+                    voiceBtn.style.display = 'none';
+                }
+                return;
+            }
+
+            recognition = new SpeechRecognition();
+            recognition.lang = 'pt-BR';
+            recognition.continuous = false;
+            recognition.interimResults = true;
+            recognition.maxAlternatives = 1;
+
+            recognition.onstart = () => {
+                isRecording = true;
+                updateVoiceUI(true);
+                console.log('[Voz] Gravação iniciada');
+            };
+
+            recognition.onresult = (event) => {
+                const input = document.getElementById('chat-input');
+                let finalTranscript = '';
+                let interimTranscript = '';
+
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalTranscript += transcript;
+                    } else {
+                        interimTranscript += transcript;
+                    }
+                }
+
+                // Mostrar texto enquanto fala
+                if (interimTranscript) {
+                    input.value = interimTranscript;
+                    input.style.fontStyle = 'italic';
+                    input.style.color = '#9ca3af';
+                }
+
+                // Texto final
+                if (finalTranscript) {
+                    input.value = finalTranscript;
+                    input.style.fontStyle = 'normal';
+                    input.style.color = '#1e293b';
+                }
+            };
+
+            recognition.onend = () => {
+                isRecording = false;
+                updateVoiceUI(false);
+                console.log('[Voz] Gravação finalizada');
+
+                // Se tiver texto, enviar automaticamente
+                const input = document.getElementById('chat-input');
+                if (input && input.value.trim()) {
+                    // Pequeno delay para o usuário ver o texto antes de enviar
+                    setTimeout(() => {
+                        document.getElementById('chat-form').dispatchEvent(new Event('submit'));
+                    }, 500);
+                }
+            };
+
+            recognition.onerror = (event) => {
+                console.error('[Voz] Erro:', event.error);
+                isRecording = false;
+                updateVoiceUI(false);
+
+                if (event.error === 'not-allowed') {
+                    alert('⚠️ Permissão de microfone negada!\n\nPara usar a voz, permita o acesso ao microfone nas configurações do navegador.');
+                } else if (event.error === 'no-speech') {
+                    // Não mostrar erro se apenas não falou nada
+                    console.log('[Voz] Nenhuma fala detectada');
+                }
+            };
+        }
+
+        function toggleVoiceRecognition() {
+            if (!recognition) {
+                initVoiceRecognition();
+                if (!recognition) {
+                    alert('😕 Seu navegador não suporta reconhecimento de voz.\n\nTente usar o Chrome ou Edge.');
+                    return;
+                }
+            }
+
+            if (isRecording) {
+                recognition.stop();
+            } else {
+                // Limpar input antes de começar
+                const input = document.getElementById('chat-input');
+                if (input) input.value = '';
+                
+                try {
+                    recognition.start();
+                } catch (e) {
+                    console.error('[Voz] Erro ao iniciar:', e);
+                    // Se já estiver rodando, para e inicia novamente
+                    recognition.stop();
+                    setTimeout(() => recognition.start(), 100);
+                }
+            }
+        }
+
+        function updateVoiceUI(recording) {
+            const voiceBtn = document.getElementById('voice-btn');
+            const voiceStatus = document.getElementById('voice-status');
+            const input = document.getElementById('chat-input');
+
+            if (recording) {
+                voiceBtn.classList.add('btn-recording');
+                voiceBtn.classList.remove('btn-secondary');
+                voiceBtn.innerHTML = '<i data-lucide="mic-off" class="w-4 h-4"></i>';
+                voiceStatus.classList.remove('hidden');
+                input.placeholder = 'Ouvindo... fale agora!';
+            } else {
+                voiceBtn.classList.remove('btn-recording');
+                voiceBtn.classList.add('btn-secondary');
+                voiceBtn.innerHTML = '<i data-lucide="mic" class="w-4 h-4"></i>';
+                voiceStatus.classList.add('hidden');
+                input.placeholder = 'Digite ou clique no microfone para falar...';
+                input.style.fontStyle = 'normal';
+                input.style.color = '#1e293b';
+            }
+            lucide.createIcons();
+        }
+
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', () => {
             AnnyChat.init();
+            initVoiceRecognition();
             // Verificar contexto da Vigilante após inicializar
             setTimeout(() => AnnyChat.checkVigilanteContext(), 500);
         });
