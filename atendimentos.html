@@ -192,7 +192,7 @@
                     </button>
                 </div>
                 <!-- Abas de Filtro -->
-                <div class="flex gap-1 bg-slate-100 p-1 rounded-lg">
+                <div class="flex gap-1 bg-slate-100 p-1 rounded-lg mb-2">
                     <button onclick="filterChats('all')" id="filterAll" class="flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors bg-white text-slate-700 shadow-sm">
                         Todos
                     </button>
@@ -201,6 +201,18 @@
                     </button>
                     <button onclick="filterChats('groups')" id="filterGroups" class="flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 hover:text-slate-700">
                         <i data-lucide="users" class="w-3 h-3 inline mr-1"></i>Grupos
+                    </button>
+                </div>
+                <!-- Filtros Inteligentes -->
+                <div class="flex gap-1 flex-wrap">
+                    <button onclick="filterChats('vacuum')" id="filterVacuum" class="px-2 py-1 rounded-md text-xs font-medium transition-colors text-red-500 hover:bg-red-50 border border-red-200" title="Sem resposta há mais de 4h">
+                        <i data-lucide="alert-circle" class="w-3 h-3 inline mr-1"></i>Vácuo
+                    </button>
+                    <button onclick="filterChats('snoozed')" id="filterSnoozed" class="px-2 py-1 rounded-md text-xs font-medium transition-colors text-amber-500 hover:bg-amber-50 border border-amber-200" title="Conversas adiadas">
+                        <i data-lucide="alarm-clock" class="w-3 h-3 inline mr-1"></i>Adiados
+                    </button>
+                    <button onclick="openTagFilterModal()" id="filterByTag" class="px-2 py-1 rounded-md text-xs font-medium transition-colors text-blue-500 hover:bg-blue-50 border border-blue-200" title="Filtrar por etiqueta">
+                        <i data-lucide="tag" class="w-3 h-3 inline mr-1"></i>Tags
                     </button>
                 </div>
             </div>
@@ -228,10 +240,27 @@
                         <p id="headerNumber" class="text-xs text-slate-500">+55 00 0000-0000</p>
                     </div>
                 </div>
-                <button onclick="openProductModal()" class="btn btn-primary text-sm py-2">
-                    <i data-lucide="package" class="w-4 h-4"></i>
-                    Enviar Produtos
-                </button>
+                
+                <!-- Área de Tags -->
+                <div class="flex items-center gap-2">
+                    <div id="chatTags" class="flex gap-1 flex-wrap max-w-[200px]"></div>
+                    <button onclick="openTagsModal()" class="btn btn-secondary text-xs py-1.5 px-2" title="Gerenciar etiquetas">
+                        <i data-lucide="tag" class="w-3.5 h-3.5"></i>
+                    </button>
+                    <button onclick="openSnoozeModal()" class="btn btn-secondary text-xs py-1.5 px-2" title="Adiar conversa">
+                        <i data-lucide="alarm-clock" class="w-3.5 h-3.5"></i>
+                    </button>
+                </div>
+                
+                <div class="flex items-center gap-2">
+                    <button onclick="openQuickReplies()" class="btn btn-secondary text-sm py-2" title="Mensagens rápidas">
+                        <i data-lucide="zap" class="w-4 h-4"></i>
+                    </button>
+                    <button onclick="openProductModal()" class="btn btn-primary text-sm py-2">
+                        <i data-lucide="package" class="w-4 h-4"></i>
+                        Produtos
+                    </button>
+                </div>
             </div>
 
             <!-- Área de Mensagens -->
@@ -289,7 +318,28 @@
                     </div>
                     
                     <input type="file" id="fileInput" class="hidden" onchange="handleFileSelect(event)">
-                    <input id="inputMessage" type="text" class="flex-1 input" placeholder="Digite sua mensagem...">
+                    
+                    <!-- Botão Mensagens Rápidas -->
+                    <button onclick="openQuickReplies()" class="text-slate-400 hover:text-slate-600 p-2 rounded-lg hover:bg-slate-100 transition-colors" title="Mensagens rápidas (/)">
+                        <i data-lucide="zap" class="w-5 h-5"></i>
+                    </button>
+                    
+                    <input id="inputMessage" type="text" class="flex-1 input" placeholder="Digite sua mensagem... (/ para atalhos)">
+                    
+                    <!-- Botão Gravar Áudio -->
+                    <button id="btnRecordAudio" onmousedown="startRecording()" onmouseup="stopRecording()" ontouchstart="startRecording()" ontouchend="stopRecording()" class="text-slate-400 hover:text-emerald-600 p-2 rounded-lg hover:bg-emerald-50 transition-colors" title="Segurar para gravar áudio">
+                        <i data-lucide="mic" class="w-5 h-5"></i>
+                    </button>
+                    
+                    <!-- Indicador de Gravação -->
+                    <div id="recordingIndicator" class="hidden items-center gap-2 px-3 py-1 bg-red-50 rounded-lg border border-red-200">
+                        <span class="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+                        <span id="recordingTime" class="text-sm text-red-600 font-medium">0:00</span>
+                        <button onclick="cancelRecording()" class="text-red-400 hover:text-red-600">
+                            <i data-lucide="x" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                    
                     <button onclick="sendMessage()" class="btn btn-success px-4">
                         <i data-lucide="send" class="w-4 h-4"></i>
                         Enviar
@@ -364,6 +414,152 @@
             <button onclick="document.getElementById('qrModal').classList.add('hidden')" class="btn btn-secondary w-full">
                 Fechar
             </button>
+        </div>
+    </div>
+
+    <!-- Modal de Etiquetas -->
+    <div id="tagsModal" class="fixed inset-0 hidden z-50 flex items-center justify-center">
+        <div class="fixed inset-0 modal-overlay" onclick="closeTagsModal()"></div>
+        <div class="relative bg-white w-[400px] rounded-2xl shadow-xl">
+            <div class="p-5 border-b border-slate-100 flex justify-between items-center">
+                <h3 class="font-semibold text-slate-800">Etiquetas</h3>
+                <button onclick="closeTagsModal()" class="text-slate-400 hover:text-slate-600">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-4">
+                <p class="text-xs text-slate-500 mb-3">Selecione as etiquetas para este contato:</p>
+                <div id="tagsList" class="space-y-2 max-h-[300px] overflow-y-auto">
+                    <!-- Tags serão renderizadas aqui -->
+                </div>
+                <div class="mt-4 pt-4 border-t border-slate-100">
+                    <div class="flex gap-2">
+                        <input type="text" id="newTagName" placeholder="Nova etiqueta..." class="input flex-1 text-sm">
+                        <select id="newTagColor" class="input w-24 text-sm">
+                            <option value="#ef4444">🔴</option>
+                            <option value="#f97316">🟠</option>
+                            <option value="#eab308">🟡</option>
+                            <option value="#22c55e">🟢</option>
+                            <option value="#3b82f6">🔵</option>
+                            <option value="#8b5cf6">🟣</option>
+                            <option value="#6b7280">⚫</option>
+                        </select>
+                        <button onclick="createTag()" class="btn btn-primary px-3">
+                            <i data-lucide="plus" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Mensagens Rápidas -->
+    <div id="quickRepliesModal" class="fixed inset-0 hidden z-50 flex items-center justify-center">
+        <div class="fixed inset-0 modal-overlay" onclick="closeQuickReplies()"></div>
+        <div class="relative bg-white w-[500px] max-h-[80vh] rounded-2xl shadow-xl flex flex-col">
+            <div class="p-5 border-b border-slate-100 flex justify-between items-center">
+                <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center">
+                        <i data-lucide="zap" class="w-5 h-5 text-amber-600"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-slate-800">Mensagens Rápidas</h3>
+                        <p class="text-xs text-slate-500">Use variáveis: {{nome}}, {{ultimo_pedido}}</p>
+                    </div>
+                </div>
+                <button onclick="closeQuickReplies()" class="text-slate-400 hover:text-slate-600">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-4 bg-slate-50 border-b border-slate-100">
+                <input type="text" id="searchQuickReply" onkeyup="filterQuickReplies(this.value)" placeholder="Buscar resposta..." class="input text-sm">
+            </div>
+            <div id="quickRepliesList" class="flex-1 overflow-y-auto p-4 space-y-2">
+                <!-- Respostas serão renderizadas aqui -->
+            </div>
+            <div class="p-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl">
+                <button onclick="openNewQuickReply()" class="btn btn-primary w-full">
+                    <i data-lucide="plus" class="w-4 h-4"></i>
+                    Nova Mensagem Rápida
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Nova/Editar Mensagem Rápida -->
+    <div id="editQuickReplyModal" class="fixed inset-0 hidden z-50 flex items-center justify-center">
+        <div class="fixed inset-0 modal-overlay" onclick="closeEditQuickReply()"></div>
+        <div class="relative bg-white w-[500px] rounded-2xl shadow-xl">
+            <div class="p-5 border-b border-slate-100">
+                <h3 id="editQuickReplyTitle" class="font-semibold text-slate-800">Nova Mensagem Rápida</h3>
+            </div>
+            <div class="p-5 space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Atalho</label>
+                    <input type="text" id="qrShortcut" placeholder="ex: ola, preco, rastreio" class="input">
+                    <p class="text-xs text-slate-400 mt-1">Digite /atalho no chat para usar</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Mensagem</label>
+                    <textarea id="qrMessage" rows="5" placeholder="Olá {{nome}}, tudo bem?" class="input resize-none"></textarea>
+                    <div class="flex gap-2 mt-2">
+                        <button onclick="insertVariable('nome')" class="text-xs px-2 py-1 bg-slate-100 rounded hover:bg-slate-200">{{nome}}</button>
+                        <button onclick="insertVariable('ultimo_pedido')" class="text-xs px-2 py-1 bg-slate-100 rounded hover:bg-slate-200">{{ultimo_pedido}}</button>
+                        <button onclick="insertVariable('telefone')" class="text-xs px-2 py-1 bg-slate-100 rounded hover:bg-slate-200">{{telefone}}</button>
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 border-t border-slate-100 flex justify-end gap-2">
+                <button onclick="closeEditQuickReply()" class="btn btn-secondary">Cancelar</button>
+                <button onclick="saveQuickReply()" class="btn btn-primary">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Snooze (Soneca) -->
+    <div id="snoozeModal" class="fixed inset-0 hidden z-50 flex items-center justify-center">
+        <div class="fixed inset-0 modal-overlay" onclick="closeSnoozeModal()"></div>
+        <div class="relative bg-white w-[350px] rounded-2xl shadow-xl">
+            <div class="p-5 border-b border-slate-100 flex justify-between items-center">
+                <h3 class="font-semibold text-slate-800">Adiar Conversa</h3>
+                <button onclick="closeSnoozeModal()" class="text-slate-400 hover:text-slate-600">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-4 space-y-2">
+                <button onclick="snoozeChat(1)" class="w-full p-3 text-left rounded-lg hover:bg-slate-50 flex items-center gap-3 border border-slate-200">
+                    <i data-lucide="sun" class="w-5 h-5 text-amber-500"></i>
+                    <div>
+                        <p class="font-medium text-slate-700">Amanhã</p>
+                        <p class="text-xs text-slate-400">Reaparece às 09:00</p>
+                    </div>
+                </button>
+                <button onclick="snoozeChat(3)" class="w-full p-3 text-left rounded-lg hover:bg-slate-50 flex items-center gap-3 border border-slate-200">
+                    <i data-lucide="calendar" class="w-5 h-5 text-blue-500"></i>
+                    <div>
+                        <p class="font-medium text-slate-700">Em 3 dias</p>
+                        <p class="text-xs text-slate-400">Próxima semana</p>
+                    </div>
+                </button>
+                <button onclick="snoozeChat(7)" class="w-full p-3 text-left rounded-lg hover:bg-slate-50 flex items-center gap-3 border border-slate-200">
+                    <i data-lucide="calendar-days" class="w-5 h-5 text-purple-500"></i>
+                    <div>
+                        <p class="font-medium text-slate-700">Em 1 semana</p>
+                        <p class="text-xs text-slate-400">Daqui a 7 dias</p>
+                    </div>
+                </button>
+                <button onclick="snoozeChat(30)" class="w-full p-3 text-left rounded-lg hover:bg-slate-50 flex items-center gap-3 border border-slate-200">
+                    <i data-lucide="calendar-range" class="w-5 h-5 text-emerald-500"></i>
+                    <div>
+                        <p class="font-medium text-slate-700">Em 1 mês</p>
+                        <p class="text-xs text-slate-400">Daqui a 30 dias</p>
+                    </div>
+                </button>
+                <div class="pt-2 border-t border-slate-100 mt-2">
+                    <label class="block text-xs text-slate-500 mb-1">Data personalizada:</label>
+                    <input type="date" id="customSnoozeDate" class="input text-sm" onchange="snoozeCustom()">
+                </div>
+            </div>
         </div>
     </div>
 

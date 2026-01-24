@@ -1,14 +1,58 @@
 // Variáveis de Estado
 let currentChatId = null;
 let currentClient = null;
+let currentChatData = null; // Dados completos do chat atual
 let allClients = [];
 let allProducts = [];
 let allOrders = [];
 let allChats = []; // Armazena todos os chats para filtro
-let currentFilter = 'all'; // 'all', 'chats', 'groups'
+let currentFilter = 'all'; // 'all', 'chats', 'groups', 'vacuum', 'snoozed'
+let currentTagFilter = null;
 let chatRefreshInterval = null;
 
+// Sistema de Tags
+let allTags = JSON.parse(localStorage.getItem('crm_tags') || '[]');
+let chatTags = JSON.parse(localStorage.getItem('crm_chat_tags') || '{}'); // { chatId: [tagId, tagId] }
+
+// Sistema de Mensagens Rápidas
+let quickReplies = JSON.parse(localStorage.getItem('crm_quick_replies') || '[]');
+let editingQuickReplyId = null;
+
+// Sistema de Snooze
+let snoozedChats = JSON.parse(localStorage.getItem('crm_snoozed') || '{}'); // { chatId: timestamp }
+
+// Gravação de Áudio
+let mediaRecorder = null;
+let audioChunks = [];
+let recordingStartTime = null;
+let recordingInterval = null;
+
 const API_BASE = 'http://localhost:3000/api';
+
+// Inicializar tags padrão se não existirem
+if (allTags.length === 0) {
+    allTags = [
+        { id: 1, name: 'Urgente', color: '#ef4444', trigger: null },
+        { id: 2, name: 'Lead Quente', color: '#f97316', trigger: 'status:lead_quente' },
+        { id: 3, name: 'Atacado', color: '#22c55e', trigger: 'status:atacado' },
+        { id: 4, name: 'Franqueada', color: '#8b5cf6', trigger: 'type:franqueada' },
+        { id: 5, name: 'Pendente Pagamento', color: '#eab308', trigger: null },
+        { id: 6, name: 'Aguardando Resposta', color: '#3b82f6', trigger: null }
+    ];
+    localStorage.setItem('crm_tags', JSON.stringify(allTags));
+}
+
+// Inicializar mensagens rápidas padrão
+if (quickReplies.length === 0) {
+    quickReplies = [
+        { id: 1, shortcut: 'ola', message: 'Olá {{nome}}! Tudo bem? 😊\nAqui é da Cjota Rasteirinhas. Como posso te ajudar hoje?' },
+        { id: 2, shortcut: 'catalogo', message: 'Oi {{nome}}! Aqui está nosso catálogo atualizado com todos os modelos disponíveis:\nhttps://cjotarasteirinhas.com.br/c/atacado/produtos' },
+        { id: 3, shortcut: 'frete', message: 'Oi {{nome}}! Nosso frete é GRÁTIS para compras acima de R$ 2.000! 🚚\nPedido mínimo: 5 peças.' },
+        { id: 4, shortcut: 'pix', message: 'Oi {{nome}}! Nosso PIX é:\n\n📱 CNPJ: XX.XXX.XXX/0001-XX\n\nApós o pagamento, me envia o comprovante aqui!' },
+        { id: 5, shortcut: 'prazo', message: 'Oi {{nome}}! Nossos prazos são:\n\n• Pronta-entrega: 3-7 dias úteis\n• Fabricação personalizada: 15-20 dias úteis' }
+    ];
+    localStorage.setItem('crm_quick_replies', JSON.stringify(quickReplies));
+}
 
 // Inicialização
 document.addEventListener('DOMContentLoaded', async () => {
@@ -21,10 +65,45 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 3. Carregar Conversas
     loadChats();
 
+    // 4. Processar snoozes (verificar se algum deve "acordar")
+    processSnoozedChats();
+
     // Setup de inputs
     const inputMsg = document.getElementById('inputMessage');
     inputMsg.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') sendMessage();
+    });
+    
+    // Detectar atalho / para mensagens rápidas
+    inputMsg.addEventListener('input', (e) => {
+        const value = e.target.value;
+        if (value.startsWith('/')) {
+            const shortcut = value.slice(1).toLowerCase();
+            if (shortcut.length >= 2) {
+                const match = quickReplies.find(qr => qr.shortcut.toLowerCase().startsWith(shortcut));
+                if (match) {
+                    showQuickReplyHint(match);
+                }
+            }
+        } else {
+            hideQuickReplyHint();
+        }
+    });
+    
+    // Tab para auto-completar
+    inputMsg.addEventListener('keydown', (e) => {
+        if (e.key === 'Tab') {
+            const hint = document.getElementById('quickReplyHint');
+            if (hint && !hint.classList.contains('hidden')) {
+                e.preventDefault();
+                const qrId = hint.dataset.qrId;
+                const qr = quickReplies.find(q => q.id == qrId);
+                if (qr) {
+                    inputMsg.value = processQuickReplyVariables(qr.message);
+                    hideQuickReplyHint();
+                }
+            }
+        }
     });
 });
 
@@ -159,7 +238,12 @@ async function loadCRMData() {
 function filterChats(filter) {
     currentFilter = filter;
     
-    // Atualizar visual das abas
+    // Limpar filtro de tag se mudar de filtro principal
+    if (['all', 'chats', 'groups'].includes(filter)) {
+        currentTagFilter = null;
+    }
+    
+    // Atualizar visual das abas principais
     const tabs = ['filterAll', 'filterChats', 'filterGroups'];
     tabs.forEach(tabId => {
         const tab = document.getElementById(tabId);
@@ -172,6 +256,20 @@ function filterChats(filter) {
             } else {
                 tab.classList.remove('filter-tab-active');
                 tab.classList.add('text-slate-500');
+            }
+        }
+    });
+    
+    // Atualizar visual dos filtros especiais
+    const specialFilters = ['filterVacuum', 'filterSnoozed'];
+    specialFilters.forEach(filterId => {
+        const btn = document.getElementById(filterId);
+        if (btn) {
+            if ((filter === 'vacuum' && filterId === 'filterVacuum') ||
+                (filter === 'snoozed' && filterId === 'filterSnoozed')) {
+                btn.classList.add('ring-2', 'ring-offset-1');
+            } else {
+                btn.classList.remove('ring-2', 'ring-offset-1');
             }
         }
     });
@@ -209,16 +307,55 @@ function renderChatsList(chats) {
         return;
     }
     
-    // Aplicar filtro
+    // Aplicar filtros
     let filteredChats = chats;
+    
+    // Filtro de tipo (all, chats, groups)
     if (currentFilter === 'chats') {
-        filteredChats = chats.filter(c => !c.isGroup);
+        filteredChats = filteredChats.filter(c => !c.isGroup);
     } else if (currentFilter === 'groups') {
-        filteredChats = chats.filter(c => c.isGroup);
+        filteredChats = filteredChats.filter(c => c.isGroup);
+    } else if (currentFilter === 'vacuum') {
+        // Filtro Vácuo: última mensagem é do cliente e sem resposta há > 4h
+        const fourHoursAgo = Date.now() - (4 * 60 * 60 * 1000);
+        filteredChats = filteredChats.filter(c => {
+            const lastMsg = c.lastMessage;
+            if (!lastMsg) return false;
+            const msgTime = (lastMsg.messageTimestamp || 0) * 1000;
+            const isFromClient = !lastMsg.key?.fromMe;
+            return isFromClient && msgTime < fourHoursAgo;
+        });
+    } else if (currentFilter === 'snoozed') {
+        // Mostrar apenas chats adiados
+        filteredChats = filteredChats.filter(c => {
+            const chatId = c.id || c.remoteJid;
+            return snoozedChats[chatId];
+        });
+    }
+    
+    // Remover chats que estão em snooze (exceto se filtro for 'snoozed')
+    if (currentFilter !== 'snoozed') {
+        filteredChats = filteredChats.filter(c => {
+            const chatId = c.id || c.remoteJid;
+            return !snoozedChats[chatId];
+        });
+    }
+    
+    // Filtro por tag
+    if (currentTagFilter) {
+        filteredChats = filteredChats.filter(c => {
+            const chatId = c.id || c.remoteJid;
+            const tags = chatTags[chatId] || [];
+            return tags.includes(currentTagFilter);
+        });
     }
     
     if (filteredChats.length === 0) {
-        const msg = currentFilter === 'groups' ? 'Nenhum grupo encontrado.' : 'Nenhuma conversa individual encontrada.';
+        let msg = 'Nenhuma conversa encontrada.';
+        if (currentFilter === 'groups') msg = 'Nenhum grupo encontrado.';
+        if (currentFilter === 'vacuum') msg = 'Nenhuma conversa no vácuo. Parabéns!';
+        if (currentFilter === 'snoozed') msg = 'Nenhuma conversa adiada.';
+        if (currentTagFilter) msg = 'Nenhuma conversa com esta etiqueta.';
         listEl.innerHTML = `<p class="text-center text-gray-400 text-sm p-4">${msg}</p>`;
         return;
     }
@@ -284,6 +421,18 @@ function renderChatsList(chats) {
             ? `<span class="text-xs text-slate-400">${chat.participantsCount} participantes</span>` 
             : '';
         
+        // Tags do chat
+        const cTags = chatTags[chatId] || [];
+        const tagsHtml = cTags.slice(0, 2).map(tagId => {
+            const tag = allTags.find(t => t.id === tagId);
+            if (!tag) return '';
+            return `<span class="w-2 h-2 rounded-full" style="background-color: ${tag.color}" title="${tag.name}"></span>`;
+        }).join('');
+        
+        // Indicador de snooze
+        const isSnoozed = snoozedChats[chatId];
+        const snoozeIcon = isSnoozed ? '<i data-lucide="alarm-clock" class="w-3 h-3 text-amber-500"></i>' : '';
+        
         div.innerHTML = `
             ${avatarHtml}
             <div class="flex-1 min-w-0">
@@ -291,8 +440,9 @@ function renderChatsList(chats) {
                     <h4 class="font-medium text-gray-800 truncate text-sm flex items-center gap-1">
                         ${name}
                         ${isCommunity ? '<span class="text-xs bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded">Comunidade</span>' : ''}
+                        ${tagsHtml ? `<span class="flex gap-0.5 ml-1">${tagsHtml}</span>` : ''}
                     </h4>
-                    <span class="text-xs text-gray-400">${time}</span>
+                    <span class="text-xs text-gray-400 flex items-center gap-1">${snoozeIcon}${time}</span>
                 </div>
                 <div class="flex justify-between items-center">
                     <p class="text-xs text-gray-500 truncate flex-1">${lastMsg || participantsInfo}</p>
@@ -309,6 +459,7 @@ function renderChatsList(chats) {
 // ============================================================================
 async function openChat(chat) {
     currentChatId = chat.id; // remoteJid
+    currentChatData = chat; // Salvar dados completos
     const isGroup = chat.isGroup || chat.id?.includes('@g.us');
     const isCommunity = chat.isCommunity;
     
@@ -316,6 +467,9 @@ async function openChat(chat) {
     document.getElementById('chatHeader').classList.remove('hidden');
     document.getElementById('inputArea').classList.remove('hidden');
     document.getElementById('messagesContainer').innerHTML = '<div class="text-center p-4 text-gray-500"><i class="fas fa-spinner fa-spin"></i> Carregando mensagens...</div>';
+    
+    // Renderizar tags do chat
+    renderChatTags();
     
     // Header Info
     const name = chat.name || chat.pushName || formatPhone(chat.id);
@@ -790,6 +944,538 @@ function findAndRenderClientCRM(chatId) {
         </div>
     `;
 }
+
+// ============================================================================
+// SISTEMA DE ETIQUETAS (TAGS)
+// ============================================================================
+function openTagsModal() {
+    if (!currentChatId) return alert('Selecione um chat primeiro');
+    renderTagsList();
+    document.getElementById('tagsModal').classList.remove('hidden');
+    lucide.createIcons();
+}
+
+function closeTagsModal() {
+    document.getElementById('tagsModal').classList.add('hidden');
+}
+
+function renderTagsList() {
+    const container = document.getElementById('tagsList');
+    const currentTags = chatTags[currentChatId] || [];
+    
+    container.innerHTML = allTags.map(tag => {
+        const isActive = currentTags.includes(tag.id);
+        return `
+            <div class="flex items-center justify-between p-2 rounded-lg border ${isActive ? 'border-slate-400 bg-slate-50' : 'border-slate-200'} hover:bg-slate-50">
+                <label class="flex items-center gap-2 cursor-pointer flex-1">
+                    <input type="checkbox" ${isActive ? 'checked' : ''} onchange="toggleTag(${tag.id})" class="w-4 h-4 rounded">
+                    <span class="w-3 h-3 rounded-full" style="background-color: ${tag.color}"></span>
+                    <span class="text-sm font-medium">${tag.name}</span>
+                </label>
+                <button onclick="deleteTag(${tag.id})" class="text-slate-400 hover:text-red-500 p-1">
+                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                </button>
+            </div>
+        `;
+    }).join('');
+}
+
+function toggleTag(tagId) {
+    if (!currentChatId) return;
+    
+    if (!chatTags[currentChatId]) chatTags[currentChatId] = [];
+    
+    const idx = chatTags[currentChatId].indexOf(tagId);
+    if (idx > -1) {
+        chatTags[currentChatId].splice(idx, 1);
+    } else {
+        chatTags[currentChatId].push(tagId);
+        
+        // Executar trigger da tag
+        const tag = allTags.find(t => t.id === tagId);
+        if (tag?.trigger) {
+            executeTagTrigger(tag.trigger);
+        }
+    }
+    
+    localStorage.setItem('crm_chat_tags', JSON.stringify(chatTags));
+    renderChatTags();
+    renderTagsList();
+}
+
+function executeTagTrigger(trigger) {
+    // Triggers automáticos quando tag é aplicada
+    const [action, value] = trigger.split(':');
+    
+    if (action === 'status' && currentClient) {
+        console.log(`[Tag Trigger] Atualizando status do cliente para: ${value}`);
+        currentClient.status = value;
+        // Aqui você salvaria no CRM
+    }
+    
+    if (action === 'type' && currentClient) {
+        console.log(`[Tag Trigger] Marcando cliente como: ${value}`);
+        currentClient.tipo = value;
+    }
+}
+
+function createTag() {
+    const nameInput = document.getElementById('newTagName');
+    const colorInput = document.getElementById('newTagColor');
+    
+    const name = nameInput.value.trim();
+    if (!name) return alert('Digite um nome para a etiqueta');
+    
+    const newTag = {
+        id: Date.now(),
+        name: name,
+        color: colorInput.value,
+        trigger: null
+    };
+    
+    allTags.push(newTag);
+    localStorage.setItem('crm_tags', JSON.stringify(allTags));
+    
+    nameInput.value = '';
+    renderTagsList();
+}
+
+function deleteTag(tagId) {
+    if (!confirm('Excluir esta etiqueta?')) return;
+    
+    allTags = allTags.filter(t => t.id !== tagId);
+    localStorage.setItem('crm_tags', JSON.stringify(allTags));
+    
+    // Remover tag de todos os chats
+    Object.keys(chatTags).forEach(chatId => {
+        chatTags[chatId] = chatTags[chatId].filter(id => id !== tagId);
+    });
+    localStorage.setItem('crm_chat_tags', JSON.stringify(chatTags));
+    
+    renderTagsList();
+    renderChatTags();
+}
+
+function renderChatTags() {
+    const container = document.getElementById('chatTags');
+    if (!container || !currentChatId) return;
+    
+    const tags = chatTags[currentChatId] || [];
+    container.innerHTML = tags.map(tagId => {
+        const tag = allTags.find(t => t.id === tagId);
+        if (!tag) return '';
+        return `<span class="px-2 py-0.5 rounded-full text-xs text-white" style="background-color: ${tag.color}">${tag.name}</span>`;
+    }).join('');
+}
+
+function openTagFilterModal() {
+    // Dropdown simples para filtrar por tag
+    const existing = document.getElementById('tagFilterDropdown');
+    if (existing) {
+        existing.remove();
+        return;
+    }
+    
+    const btn = document.getElementById('filterByTag');
+    const dropdown = document.createElement('div');
+    dropdown.id = 'tagFilterDropdown';
+    dropdown.className = 'absolute z-50 bg-white rounded-lg shadow-lg border border-slate-200 py-2 min-w-[150px]';
+    dropdown.style.top = btn.offsetTop + btn.offsetHeight + 5 + 'px';
+    dropdown.style.left = btn.offsetLeft + 'px';
+    
+    dropdown.innerHTML = `
+        <button onclick="filterByTag(null)" class="w-full px-3 py-1.5 text-left text-sm hover:bg-slate-50 ${!currentTagFilter ? 'bg-slate-100' : ''}">Todas</button>
+        ${allTags.map(tag => `
+            <button onclick="filterByTag(${tag.id})" class="w-full px-3 py-1.5 text-left text-sm hover:bg-slate-50 flex items-center gap-2 ${currentTagFilter === tag.id ? 'bg-slate-100' : ''}">
+                <span class="w-2 h-2 rounded-full" style="background-color: ${tag.color}"></span>
+                ${tag.name}
+            </button>
+        `).join('')}
+    `;
+    
+    btn.parentElement.appendChild(dropdown);
+    
+    // Fechar ao clicar fora
+    setTimeout(() => {
+        document.addEventListener('click', function closeDropdown(e) {
+            if (!dropdown.contains(e.target) && e.target !== btn) {
+                dropdown.remove();
+                document.removeEventListener('click', closeDropdown);
+            }
+        });
+    }, 100);
+}
+
+function filterByTag(tagId) {
+    currentTagFilter = tagId;
+    document.getElementById('tagFilterDropdown')?.remove();
+    renderChatsList(allChats);
+    lucide.createIcons();
+}
+
+// ============================================================================
+// SISTEMA DE MENSAGENS RÁPIDAS (QUICK REPLIES)
+// ============================================================================
+function openQuickReplies() {
+    renderQuickRepliesList();
+    document.getElementById('quickRepliesModal').classList.remove('hidden');
+    lucide.createIcons();
+}
+
+function closeQuickReplies() {
+    document.getElementById('quickRepliesModal').classList.add('hidden');
+}
+
+function renderQuickRepliesList(filter = '') {
+    const container = document.getElementById('quickRepliesList');
+    const filtered = quickReplies.filter(qr => 
+        qr.shortcut.toLowerCase().includes(filter.toLowerCase()) ||
+        qr.message.toLowerCase().includes(filter.toLowerCase())
+    );
+    
+    container.innerHTML = filtered.map(qr => `
+        <div class="p-3 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50 cursor-pointer transition-all" onclick="useQuickReply(${qr.id})">
+            <div class="flex justify-between items-start mb-2">
+                <span class="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs font-mono">/${qr.shortcut}</span>
+                <div class="flex gap-1">
+                    <button onclick="event.stopPropagation(); editQuickReply(${qr.id})" class="text-slate-400 hover:text-blue-500 p-1">
+                        <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                    </button>
+                    <button onclick="event.stopPropagation(); deleteQuickReply(${qr.id})" class="text-slate-400 hover:text-red-500 p-1">
+                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                    </button>
+                </div>
+            </div>
+            <p class="text-sm text-slate-600 whitespace-pre-line line-clamp-3">${qr.message}</p>
+        </div>
+    `).join('') || '<p class="text-center text-slate-400 text-sm py-4">Nenhuma mensagem rápida encontrada</p>';
+}
+
+function filterQuickReplies(query) {
+    renderQuickRepliesList(query);
+    lucide.createIcons();
+}
+
+function useQuickReply(id) {
+    const qr = quickReplies.find(q => q.id === id);
+    if (!qr) return;
+    
+    const processed = processQuickReplyVariables(qr.message);
+    document.getElementById('inputMessage').value = processed;
+    closeQuickReplies();
+    document.getElementById('inputMessage').focus();
+}
+
+function processQuickReplyVariables(text) {
+    let result = text;
+    
+    // Substituir variáveis
+    const name = currentChatData?.name || currentClient?.nome || 'Cliente';
+    result = result.replace(/\{\{nome\}\}/gi, name);
+    
+    if (currentClient) {
+        result = result.replace(/\{\{telefone\}\}/gi, currentClient.telefone || '');
+        result = result.replace(/\{\{email\}\}/gi, currentClient.email || '');
+        
+        // Último pedido
+        const lastOrder = allOrders.filter(o => o.cliente_id == currentClient.id).sort((a, b) => new Date(b.data) - new Date(a.data))[0];
+        if (lastOrder) {
+            result = result.replace(/\{\{ultimo_pedido\}\}/gi, `#${lastOrder.id} - R$ ${parseFloat(lastOrder.total).toFixed(2)}`);
+            result = result.replace(/\{\{rastreio\}\}/gi, lastOrder.rastreio || 'Não informado');
+        } else {
+            result = result.replace(/\{\{ultimo_pedido\}\}/gi, 'Nenhum pedido');
+            result = result.replace(/\{\{rastreio\}\}/gi, 'N/A');
+        }
+    }
+    
+    return result;
+}
+
+function openNewQuickReply() {
+    editingQuickReplyId = null;
+    document.getElementById('editQuickReplyTitle').textContent = 'Nova Mensagem Rápida';
+    document.getElementById('qrShortcut').value = '';
+    document.getElementById('qrMessage').value = '';
+    closeQuickReplies();
+    document.getElementById('editQuickReplyModal').classList.remove('hidden');
+}
+
+function editQuickReply(id) {
+    const qr = quickReplies.find(q => q.id === id);
+    if (!qr) return;
+    
+    editingQuickReplyId = id;
+    document.getElementById('editQuickReplyTitle').textContent = 'Editar Mensagem Rápida';
+    document.getElementById('qrShortcut').value = qr.shortcut;
+    document.getElementById('qrMessage').value = qr.message;
+    closeQuickReplies();
+    document.getElementById('editQuickReplyModal').classList.remove('hidden');
+}
+
+function closeEditQuickReply() {
+    document.getElementById('editQuickReplyModal').classList.add('hidden');
+    editingQuickReplyId = null;
+}
+
+function saveQuickReply() {
+    const shortcut = document.getElementById('qrShortcut').value.trim().toLowerCase().replace(/\s/g, '_');
+    const message = document.getElementById('qrMessage').value.trim();
+    
+    if (!shortcut || !message) return alert('Preencha todos os campos');
+    
+    if (editingQuickReplyId) {
+        const qr = quickReplies.find(q => q.id === editingQuickReplyId);
+        if (qr) {
+            qr.shortcut = shortcut;
+            qr.message = message;
+        }
+    } else {
+        quickReplies.push({
+            id: Date.now(),
+            shortcut: shortcut,
+            message: message
+        });
+    }
+    
+    localStorage.setItem('crm_quick_replies', JSON.stringify(quickReplies));
+    closeEditQuickReply();
+    openQuickReplies();
+}
+
+function deleteQuickReply(id) {
+    if (!confirm('Excluir esta mensagem rápida?')) return;
+    quickReplies = quickReplies.filter(q => q.id !== id);
+    localStorage.setItem('crm_quick_replies', JSON.stringify(quickReplies));
+    renderQuickRepliesList();
+    lucide.createIcons();
+}
+
+function insertVariable(varName) {
+    const textarea = document.getElementById('qrMessage');
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    textarea.value = text.slice(0, start) + `{{${varName}}}` + text.slice(end);
+    textarea.focus();
+    textarea.selectionStart = textarea.selectionEnd = start + varName.length + 4;
+}
+
+function showQuickReplyHint(qr) {
+    let hint = document.getElementById('quickReplyHint');
+    if (!hint) {
+        hint = document.createElement('div');
+        hint.id = 'quickReplyHint';
+        hint.className = 'absolute bottom-full left-0 mb-2 p-2 bg-white rounded-lg shadow-lg border border-slate-200 text-sm max-w-[300px]';
+        document.getElementById('inputMessage').parentElement.style.position = 'relative';
+        document.getElementById('inputMessage').parentElement.appendChild(hint);
+    }
+    
+    hint.dataset.qrId = qr.id;
+    hint.innerHTML = `
+        <div class="flex items-center gap-2 mb-1">
+            <span class="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-xs font-mono">/${qr.shortcut}</span>
+            <span class="text-xs text-slate-400">Tab para usar</span>
+        </div>
+        <p class="text-slate-600 line-clamp-2">${qr.message.substring(0, 100)}...</p>
+    `;
+    hint.classList.remove('hidden');
+}
+
+function hideQuickReplyHint() {
+    const hint = document.getElementById('quickReplyHint');
+    if (hint) hint.classList.add('hidden');
+}
+
+// ============================================================================
+// SISTEMA DE SNOOZE (SONECA)
+// ============================================================================
+function openSnoozeModal() {
+    if (!currentChatId) return alert('Selecione um chat primeiro');
+    document.getElementById('snoozeModal').classList.remove('hidden');
+    lucide.createIcons();
+}
+
+function closeSnoozeModal() {
+    document.getElementById('snoozeModal').classList.add('hidden');
+}
+
+function snoozeChat(days) {
+    if (!currentChatId) return;
+    
+    const wakeTime = new Date();
+    wakeTime.setDate(wakeTime.getDate() + days);
+    wakeTime.setHours(9, 0, 0, 0); // 09:00
+    
+    snoozedChats[currentChatId] = wakeTime.getTime();
+    localStorage.setItem('crm_snoozed', JSON.stringify(snoozedChats));
+    
+    closeSnoozeModal();
+    alert(`Conversa adiada! Reaparecerá em ${days} dia(s) às 09:00.`);
+    
+    // Remover da lista atual
+    loadChats();
+}
+
+function snoozeCustom() {
+    const dateInput = document.getElementById('customSnoozeDate');
+    if (!dateInput.value) return;
+    
+    const wakeTime = new Date(dateInput.value + 'T09:00:00');
+    if (wakeTime < new Date()) return alert('Selecione uma data futura');
+    
+    snoozedChats[currentChatId] = wakeTime.getTime();
+    localStorage.setItem('crm_snoozed', JSON.stringify(snoozedChats));
+    
+    closeSnoozeModal();
+    alert(`Conversa adiada até ${wakeTime.toLocaleDateString('pt-BR')} às 09:00.`);
+    loadChats();
+}
+
+function processSnoozedChats() {
+    const now = Date.now();
+    let changed = false;
+    
+    Object.keys(snoozedChats).forEach(chatId => {
+        if (snoozedChats[chatId] <= now) {
+            delete snoozedChats[chatId];
+            changed = true;
+            console.log(`[Snooze] Chat ${chatId} acordou!`);
+        }
+    });
+    
+    if (changed) {
+        localStorage.setItem('crm_snoozed', JSON.stringify(snoozedChats));
+    }
+}
+
+// ============================================================================
+// GRAVAÇÃO DE ÁUDIO (PTT)
+// ============================================================================
+async function startRecording() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+        audioChunks = [];
+        
+        mediaRecorder.ondataavailable = (e) => {
+            audioChunks.push(e.data);
+        };
+        
+        mediaRecorder.onstop = () => {
+            stream.getTracks().forEach(track => track.stop());
+        };
+        
+        mediaRecorder.start();
+        recordingStartTime = Date.now();
+        
+        // Mostrar indicador
+        document.getElementById('recordingIndicator').classList.remove('hidden');
+        document.getElementById('recordingIndicator').classList.add('flex');
+        document.getElementById('btnRecordAudio').classList.add('text-red-500', 'bg-red-50');
+        
+        // Atualizar tempo
+        recordingInterval = setInterval(() => {
+            const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+            const min = Math.floor(elapsed / 60);
+            const sec = elapsed % 60;
+            document.getElementById('recordingTime').textContent = `${min}:${sec.toString().padStart(2, '0')}`;
+        }, 100);
+        
+    } catch (err) {
+        console.error('Erro ao acessar microfone:', err);
+        alert('Não foi possível acessar o microfone. Verifique as permissões.');
+    }
+}
+
+async function stopRecording() {
+    if (!mediaRecorder || mediaRecorder.state !== 'recording') return;
+    
+    clearInterval(recordingInterval);
+    document.getElementById('recordingIndicator').classList.add('hidden');
+    document.getElementById('recordingIndicator').classList.remove('flex');
+    document.getElementById('btnRecordAudio').classList.remove('text-red-500', 'bg-red-50');
+    
+    // Se gravou menos de 1 segundo, cancelar
+    if (Date.now() - recordingStartTime < 1000) {
+        mediaRecorder.stop();
+        return;
+    }
+    
+    mediaRecorder.stop();
+    
+    // Aguardar dados
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+    await sendAudioMessage(audioBlob);
+}
+
+function cancelRecording() {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+    }
+    clearInterval(recordingInterval);
+    document.getElementById('recordingIndicator').classList.add('hidden');
+    document.getElementById('recordingIndicator').classList.remove('flex');
+    document.getElementById('btnRecordAudio').classList.remove('text-red-500', 'bg-red-50');
+    audioChunks = [];
+}
+
+async function sendAudioMessage(audioBlob) {
+    if (!currentChatId) return;
+    
+    const container = document.getElementById('messagesContainer');
+    const wrap = document.createElement('div');
+    wrap.className = 'w-full flex justify-end opacity-50';
+    wrap.innerHTML = `
+        <div class="p-3 max-w-[70%] text-sm shadow-sm msg-out">
+            <div class="flex items-center gap-2">
+                <i class="fas fa-spinner fa-spin"></i>
+                <span>Enviando áudio...</span>
+            </div>
+        </div>
+    `;
+    container.appendChild(wrap);
+    container.scrollTop = container.scrollHeight;
+    
+    try {
+        // Converter para base64
+        const reader = new FileReader();
+        const base64Promise = new Promise((resolve) => {
+            reader.onloadend = () => resolve(reader.result);
+            reader.readAsDataURL(audioBlob);
+        });
+        const base64 = await base64Promise;
+        
+        const response = await fetch(`${API_BASE}/whatsapp/send-media`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                number: currentChatId,
+                mediaType: 'audio',
+                media: base64
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        
+        setTimeout(() => loadMessages(currentChatId), 1000);
+        
+    } catch (e) {
+        console.error('Erro ao enviar áudio:', e);
+        alert('Erro ao enviar áudio: ' + e.message);
+        wrap.remove();
+    }
+}
+
+// ============================================================================
+// FILTROS AVANÇADOS
+// ============================================================================
+// Atualizar a função filterChats existente para suportar novos filtros
 
 // ============================================================================
 // MODAL DE PRODUTOS
