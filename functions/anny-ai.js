@@ -17,7 +17,7 @@ const supabase = SUPABASE_URL && SUPABASE_KEY
     : null;
 
 // ============================================================================
-// SYSTEM PROMPT - ANNY CEO MODE v2.1
+// SYSTEM PROMPT - ANNY CEO MODE v2.2
 // ============================================================================
 
 const ANNY_SYSTEM_PROMPT = `Você é a Anny, assistente de vendas da Cjota Rasteirinhas (fábrica atacadista de rasteirinhas femininas).
@@ -33,15 +33,21 @@ const ANNY_SYSTEM_PROMPT = `Você é a Anny, assistente de vendas da Cjota Raste
 🛠️ FERRAMENTAS (uso interno):
 - getStockSummary → valor/resumo do estoque
 - findClientsByProductHistory → quem comprou produto X
+- findClientsByOrderValue → clientes com PEDIDOS INDIVIDUAIS acima de X reais (diferente de ticket médio!)
 - analyzeStockOpportunity → estoque parado
 - findC4Candidates → potenciais franqueadas
 - generatePersonalizedCopy → criar mensagens
 - getMorningBriefing → resumo do dia
 - findBirthdays → aniversariantes
-- findVipClients → VIPs/inativos
+- findVipClients → VIPs por ticket médio/total gasto
 - analyzeSalesDrop → queda de vendas
 - getClientStats → estatísticas gerais
 - analyzeCohort → análise de retenção
+
+⚠️ IMPORTANTE - DIFERENÇA ENTRE PEDIDO E TICKET:
+- "pedidos acima de R$300" = use findClientsByOrderValue (cada pedido individual)
+- "ticket médio acima de R$300" = use findVipClients (média de todas as compras)
+- "total gasto acima de R$300" = use findVipClients (soma de todas as compras)
 
 🚫 ANTI-CUPOM: NUNCA ofereça desconto primeiro! Use:
 1. REPOSIÇÃO: "Como estão as vendas? Estoque baixou?"
@@ -250,6 +256,32 @@ const TOOLS = [
                         description: "Quantos meses comparar (padrão: 3)"
                     }
                 }
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "findClientsByOrderValue",
+            description: "Busca clientes que fizeram PEDIDOS INDIVIDUAIS acima ou abaixo de um valor. Diferente de ticket médio - aqui olha cada pedido separadamente. Use quando perguntarem 'clientes com pedidos acima de X' ou 'pedidos maiores que X'.",
+            parameters: {
+                type: "object",
+                properties: {
+                    minOrderValue: {
+                        type: "number",
+                        description: "Valor mínimo do pedido individual em reais (ex: 300)"
+                    },
+                    maxOrderValue: {
+                        type: "number",
+                        description: "Valor máximo do pedido individual em reais (opcional)"
+                    },
+                    period: {
+                        type: "string",
+                        enum: ["all", "2024", "2025", "last30days", "last60days", "last90days"],
+                        description: "Período para filtrar os pedidos (padrão: all)"
+                    }
+                },
+                required: ["minOrderValue"]
             }
         }
     },
@@ -1060,6 +1092,111 @@ async function findVipClients(minTicket = 500, status = 'inactive', inactiveDays
     }
 }
 
+// BUSCAR CLIENTES POR VALOR DE PEDIDO INDIVIDUAL (não ticket médio!)
+async function findClientsByOrderValue(minOrderValue, maxOrderValue = null, period = 'all') {
+    if (!supabase) return { error: 'Banco de dados não configurado' };
+
+    try {
+        // Buscar todos os pedidos
+        let query = supabase
+            .from('orders')
+            .select('id, client_id, client_name, client_phone, total, data, status')
+            .gte('total', minOrderValue);
+        
+        if (maxOrderValue) {
+            query = query.lte('total', maxOrderValue);
+        }
+
+        // Filtrar por período
+        if (period !== 'all') {
+            const now = new Date();
+            let startDate;
+            
+            switch (period) {
+                case '2024':
+                    startDate = new Date('2024-01-01');
+                    query = query.gte('data', startDate.toISOString()).lte('data', '2024-12-31');
+                    break;
+                case '2025':
+                    startDate = new Date('2025-01-01');
+                    query = query.gte('data', startDate.toISOString()).lte('data', '2025-12-31');
+                    break;
+                case 'last30days':
+                    startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                    query = query.gte('data', startDate.toISOString());
+                    break;
+                case 'last60days':
+                    startDate = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+                    query = query.gte('data', startDate.toISOString());
+                    break;
+                case 'last90days':
+                    startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+                    query = query.gte('data', startDate.toISOString());
+                    break;
+            }
+        }
+
+        query = query.order('total', { ascending: false });
+
+        const { data: orders, error } = await query;
+
+        if (error) throw error;
+
+        // Agrupar por cliente e contar pedidos acima do valor
+        const clientMap = new Map();
+        
+        for (const order of (orders || [])) {
+            const clientId = order.client_id;
+            if (!clientMap.has(clientId)) {
+                clientMap.set(clientId, {
+                    client_id: clientId,
+                    name: order.client_name,
+                    phone: order.client_phone,
+                    orders_above_value: [],
+                    total_orders_above: 0,
+                    total_value: 0
+                });
+            }
+            
+            const client = clientMap.get(clientId);
+            client.orders_above_value.push({
+                order_id: order.id,
+                value: parseFloat(order.total),
+                date: order.data
+            });
+            client.total_orders_above++;
+            client.total_value += parseFloat(order.total || 0);
+        }
+
+        // Converter para array e ordenar por quantidade de pedidos
+        const results = Array.from(clientMap.values())
+            .sort((a, b) => b.total_orders_above - a.total_orders_above);
+
+        const totalOrders = results.reduce((sum, c) => sum + c.total_orders_above, 0);
+        const totalValue = results.reduce((sum, c) => sum + c.total_value, 0);
+
+        return {
+            data: results.slice(0, 50).map(c => ({
+                name: c.name,
+                phone: c.phone,
+                pedidos_acima: c.total_orders_above,
+                valor_total: c.total_value.toFixed(2),
+                maior_pedido: Math.max(...c.orders_above_value.map(o => o.value)).toFixed(2)
+            })),
+            columns: ['name', 'phone', 'pedidos_acima', 'valor_total', 'maior_pedido'],
+            summary: `📊 ${results.length} clientes fizeram ${totalOrders} pedidos acima de R$ ${minOrderValue}${maxOrderValue ? ` e abaixo de R$ ${maxOrderValue}` : ''}`,
+            period: period,
+            totalClients: results.length,
+            totalOrders: totalOrders,
+            totalValue: totalValue,
+            insight: `Esses clientes têm poder de compra alto! Total movimentado: R$ ${totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+        };
+    } catch (error) {
+        console.error('findClientsByOrderValue error:', error);
+        return { error: error.message };
+    }
+}
+
 async function analyzeSalesDrop(compareMonths = 3) {
     if (!supabase) return { error: 'Banco de dados não configurado' };
 
@@ -1338,8 +1475,10 @@ async function processToolCall(toolCall) {
             return await findBirthdays(args?.month);
         case 'findVipClients':
             return await findVipClients(args?.minTicket, args?.status, args?.inactiveDays);
+        case 'findClientsByOrderValue':
+            return await findClientsByOrderValue(args?.minOrderValue, args?.maxOrderValue, args?.period);
         case 'analyzeSalesDrop':
-            return await analyzeSalesDrop(args.compareMonths);
+            return await analyzeSalesDrop(args?.compareMonths);
         case 'getClientStats':
             return await getClientStats();
         default:
