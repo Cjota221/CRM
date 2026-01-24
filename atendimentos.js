@@ -496,6 +496,16 @@ function renderChatsList(chats) {
     filteredChats.forEach(chat => {
         const chatId = chat.id || chat.remoteJid;
         
+        // DEBUG: Ver dados do chat
+        if (chat.pushName === '275015463346288' || (chat.name && chat.name.includes('275015463346288'))) {
+            console.log('=== CHAT COM PROBLEMA ===');
+            console.log('chat.id:', chat.id);
+            console.log('chat.remoteJid:', chat.remoteJid);
+            console.log('chat.name:', chat.name);
+            console.log('chat.pushName:', chat.pushName);
+            console.log('chat completo:', chat);
+        }
+        
         // Usar função getContactDisplayName para nome consistente
         const name = getContactDisplayName(chat);
         
@@ -614,6 +624,15 @@ function renderChatsList(chats) {
 async function openChat(chat) {
     currentChatId = chat.id; // remoteJid
     currentChatData = chat; // Salvar dados completos
+    
+    // DEBUG: Ver o que está vindo
+    console.log('=== DEBUG CHAT ===');
+    console.log('chat.id:', chat.id);
+    console.log('chat.remoteJid:', chat.remoteJid);
+    console.log('chat.name:', chat.name);
+    console.log('chat.pushName:', chat.pushName);
+    console.log('chat completo:', chat);
+    
     const isGroup = chat.isGroup || chat.id?.includes('@g.us');
     const isCommunity = chat.isCommunity;
     

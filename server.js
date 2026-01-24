@@ -557,6 +557,15 @@ app.get('/api/whatsapp/all-chats', async (req, res) => {
         const contactsData = await contactsResponse.json();
         const groupsData = await groupsResponse.json();
         
+        // DEBUG: Log primeiro chat para ver estrutura
+        console.log('=== DEBUG BACKEND ===');
+        console.log('Total chats recebidos:', chatsData?.data?.length || chatsData?.length || 0);
+        if (chatsData?.data?.[0]) {
+            console.log('Exemplo de chat (data[0]):', JSON.stringify(chatsData.data[0], null, 2));
+        } else if (chatsData?.[0]) {
+            console.log('Exemplo de chat ([0]):', JSON.stringify(chatsData[0], null, 2));
+        }
+        
         const chats = Array.isArray(chatsData) ? chatsData : (chatsData.data || []);
         const contacts = Array.isArray(contactsData) ? contactsData : (contactsData.data || []);
         const groups = Array.isArray(groupsData) ? groupsData : (groupsData.data || []);
