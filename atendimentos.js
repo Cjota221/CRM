@@ -21,11 +21,14 @@ let editingQuickReplyId = null;
 // Sistema de Snooze
 let snoozedChats = JSON.parse(localStorage.getItem('crm_snoozed') || '{}'); // { chatId: timestamp }
 
-// Gravação de Áudio
+// Gravação de Áudio - NOVA VERSÃO
 let mediaRecorder = null;
 let audioChunks = [];
 let recordingStartTime = null;
 let recordingInterval = null;
+let recordedAudioBlob = null;
+let recordedAudioUrl = null;
+let audioElement = null;
 
 const API_BASE = 'http://localhost:3000/api';
 
@@ -846,103 +849,416 @@ function fileToBase64(file) {
 }
 
 // ============================================================================
-// LÓGICA CRM (LADO DIREITO)
+// LÓGICA CRM (LADO DIREITO) - VERSÃO MELHORADA
 // ============================================================================
+
+// Mapa de notas dos clientes
+let clientNotes = JSON.parse(localStorage.getItem('crm_client_notes') || '{}');
+
 function findAndRenderClientCRM(chatId) {
     // chatId vem como "5511999999999@s.whatsapp.net"
-    // CRM phones podem ser "(11) 99999-9999" ou "551199999..."
-    
     const panel = document.getElementById('crmDataContainer');
-    const cleanPhone = chatId.replace('@s.whatsapp.net', '').replace(/\D/g, ''); // 5511...
+    const cleanPhone = chatId.replace('@s.whatsapp.net', '').replace(/\D/g, '');
     
-    // Tentar casar (usar includes para ser flexível com o +55)
-    // Se o cliente tá salvo sem 55, ou com 55.
-    
-    // Estratégia: pegar os ultimos 8 digitos do telefone e tentar achar
-    const lastDigits = cleanPhone.slice(-8); 
+    // Estratégia de Match: últimos 8-9 dígitos
+    const lastDigits = cleanPhone.slice(-9);
+    const lastDigits8 = cleanPhone.slice(-8);
     
     const client = allClients.find(c => {
         const p = (c.telefone || c.celular || c.whatsapp || '').replace(/\D/g, '');
-        return p.includes(lastDigits);
+        return p.includes(lastDigits) || p.includes(lastDigits8) || lastDigits.includes(p.slice(-8));
     });
     
+    // Nome do perfil WhatsApp (pushname)
+    const whatsappName = currentChatData?.pushName || currentChatData?.name || 'Contato';
+    
     if (!client) {
-        panel.innerHTML = `
-            <div class="bg-yellow-50 p-4 rounded text-center">
-                <i class="fas fa-user-slash text-yellow-500 text-2xl mb-2"></i>
-                <p class="text-sm text-gray-600">Cliente não identificado no CRM.</p>
-                <p class="text-xs text-gray-400 mt-1">Telefone: ${cleanPhone}</p>
-                <button class="mt-3 text-blue-600 text-xs hover:underline">Cadastrar Novo</button>
-            </div>
-        `;
+        // CENÁRIO B: Cliente não encontrado - Lead Novo
+        renderNewLeadPanel(cleanPhone, whatsappName);
         currentClient = null;
+        
+        // Adicionar tag "Lead Novo" automaticamente
+        if (!chatTags[chatId]) chatTags[chatId] = [];
+        const leadTag = allTags.find(t => t.name.toLowerCase().includes('lead'));
+        if (leadTag && !chatTags[chatId].includes(leadTag.id)) {
+            chatTags[chatId].push(leadTag.id);
+            localStorage.setItem('crm_chat_tags', JSON.stringify(chatTags));
+            renderChatTags();
+        }
         return;
     }
     
+    // CENÁRIO A: Cliente encontrado
     currentClient = client;
+    renderClientPanel(client, cleanPhone);
+}
+
+function renderNewLeadPanel(phone, whatsappName) {
+    const panel = document.getElementById('crmDataContainer');
     
-    // Calcular estatísticas básicas
-    const clientOrders = allOrders.filter(o => o.cliente_id == client.id);
+    panel.innerHTML = `
+        <div class="space-y-4">
+            <!-- Badge Lead Novo -->
+            <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+                    <i data-lucide="user-plus" class="w-5 h-5 text-amber-600"></i>
+                </div>
+                <div>
+                    <p class="font-semibold text-amber-800">Lead Novo</p>
+                    <p class="text-xs text-amber-600">Cliente não cadastrado no CRM</p>
+                </div>
+            </div>
+            
+            <!-- Info do WhatsApp -->
+            <div class="bg-slate-50 rounded-xl p-4">
+                <p class="text-xs text-slate-500 mb-1">Nome no WhatsApp</p>
+                <p class="font-semibold text-slate-800">${escapeHtml(whatsappName)}</p>
+                <p class="text-xs text-slate-400 mt-2">Telefone: +${phone}</p>
+            </div>
+            
+            <!-- Formulário de Cadastro Rápido -->
+            <div class="border border-slate-200 rounded-xl p-4 space-y-3">
+                <h4 class="font-semibold text-slate-800 flex items-center gap-2">
+                    <i data-lucide="user-plus" class="w-4 h-4"></i>
+                    Cadastrar Cliente
+                </h4>
+                
+                <div>
+                    <label class="block text-xs text-slate-500 mb-1">Nome *</label>
+                    <input type="text" id="newClientName" value="${escapeHtml(whatsappName)}" class="input text-sm">
+                </div>
+                
+                <div>
+                    <label class="block text-xs text-slate-500 mb-1">Email</label>
+                    <input type="email" id="newClientEmail" placeholder="email@exemplo.com" class="input text-sm">
+                </div>
+                
+                <div>
+                    <label class="block text-xs text-slate-500 mb-1">Estado</label>
+                    <select id="newClientState" class="input text-sm">
+                        <option value="">Selecione...</option>
+                        <option value="AC">AC</option><option value="AL">AL</option><option value="AP">AP</option>
+                        <option value="AM">AM</option><option value="BA">BA</option><option value="CE">CE</option>
+                        <option value="DF">DF</option><option value="ES">ES</option><option value="GO">GO</option>
+                        <option value="MA">MA</option><option value="MT">MT</option><option value="MS">MS</option>
+                        <option value="MG">MG</option><option value="PA">PA</option><option value="PB">PB</option>
+                        <option value="PR">PR</option><option value="PE">PE</option><option value="PI">PI</option>
+                        <option value="RJ">RJ</option><option value="RN">RN</option><option value="RS">RS</option>
+                        <option value="RO">RO</option><option value="RR">RR</option><option value="SC">SC</option>
+                        <option value="SP">SP</option><option value="SE">SE</option><option value="TO">TO</option>
+                    </select>
+                </div>
+                
+                <input type="hidden" id="newClientPhone" value="${phone}">
+                
+                <button onclick="saveNewClient()" class="w-full btn btn-primary">
+                    <i data-lucide="save" class="w-4 h-4"></i>
+                    Salvar Cadastro
+                </button>
+            </div>
+            
+            <!-- Botão Vincular Existente -->
+            <button onclick="openSearchClientModal()" class="w-full btn btn-secondary text-sm">
+                <i data-lucide="link" class="w-4 h-4"></i>
+                Vincular a Cliente Existente
+            </button>
+        </div>
+    `;
+    lucide.createIcons();
+}
+
+function renderClientPanel(client, phone) {
+    const panel = document.getElementById('crmDataContainer');
+    
+    // Calcular estatísticas
+    const clientOrders = allOrders.filter(o => o.cliente_id == client.id).sort((a,b) => new Date(b.data) - new Date(a.data));
     const totalGasto = clientOrders.reduce((sum, o) => sum + parseFloat(o.total || 0), 0);
     const qtdPedidos = clientOrders.length;
     const ticketMedio = qtdPedidos > 0 ? totalGasto / qtdPedidos : 0;
     
-    // Calcular dias desde ultima compra
-    let daysSince = 'N/A';
+    // Dias desde última compra
+    let daysSince = null;
+    let lastOrderDate = null;
     if (clientOrders.length > 0) {
-        const lastDate = new Date(Math.max(...clientOrders.map(o => new Date(o.data))));
-        const diff = new Date() - lastDate;
-        daysSince = Math.floor(diff / (1000 * 60 * 60 * 24)) + ' dias';
-    } else {
-        daysSince = 'Nunca comprou';
+        lastOrderDate = new Date(clientOrders[0].data);
+        const diff = new Date() - lastOrderDate;
+        daysSince = Math.floor(diff / (1000 * 60 * 60 * 24));
     }
+    
+    // Determinar badges
+    let badges = [];
+    if (ticketMedio >= 500) badges.push({ text: 'VIP', color: 'bg-purple-100 text-purple-700', icon: 'crown' });
+    if (daysSince !== null && daysSince > 90) badges.push({ text: `Inativo ${daysSince}d`, color: 'bg-red-100 text-red-700', icon: 'alert-triangle' });
+    if (qtdPedidos >= 10) badges.push({ text: 'Fiel', color: 'bg-emerald-100 text-emerald-700', icon: 'heart' });
+    if (qtdPedidos === 0) badges.push({ text: 'Nunca Comprou', color: 'bg-amber-100 text-amber-700', icon: 'shopping-cart' });
+    
+    // Notas do cliente
+    const notes = clientNotes[client.id] || '';
+    
+    // Status badges HTML
+    const badgesHtml = badges.map(b => `
+        <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${b.color}">
+            <i data-lucide="${b.icon}" class="w-3 h-3"></i>
+            ${b.text}
+        </span>
+    `).join('');
+    
+    // Mini-timeline de pedidos
+    const ordersHtml = clientOrders.slice(0, 3).map(o => {
+        const statusColors = {
+            'entregue': 'bg-emerald-100 text-emerald-700',
+            'enviado': 'bg-blue-100 text-blue-700',
+            'pendente': 'bg-amber-100 text-amber-700',
+            'cancelado': 'bg-red-100 text-red-700'
+        };
+        const status = (o.status || 'pendente').toLowerCase();
+        const statusColor = statusColors[status] || 'bg-slate-100 text-slate-700';
+        
+        return `
+            <div class="p-3 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors" onclick="showOrderDetails(${o.id})">
+                <div class="flex justify-between items-start mb-1">
+                    <span class="font-semibold text-slate-800 text-sm">#${o.id}</span>
+                    <span class="font-bold text-emerald-600 text-sm">R$ ${parseFloat(o.total).toFixed(2)}</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-xs text-slate-500">${new Date(o.data).toLocaleDateString('pt-BR')}</span>
+                    <span class="px-2 py-0.5 rounded-full text-xs ${statusColor}">${o.status || 'Pendente'}</span>
+                </div>
+            </div>
+        `;
+    }).join('') || '<p class="text-xs text-slate-400 text-center py-3">Nenhum pedido encontrado</p>';
 
     panel.innerHTML = `
-        <div class="text-center mb-4">
-            <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 text-xl font-bold mx-auto mb-2">
-                ${client.nome.charAt(0)}
-            </div>
-            <h3 class="font-bold text-gray-800">${client.nome}</h3>
-            <p class="text-xs text-gray-500">${client.email || 'Sem email'}</p>
-        </div>
-        
-        <div class="grid grid-cols-2 gap-2 mb-4">
-            <div class="bg-gray-50 p-2 rounded text-center">
-                <span class="block text-xs text-gray-500">Recência</span>
-                <span class="font-bold text-gray-800">${daysSince}</span>
-            </div>
-            <div class="bg-gray-50 p-2 rounded text-center">
-                <span class="block text-xs text-gray-500">Pedidos</span>
-                <span class="font-bold text-gray-800">${qtdPedidos}</span>
-            </div>
-            <div class="bg-gray-50 p-2 rounded text-center col-span-2">
-                <span class="block text-xs text-gray-500">Ticket Médio</span>
-                <span class="font-bold text-green-600">R$ ${ticketMedio.toFixed(2)}</span>
-            </div>
-        </div>
-        
-        <h4 class="font-bold text-xs text-gray-700 mb-2 uppercase border-b pb-1">Últimos Pedidos</h4>
-        <div class="flex flex-col gap-2 max-h-40 overflow-y-auto mb-4">
-            ${clientOrders.slice(0, 3).map(o => `
-                <div class="text-xs border p-2 rounded hover:bg-gray-50">
-                    <div class="flex justify-between font-bold">
-                        <span>#${o.id}</span>
-                        <span>R$ ${parseFloat(o.total).toFixed(2)}</span>
-                    </div>
-                    <div class="text-gray-500">${new Date(o.data).toLocaleDateString()}</div>
+        <div class="space-y-4">
+            <!-- Header do Cliente -->
+            <div class="text-center">
+                <div class="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-xl font-bold mx-auto mb-2 shadow-lg">
+                    ${client.nome.charAt(0).toUpperCase()}
                 </div>
-            `).join('') || '<p class="text-xs text-gray-400">Nenhum pedido recente</p>'}
-        </div>
-        
-        <div class="flex flex-col gap-2 mt-auto">
-            <button class="w-full bg-indigo-50 text-indigo-700 py-2 rounded text-sm font-medium hover:bg-indigo-100">
-                <i class="fas fa-ticket-alt mr-2"></i> Gerar Cupom
-            </button>
-            <button class="w-full border border-gray-300 text-gray-600 py-2 rounded text-sm font-medium hover:bg-gray-50">
-                Ver Histórico Completo
-            </button>
+                <h3 class="font-bold text-slate-800 text-lg">${escapeHtml(client.nome)}</h3>
+                <p class="text-xs text-slate-500">${client.email || 'Sem email'}</p>
+                <p class="text-xs text-slate-400">${client.cidade || ''} ${client.estado ? '- ' + client.estado : ''}</p>
+                
+                <!-- Badges de Status -->
+                <div class="flex flex-wrap justify-center gap-1 mt-2">
+                    ${badgesHtml}
+                </div>
+            </div>
+            
+            <!-- KPIs -->
+            <div class="grid grid-cols-3 gap-2">
+                <div class="bg-slate-50 p-3 rounded-xl text-center">
+                    <p class="text-xs text-slate-500 mb-1">Pedidos</p>
+                    <p class="text-lg font-bold text-slate-800">${qtdPedidos}</p>
+                </div>
+                <div class="bg-slate-50 p-3 rounded-xl text-center">
+                    <p class="text-xs text-slate-500 mb-1">Ticket Médio</p>
+                    <p class="text-lg font-bold text-emerald-600">R$ ${ticketMedio.toFixed(0)}</p>
+                </div>
+                <div class="bg-slate-50 p-3 rounded-xl text-center">
+                    <p class="text-xs text-slate-500 mb-1">Total</p>
+                    <p class="text-lg font-bold text-blue-600">R$ ${totalGasto.toFixed(0)}</p>
+                </div>
+            </div>
+            
+            <!-- Última Compra -->
+            ${lastOrderDate ? `
+                <div class="bg-gradient-to-r from-slate-50 to-slate-100 p-3 rounded-xl flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm">
+                        <i data-lucide="calendar" class="w-5 h-5 text-slate-500"></i>
+                    </div>
+                    <div>
+                        <p class="text-xs text-slate-500">Última compra</p>
+                        <p class="font-semibold text-slate-800">${lastOrderDate.toLocaleDateString('pt-BR')} <span class="text-slate-400 font-normal">(${daysSince} dias atrás)</span></p>
+                    </div>
+                </div>
+            ` : ''}
+            
+            <!-- Mini-Timeline de Pedidos -->
+            <div>
+                <div class="flex justify-between items-center mb-2">
+                    <h4 class="font-semibold text-slate-800 text-sm flex items-center gap-2">
+                        <i data-lucide="receipt" class="w-4 h-4"></i>
+                        Últimos Pedidos
+                    </h4>
+                    <button onclick="showAllOrders(${client.id})" class="text-xs text-blue-600 hover:underline">Ver todos</button>
+                </div>
+                <div class="space-y-2">
+                    ${ordersHtml}
+                </div>
+            </div>
+            
+            <!-- Anotações -->
+            <div>
+                <h4 class="font-semibold text-slate-800 text-sm flex items-center gap-2 mb-2">
+                    <i data-lucide="sticky-note" class="w-4 h-4"></i>
+                    Anotações Internas
+                </h4>
+                <textarea 
+                    id="clientNotes" 
+                    class="input text-sm resize-none" 
+                    rows="3" 
+                    placeholder="Ex: Cliente prefere contato de manhã..."
+                    oninput="saveClientNotes(${client.id}, this.value)"
+                >${escapeHtml(notes)}</textarea>
+                <p class="text-xs text-slate-400 mt-1">Salva automaticamente</p>
+            </div>
+            
+            <!-- Ações -->
+            <div class="flex flex-col gap-2 pt-2 border-t border-slate-100">
+                <button onclick="generateCoupon(${client.id})" class="w-full btn btn-secondary text-sm">
+                    <i data-lucide="ticket" class="w-4 h-4"></i>
+                    Gerar Cupom Exclusivo
+                </button>
+                <button onclick="editClient(${client.id})" class="w-full btn btn-secondary text-sm">
+                    <i data-lucide="edit-2" class="w-4 h-4"></i>
+                    Editar Cadastro
+                </button>
+            </div>
         </div>
     `;
+    lucide.createIcons();
+}
+
+function saveClientNotes(clientId, notes) {
+    clientNotes[clientId] = notes;
+    localStorage.setItem('crm_client_notes', JSON.stringify(clientNotes));
+}
+
+async function saveNewClient() {
+    const name = document.getElementById('newClientName').value.trim();
+    const email = document.getElementById('newClientEmail').value.trim();
+    const state = document.getElementById('newClientState').value;
+    const phone = document.getElementById('newClientPhone').value;
+    
+    if (!name) return alert('Nome é obrigatório');
+    
+    // Criar novo cliente (simular API - em produção, enviar para backend)
+    const newClient = {
+        id: Date.now(),
+        nome: name,
+        email: email,
+        estado: state,
+        telefone: phone,
+        celular: phone,
+        data_cadastro: new Date().toISOString()
+    };
+    
+    // Adicionar à lista local
+    allClients.push(newClient);
+    
+    // Atualizar painel
+    currentClient = newClient;
+    renderClientPanel(newClient, phone);
+    
+    // Remover tag de Lead Novo
+    if (currentChatId && chatTags[currentChatId]) {
+        const leadTag = allTags.find(t => t.name.toLowerCase().includes('lead'));
+        if (leadTag) {
+            chatTags[currentChatId] = chatTags[currentChatId].filter(id => id !== leadTag.id);
+            localStorage.setItem('crm_chat_tags', JSON.stringify(chatTags));
+            renderChatTags();
+        }
+    }
+    
+    alert('Cliente cadastrado com sucesso!');
+}
+
+function openSearchClientModal() {
+    document.getElementById('searchClientModal').classList.remove('hidden');
+    document.getElementById('searchClientInput').value = '';
+    document.getElementById('searchClientResults').innerHTML = '<p class="text-center text-slate-400 text-sm py-4">Digite para buscar clientes...</p>';
+    document.getElementById('searchClientInput').focus();
+    lucide.createIcons();
+}
+
+function closeSearchClientModal() {
+    document.getElementById('searchClientModal').classList.add('hidden');
+}
+
+function searchClientByName(query) {
+    const container = document.getElementById('searchClientResults');
+    
+    if (query.length < 2) {
+        container.innerHTML = '<p class="text-center text-slate-400 text-sm py-4">Digite pelo menos 2 caracteres...</p>';
+        return;
+    }
+    
+    const results = allClients.filter(c => 
+        c.nome.toLowerCase().includes(query.toLowerCase()) ||
+        (c.email && c.email.toLowerCase().includes(query.toLowerCase()))
+    ).slice(0, 10);
+    
+    if (results.length === 0) {
+        container.innerHTML = '<p class="text-center text-slate-400 text-sm py-4">Nenhum cliente encontrado</p>';
+        return;
+    }
+    
+    container.innerHTML = results.map(c => `
+        <div onclick="linkClientToChat(${c.id})" class="p-3 border border-slate-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 cursor-pointer transition-colors">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center font-bold text-slate-600">
+                    ${c.nome.charAt(0).toUpperCase()}
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-medium text-slate-800 truncate">${escapeHtml(c.nome)}</p>
+                    <p class="text-xs text-slate-500">${c.email || c.telefone || 'Sem contato'}</p>
+                </div>
+                <i data-lucide="link" class="w-4 h-4 text-blue-500"></i>
+            </div>
+        </div>
+    `).join('');
+    
+    lucide.createIcons();
+}
+
+function linkClientToChat(clientId) {
+    const client = allClients.find(c => c.id === clientId);
+    if (!client || !currentChatId) return;
+    
+    // Atualizar telefone do cliente com o novo número
+    const newPhone = currentChatId.replace('@s.whatsapp.net', '').replace(/\D/g, '');
+    client.telefone = newPhone;
+    client.celular = newPhone;
+    
+    // Renderizar painel com dados do cliente
+    currentClient = client;
+    renderClientPanel(client, newPhone);
+    
+    // Fechar modal
+    closeSearchClientModal();
+    
+    // Remover tag de Lead
+    if (chatTags[currentChatId]) {
+        const leadTag = allTags.find(t => t.name.toLowerCase().includes('lead'));
+        if (leadTag) {
+            chatTags[currentChatId] = chatTags[currentChatId].filter(id => id !== leadTag.id);
+            localStorage.setItem('crm_chat_tags', JSON.stringify(chatTags));
+            renderChatTags();
+        }
+    }
+    
+    alert(`Cliente "${client.nome}" vinculado a este número!`);
+}
+
+function showOrderDetails(orderId) {
+    const order = allOrders.find(o => o.id == orderId);
+    if (!order) return;
+    alert(`Pedido #${order.id}\\nData: ${new Date(order.data).toLocaleDateString('pt-BR')}\\nTotal: R$ ${parseFloat(order.total).toFixed(2)}\\nStatus: ${order.status || 'Pendente'}`);
+}
+
+function showAllOrders(clientId) {
+    const orders = allOrders.filter(o => o.cliente_id == clientId);
+    alert(`Total de ${orders.length} pedidos para este cliente.\\n\\nFuncionalidade completa em desenvolvimento.`);
+}
+
+function generateCoupon(clientId) {
+    const code = 'CJOTA' + Math.random().toString(36).substring(2, 8).toUpperCase();
+    alert(`Cupom gerado: ${code}\\n\\n10% de desconto exclusivo para este cliente!`);
+}
+
+function editClient(clientId) {
+    alert('Funcionalidade de edição em desenvolvimento.');
 }
 
 // ============================================================================
@@ -1349,9 +1665,9 @@ function processSnoozedChats() {
 }
 
 // ============================================================================
-// GRAVAÇÃO DE ÁUDIO (PTT)
+// GRAVAÇÃO DE ÁUDIO (PTT) - NOVA VERSÃO UX WHATSAPP STYLE
 // ============================================================================
-async function startRecording() {
+async function startAudioRecording() {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
@@ -1368,46 +1684,105 @@ async function startRecording() {
         mediaRecorder.start();
         recordingStartTime = Date.now();
         
-        // Mostrar indicador
-        document.getElementById('recordingIndicator').classList.remove('hidden');
-        document.getElementById('recordingIndicator').classList.add('flex');
-        document.getElementById('btnRecordAudio').classList.add('text-red-500', 'bg-red-50');
+        // Esconder área de input normal e mostrar área de gravação
+        document.getElementById('normalInputArea').classList.add('hidden');
+        document.getElementById('recordingArea').classList.remove('hidden');
         
         // Atualizar tempo
         recordingInterval = setInterval(() => {
             const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
             const min = Math.floor(elapsed / 60);
             const sec = elapsed % 60;
-            document.getElementById('recordingTime').textContent = `${min}:${sec.toString().padStart(2, '0')}`;
+            document.getElementById('recordingTimer').textContent = `${min}:${sec.toString().padStart(2, '0')}`;
         }, 100);
+        
+        lucide.createIcons();
         
     } catch (err) {
         console.error('Erro ao acessar microfone:', err);
-        alert('Não foi possível acessar o microfone. Verifique as permissões.');
+        alert('Não foi possível acessar o microfone. Verifique as permissões do navegador.');
     }
 }
 
-async function stopRecording() {
+function stopAndPreviewAudio() {
     if (!mediaRecorder || mediaRecorder.state !== 'recording') return;
     
     clearInterval(recordingInterval);
-    document.getElementById('recordingIndicator').classList.add('hidden');
-    document.getElementById('recordingIndicator').classList.remove('flex');
-    document.getElementById('btnRecordAudio').classList.remove('text-red-500', 'bg-red-50');
     
-    // Se gravou menos de 1 segundo, cancelar
-    if (Date.now() - recordingStartTime < 1000) {
-        mediaRecorder.stop();
-        return;
-    }
+    // Guardar duração
+    const duration = Math.floor((Date.now() - recordingStartTime) / 1000);
+    const min = Math.floor(duration / 60);
+    const sec = duration % 60;
     
     mediaRecorder.stop();
     
-    // Aguardar dados
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Aguardar dados e criar preview
+    setTimeout(() => {
+        recordedAudioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        recordedAudioUrl = URL.createObjectURL(recordedAudioBlob);
+        audioElement = new Audio(recordedAudioUrl);
+        
+        // Esconder área de gravação e mostrar preview
+        document.getElementById('recordingArea').classList.add('hidden');
+        document.getElementById('audioPreview').classList.remove('hidden');
+        document.getElementById('audioDuration').textContent = `${min}:${sec.toString().padStart(2, '0')}`;
+        
+        // Reset progress bar
+        document.getElementById('audioProgress').style.width = '0%';
+        
+        // Atualizar ícone do botão play
+        const btnPlay = document.getElementById('btnPlayAudio');
+        btnPlay.innerHTML = '<i data-lucide="play" class="w-5 h-5"></i>';
+        lucide.createIcons();
+        
+        // Listener para progresso do áudio
+        audioElement.ontimeupdate = () => {
+            if (audioElement.duration) {
+                const progress = (audioElement.currentTime / audioElement.duration) * 100;
+                document.getElementById('audioProgress').style.width = `${progress}%`;
+            }
+        };
+        
+        audioElement.onended = () => {
+            document.getElementById('audioProgress').style.width = '0%';
+            btnPlay.innerHTML = '<i data-lucide="play" class="w-5 h-5"></i>';
+            lucide.createIcons();
+        };
+        
+    }, 200);
+}
+
+function playRecordedAudio() {
+    if (!audioElement) return;
     
-    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-    await sendAudioMessage(audioBlob);
+    const btnPlay = document.getElementById('btnPlayAudio');
+    
+    if (audioElement.paused) {
+        audioElement.play();
+        btnPlay.innerHTML = '<i data-lucide="pause" class="w-5 h-5"></i>';
+    } else {
+        audioElement.pause();
+        btnPlay.innerHTML = '<i data-lucide="play" class="w-5 h-5"></i>';
+    }
+    lucide.createIcons();
+}
+
+function discardAudio() {
+    // Limpar áudio gravado
+    if (audioElement) {
+        audioElement.pause();
+        audioElement = null;
+    }
+    if (recordedAudioUrl) {
+        URL.revokeObjectURL(recordedAudioUrl);
+        recordedAudioUrl = null;
+    }
+    recordedAudioBlob = null;
+    audioChunks = [];
+    
+    // Esconder preview e mostrar input normal
+    document.getElementById('audioPreview').classList.add('hidden');
+    document.getElementById('normalInputArea').classList.remove('hidden');
 }
 
 function cancelRecording() {
@@ -1415,14 +1790,16 @@ function cancelRecording() {
         mediaRecorder.stop();
     }
     clearInterval(recordingInterval);
-    document.getElementById('recordingIndicator').classList.add('hidden');
-    document.getElementById('recordingIndicator').classList.remove('flex');
-    document.getElementById('btnRecordAudio').classList.remove('text-red-500', 'bg-red-50');
+    
+    // Esconder área de gravação e mostrar input normal
+    document.getElementById('recordingArea').classList.add('hidden');
+    document.getElementById('normalInputArea').classList.remove('hidden');
+    
     audioChunks = [];
 }
 
-async function sendAudioMessage(audioBlob) {
-    if (!currentChatId) return;
+async function sendRecordedAudio() {
+    if (!recordedAudioBlob || !currentChatId) return;
     
     const container = document.getElementById('messagesContainer');
     const wrap = document.createElement('div');
@@ -1430,20 +1807,21 @@ async function sendAudioMessage(audioBlob) {
     wrap.innerHTML = `
         <div class="p-3 max-w-[70%] text-sm shadow-sm msg-out">
             <div class="flex items-center gap-2">
-                <i class="fas fa-spinner fa-spin"></i>
+                <i data-lucide="loader" class="w-4 h-4 animate-spin"></i>
                 <span>Enviando áudio...</span>
             </div>
         </div>
     `;
     container.appendChild(wrap);
     container.scrollTop = container.scrollHeight;
+    lucide.createIcons();
     
     try {
         // Converter para base64
         const reader = new FileReader();
         const base64Promise = new Promise((resolve) => {
             reader.onloadend = () => resolve(reader.result);
-            reader.readAsDataURL(audioBlob);
+            reader.readAsDataURL(recordedAudioBlob);
         });
         const base64 = await base64Promise;
         
@@ -1463,6 +1841,9 @@ async function sendAudioMessage(audioBlob) {
             throw new Error(data.error);
         }
         
+        // Limpar e voltar ao estado normal
+        discardAudio();
+        
         setTimeout(() => loadMessages(currentChatId), 1000);
         
     } catch (e) {
@@ -1470,6 +1851,15 @@ async function sendAudioMessage(audioBlob) {
         alert('Erro ao enviar áudio: ' + e.message);
         wrap.remove();
     }
+}
+
+// Manter compatibilidade com funções antigas (caso sejam chamadas)
+async function startRecording() { startAudioRecording(); }
+async function stopRecording() { stopAndPreviewAudio(); }
+
+async function sendAudioMessage(audioBlob) {
+    recordedAudioBlob = audioBlob;
+    await sendRecordedAudio();
 }
 
 // ============================================================================
