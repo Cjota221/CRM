@@ -35,12 +35,30 @@ exports.handler = async (event) => {
                 supabase.from('abandoned_carts').select('*').order('created_at', { ascending: false }).limit(50)
             ]);
             
+            // Transformar carrinhos para o formato esperado pelo frontend
+            const formattedCarts = (cartsRes.data || []).map(cart => ({
+                id: cart.id,
+                tipo: 'carrinho_abandonado',
+                cliente: {
+                    id: cart.cliente_id,
+                    nome: cart.cliente_nome,
+                    whatsapp: cart.cliente_whatsapp,
+                    email: cart.cliente_email
+                },
+                valor_total: cart.valor_total,
+                quantidade_produtos: cart.quantidade_produtos,
+                produtos: cart.produtos || [],
+                iniciado_em: cart.iniciado_em,
+                ultima_atualizacao: cart.ultima_atualizacao,
+                status: cart.status
+            }));
+            
             return {
                 statusCode: 200,
                 headers,
                 body: JSON.stringify({
                     events: eventsRes.data || [],
-                    abandonedCarts: cartsRes.data || []
+                    abandonedCarts: formattedCarts
                 })
             };
         } catch (error) {
