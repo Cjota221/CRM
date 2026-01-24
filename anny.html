@@ -785,6 +785,8 @@
 
                 if (event.error === 'not-allowed') {
                     alert('⚠️ Permissão de microfone negada!\n\nPara usar a voz, permita o acesso ao microfone nas configurações do navegador.');
+                } else if (event.error === 'network') {
+                    alert('🌐 Erro de conexão com o serviço de voz!\n\nSe estiver usando o Brave:\n• Clique no ícone do leão 🦁\n• Desative o "Shields" para este site\n\nOu use o Chrome/Edge para melhor compatibilidade.');
                 } else if (event.error === 'no-speech') {
                     // Não mostrar erro se apenas não falou nada
                     console.log('[Voz] Nenhuma fala detectada');
