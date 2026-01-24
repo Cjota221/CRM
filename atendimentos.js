@@ -1554,3 +1554,470 @@ function escapeHtml(text) {
                .replace(/"/g, "&quot;")
                .replace(/'/g, "&#039;");
 }
+
+// ============================================================================
+// SISTEMA DE CAMPANHAS
+// ============================================================================
+let allCampaigns = JSON.parse(localStorage.getItem('crm_campaigns') || '[]');
+let selectedAudience = null;
+let campaignImageBase64 = null;
+let currentCampaignFilter = 'all';
+
+// Alternar entre Views
+function switchView(view) {
+    const viewChats = document.getElementById('viewChats');
+    const viewCampaigns = document.getElementById('viewCampaigns');
+    const tabChats = document.getElementById('tabChats');
+    const tabCampaigns = document.getElementById('tabCampaigns');
+    
+    if (view === 'chats') {
+        viewChats.classList.remove('hidden');
+        viewCampaigns.classList.add('hidden');
+        tabChats.classList.add('bg-white', 'text-emerald-700', 'shadow-sm');
+        tabChats.classList.remove('text-slate-500');
+        tabCampaigns.classList.remove('bg-white', 'text-purple-700', 'shadow-sm');
+        tabCampaigns.classList.add('text-slate-500');
+    } else {
+        viewChats.classList.add('hidden');
+        viewCampaigns.classList.remove('hidden');
+        tabCampaigns.classList.add('bg-white', 'text-purple-700', 'shadow-sm');
+        tabCampaigns.classList.remove('text-slate-500');
+        tabChats.classList.remove('bg-white', 'text-emerald-700', 'shadow-sm');
+        tabChats.classList.add('text-slate-500');
+        
+        // Carregar dados das campanhas
+        loadCampaignData();
+        renderCampaigns();
+        updateCampaignStats();
+        lucide.createIcons();
+    }
+}
+
+async function loadCampaignData() {
+    try {
+        // Atualizar contagens
+        document.getElementById('countAll').textContent = `${allClients.length} contatos`;
+        
+        // Calcular inativos (90+ dias)
+        const ninetyDaysAgo = Date.now() - (90 * 24 * 60 * 60 * 1000);
+        const inactive = allClients.filter(c => {
+            const clientOrders = allOrders.filter(o => o.cliente_id == c.id).sort((a,b) => new Date(b.data) - new Date(a.data));
+            if (clientOrders.length === 0) return true;
+            return new Date(clientOrders[0].data).getTime() < ninetyDaysAgo;
+        });
+        document.getElementById('countInactive').textContent = `${inactive.length} contatos`;
+        
+        // VIPs (ticket médio > 500)
+        const vips = allClients.filter(c => {
+            const clientOrders = allOrders.filter(o => o.cliente_id == c.id);
+            const total = clientOrders.reduce((sum, o) => sum + parseFloat(o.total || 0), 0);
+            const avg = clientOrders.length > 0 ? total / clientOrders.length : 0;
+            return avg >= 500;
+        });
+        document.getElementById('countVip').textContent = `${vips.length} contatos`;
+        
+        // Carregar grupos no seletor
+        const groups = allChats.filter(c => c.remoteJid.includes('@g.us'));
+        const select = document.getElementById('targetGroup');
+        if (select) {
+            select.innerHTML = '<option value="">Selecione um grupo...</option>' +
+                groups.map(g => `<option value="${g.remoteJid}">${g.name || formatPhone(g.remoteJid)} (${g.participantsCount || '?'} participantes)</option>`).join('');
+        }
+    } catch (e) {
+        console.error('Erro ao carregar dados para campanhas:', e);
+    }
+}
+
+function selectAudience(type) {
+    selectedAudience = type;
+    
+    document.querySelectorAll('.audience-btn').forEach(btn => {
+        btn.classList.remove('border-primary-500', 'bg-primary-50');
+        btn.classList.add('border-slate-200');
+    });
+    
+    const selected = document.querySelector(`[data-audience="${type}"]`);
+    if (selected) {
+        selected.classList.add('border-primary-500', 'bg-primary-50');
+        selected.classList.remove('border-slate-200');
+    }
+    
+    document.getElementById('groupSelector').classList.toggle('hidden', type !== 'group');
+    updateCampaignSummary();
+}
+
+function toggleSchedule() {
+    const enabled = document.getElementById('scheduleEnabled').checked;
+    document.getElementById('scheduleOptions').classList.toggle('hidden', !enabled);
+}
+
+function insertCampaignVar(varName) {
+    const textarea = document.getElementById('campaignMessage');
+    const start = textarea.selectionStart;
+    const text = textarea.value;
+    textarea.value = text.slice(0, start) + `{{${varName}}}` + text.slice(start);
+    textarea.focus();
+}
+
+function previewCampaignImage(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        campaignImageBase64 = e.target.result;
+        document.getElementById('campaignImageThumb').src = e.target.result;
+        document.getElementById('campaignImagePreview').classList.remove('hidden');
+    };
+    reader.readAsDataURL(file);
+}
+
+function removeCampaignImage() {
+    campaignImageBase64 = null;
+    document.getElementById('campaignImage').value = '';
+    document.getElementById('campaignImagePreview').classList.add('hidden');
+}
+
+function updateCampaignSummary() {
+    if (!selectedAudience) return;
+    
+    let count = 0;
+    if (selectedAudience === 'all') count = allClients.length;
+    else if (selectedAudience === 'group') count = '?';
+    else {
+        const el = document.getElementById(`count${selectedAudience.charAt(0).toUpperCase() + selectedAudience.slice(1)}`);
+        count = el ? parseInt(el.textContent) || 0 : 0;
+    }
+    
+    const batchSize = parseInt(document.getElementById('batchSize').value);
+    const interval = parseInt(document.getElementById('batchInterval').value);
+    
+    const batches = Math.ceil(count / batchSize);
+    const totalMinutes = batches * interval;
+    const hours = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
+    
+    document.getElementById('campaignSummary').textContent = 
+        `${count} contatos • ${batches} lotes • ~${hours}h${mins}min para completar`;
+}
+
+function openNewCampaign() {
+    document.getElementById('newCampaignModal').classList.remove('hidden');
+    loadCampaignData();
+    lucide.createIcons();
+}
+
+function closeNewCampaign() {
+    document.getElementById('newCampaignModal').classList.add('hidden');
+    document.getElementById('campaignName').value = '';
+    document.getElementById('campaignMessage').value = '';
+    selectedAudience = null;
+    campaignImageBase64 = null;
+    document.querySelectorAll('.audience-btn').forEach(btn => {
+        btn.classList.remove('border-primary-500', 'bg-primary-50');
+        btn.classList.add('border-slate-200');
+    });
+}
+
+async function saveCampaign() {
+    const name = document.getElementById('campaignName').value.trim();
+    const message = document.getElementById('campaignMessage').value.trim();
+    
+    if (!name || !message || !selectedAudience) {
+        return alert('Preencha todos os campos obrigatórios');
+    }
+    
+    const scheduled = document.getElementById('scheduleEnabled').checked;
+    let scheduleTime = null;
+    
+    if (scheduled) {
+        const date = document.getElementById('scheduleDate').value;
+        const time = document.getElementById('scheduleTime').value;
+        if (!date || !time) return alert('Selecione data e hora para agendamento');
+        scheduleTime = new Date(`${date}T${time}`).getTime();
+    }
+    
+    // Construir lista de contatos baseado no público
+    let contacts = [];
+    if (selectedAudience === 'all') {
+        contacts = allClients.map(c => ({ id: c.id, name: c.nome, phone: c.telefone || c.celular }));
+    } else if (selectedAudience === 'inactive') {
+        const ninetyDaysAgo = Date.now() - (90 * 24 * 60 * 60 * 1000);
+        contacts = allClients.filter(c => {
+            const clientOrders = allOrders.filter(o => o.cliente_id == c.id).sort((a,b) => new Date(b.data) - new Date(a.data));
+            if (clientOrders.length === 0) return true;
+            return new Date(clientOrders[0].data).getTime() < ninetyDaysAgo;
+        }).map(c => ({ id: c.id, name: c.nome, phone: c.telefone || c.celular }));
+    } else if (selectedAudience === 'vip') {
+        contacts = allClients.filter(c => {
+            const clientOrders = allOrders.filter(o => o.cliente_id == c.id);
+            const total = clientOrders.reduce((sum, o) => sum + parseFloat(o.total || 0), 0);
+            const avg = clientOrders.length > 0 ? total / clientOrders.length : 0;
+            return avg >= 500;
+        }).map(c => ({ id: c.id, name: c.nome, phone: c.telefone || c.celular }));
+    }
+    
+    const campaign = {
+        id: Date.now(),
+        name,
+        message,
+        image: campaignImageBase64,
+        audience: selectedAudience,
+        targetGroup: selectedAudience === 'group' ? document.getElementById('targetGroup').value : null,
+        batchSize: parseInt(document.getElementById('batchSize').value),
+        batchInterval: parseInt(document.getElementById('batchInterval').value),
+        scheduledFor: scheduleTime,
+        status: scheduled ? 'scheduled' : 'running',
+        createdAt: Date.now(),
+        sent: 0,
+        failed: 0,
+        total: contacts.length,
+        contacts: contacts,
+        currentBatch: 0,
+        lastBatchAt: null
+    };
+    
+    allCampaigns.push(campaign);
+    saveCampaigns();
+    
+    closeNewCampaign();
+    renderCampaigns();
+    updateCampaignStats();
+    
+    if (!scheduled) {
+        startCampaign(campaign.id);
+    }
+    
+    alert(scheduled ? 'Campanha agendada com sucesso!' : 'Campanha iniciada!');
+}
+
+function renderCampaigns() {
+    const container = document.getElementById('campaignsList');
+    if (!container) return;
+    
+    let filtered = allCampaigns;
+    
+    if (currentCampaignFilter !== 'all') {
+        filtered = allCampaigns.filter(c => c.status === currentCampaignFilter);
+    }
+    
+    if (filtered.length === 0) {
+        container.innerHTML = `
+            <div class="text-center py-12">
+                <div class="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-4">
+                    <i data-lucide="megaphone" class="w-8 h-8 text-slate-300"></i>
+                </div>
+                <p class="text-slate-500 font-medium">Nenhuma campanha ${currentCampaignFilter !== 'all' ? 'neste status' : 'criada'}</p>
+                <button onclick="openNewCampaign()" class="btn btn-primary mt-4">
+                    <i data-lucide="plus" class="w-4 h-4"></i>
+                    Nova Campanha
+                </button>
+            </div>
+        `;
+        lucide.createIcons();
+        return;
+    }
+    
+    container.innerHTML = filtered.map(c => {
+        const progress = c.total > 0 ? (c.sent / c.total * 100).toFixed(0) : 0;
+        const statusColors = {
+            scheduled: 'bg-amber-100 text-amber-700',
+            running: 'bg-blue-100 text-blue-700',
+            completed: 'bg-emerald-100 text-emerald-700',
+            paused: 'bg-slate-100 text-slate-700'
+        };
+        const statusLabels = {
+            scheduled: 'Agendada',
+            running: 'Em Andamento',
+            completed: 'Concluída',
+            paused: 'Pausada'
+        };
+        
+        return `
+            <div class="card p-5">
+                <div class="flex justify-between items-start mb-4">
+                    <div>
+                        <h3 class="font-semibold text-slate-800">${escapeHtml(c.name)}</h3>
+                        <p class="text-xs text-slate-500 mt-1">Criada em ${new Date(c.createdAt).toLocaleDateString('pt-BR')}</p>
+                    </div>
+                    <span class="badge ${statusColors[c.status]}">${statusLabels[c.status]}</span>
+                </div>
+                
+                <p class="text-sm text-slate-600 mb-4 line-clamp-2">${escapeHtml(c.message)}</p>
+                
+                <div class="flex items-center gap-4 mb-4">
+                    <div class="flex-1">
+                        <div class="flex justify-between text-xs text-slate-500 mb-1">
+                            <span>${c.sent}/${c.total} enviadas</span>
+                            <span>${progress}%</span>
+                        </div>
+                        <div class="h-2 rounded-full bg-slate-200 overflow-hidden">
+                            <div class="h-full bg-emerald-500 rounded-full transition-all" style="width: ${progress}%"></div>
+                        </div>
+                    </div>
+                    ${c.failed > 0 ? `<span class="text-xs text-red-500">${c.failed} falhas</span>` : ''}
+                </div>
+                
+                <div class="flex justify-between items-center">
+                    ${c.scheduledFor ? `<span class="text-xs text-slate-500"><i data-lucide="clock" class="w-3 h-3 inline mr-1"></i>${new Date(c.scheduledFor).toLocaleString('pt-BR')}</span>` : '<span></span>'}
+                    <div class="flex gap-2">
+                        ${c.status === 'running' ? `
+                            <button onclick="pauseCampaign(${c.id})" class="btn btn-secondary text-xs py-1.5 px-3">
+                                <i data-lucide="pause" class="w-3 h-3"></i> Pausar
+                            </button>
+                        ` : ''}
+                        ${c.status === 'paused' ? `
+                            <button onclick="resumeCampaign(${c.id})" class="btn btn-success text-xs py-1.5 px-3">
+                                <i data-lucide="play" class="w-3 h-3"></i> Retomar
+                            </button>
+                        ` : ''}
+                        ${c.status === 'scheduled' ? `
+                            <button onclick="startCampaign(${c.id})" class="btn btn-success text-xs py-1.5 px-3">
+                                <i data-lucide="play" class="w-3 h-3"></i> Iniciar
+                            </button>
+                        ` : ''}
+                        <button onclick="deleteCampaign(${c.id})" class="btn btn-danger text-xs py-1.5 px-3">
+                            <i data-lucide="trash-2" class="w-3 h-3"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    lucide.createIcons();
+}
+
+function updateCampaignStats() {
+    const today = new Date().toDateString();
+    const sentToday = allCampaigns
+        .filter(c => c.status === 'completed' && new Date(c.createdAt).toDateString() === today)
+        .reduce((sum, c) => sum + c.sent, 0);
+    
+    const el1 = document.getElementById('statSentToday');
+    const el2 = document.getElementById('statScheduled');
+    const el3 = document.getElementById('statRunning');
+    
+    if (el1) el1.textContent = sentToday;
+    if (el2) el2.textContent = allCampaigns.filter(c => c.status === 'scheduled').length;
+    if (el3) el3.textContent = allCampaigns.filter(c => c.status === 'running').length;
+}
+
+function filterCampaigns(filter) {
+    currentCampaignFilter = filter;
+    
+    ['campFilterAll', 'campFilterScheduled', 'campFilterRunning', 'campFilterCompleted', 'campFilterPaused'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (!btn) return;
+        
+        const filterName = id.replace('campFilter', '').toLowerCase();
+        if (filterName === filter || (filter === 'all' && id === 'campFilterAll')) {
+            btn.classList.add('bg-slate-100', 'text-slate-700');
+            btn.classList.remove('text-slate-500');
+        } else {
+            btn.classList.remove('bg-slate-100', 'text-slate-700');
+            btn.classList.add('text-slate-500');
+        }
+    });
+    
+    renderCampaigns();
+}
+
+function searchCampaigns(query) {
+    // Implementar se necessário
+}
+
+async function startCampaign(id) {
+    const campaign = allCampaigns.find(c => c.id === id);
+    if (!campaign) return;
+    
+    campaign.status = 'running';
+    campaign.lastBatchAt = Date.now();
+    saveCampaigns();
+    renderCampaigns();
+    updateCampaignStats();
+    
+    processCampaignBatch(id);
+}
+
+async function processCampaignBatch(id) {
+    const campaign = allCampaigns.find(c => c.id === id);
+    if (!campaign || campaign.status !== 'running') return;
+    
+    const startIdx = campaign.sent;
+    const endIdx = Math.min(startIdx + campaign.batchSize, campaign.total);
+    const batch = campaign.contacts.slice(startIdx, endIdx);
+    
+    for (const contact of batch) {
+        if (!contact.phone) {
+            campaign.failed++;
+            continue;
+        }
+        
+        try {
+            let text = campaign.message.replace(/\{\{nome\}\}/gi, contact.name || 'Cliente');
+            
+            const phone = contact.phone.replace(/\D/g, '');
+            
+            await fetch(`${API_BASE}/whatsapp/send-message`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ number: phone, text })
+            });
+            
+            campaign.sent++;
+            
+            // Delay entre mensagens (2-5 segundos)
+            await new Promise(r => setTimeout(r, 2000 + Math.random() * 3000));
+            
+        } catch (e) {
+            console.error('Erro ao enviar:', e);
+            campaign.failed++;
+        }
+    }
+    
+    campaign.currentBatch++;
+    campaign.lastBatchAt = Date.now();
+    
+    if (campaign.sent >= campaign.total) {
+        campaign.status = 'completed';
+    }
+    
+    saveCampaigns();
+    renderCampaigns();
+    updateCampaignStats();
+    
+    if (campaign.status === 'running') {
+        setTimeout(() => processCampaignBatch(id), campaign.batchInterval * 60 * 1000);
+    }
+}
+
+function pauseCampaign(id) {
+    const campaign = allCampaigns.find(c => c.id === id);
+    if (campaign) {
+        campaign.status = 'paused';
+        saveCampaigns();
+        renderCampaigns();
+        updateCampaignStats();
+    }
+}
+
+function resumeCampaign(id) {
+    startCampaign(id);
+}
+
+function deleteCampaign(id) {
+    if (!confirm('Excluir esta campanha?')) return;
+    allCampaigns = allCampaigns.filter(c => c.id !== id);
+    saveCampaigns();
+    renderCampaigns();
+    updateCampaignStats();
+}
+
+function saveCampaigns() {
+    localStorage.setItem('crm_campaigns', JSON.stringify(allCampaigns));
+}
+
+function openImportFromGroup() {
+    alert('Funcionalidade em desenvolvimento: Importar contatos de grupos do WhatsApp');
+}
