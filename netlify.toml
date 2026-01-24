@@ -15,6 +15,12 @@ status = 200
 force = true
 
 [[redirects]]
+from = "/api/webhook/events"
+to = "/.netlify/functions/webhook-handler"
+status = 200
+force = true
+
+[[redirects]]
 from = "/api/facilzap-proxy"
 to = "/.netlify/functions/facilzap-proxy"
 status = 200
