@@ -646,6 +646,9 @@ async function loadMessages(remoteJid, isUpdate = false) {
              return;
         }
 
+        // Pausar todos os áudios antes de limpar o container
+        pauseAllAudios();
+
         container.innerHTML = '';
         
         // Inverter ordem para aparecer de baixo para cima (histórico)
@@ -2102,6 +2105,20 @@ function escapeHtml(text) {
 
 const audioPlayers = {}; // Armazena instâncias de áudio ativas
 
+function pauseAllAudios() {
+    // Pausar todos os áudios ativos e limpar referências
+    Object.keys(audioPlayers).forEach(id => {
+        if (audioPlayers[id] && !audioPlayers[id].paused) {
+            try {
+                audioPlayers[id].pause();
+            } catch (e) {
+                // Ignorar erros se o elemento já foi removido
+            }
+        }
+        delete audioPlayers[id];
+    });
+}
+
 function toggleAudioPlay(audioId, audioUrl) {
     const audioEl = document.getElementById(audioId);
     const playerDiv = document.querySelector(`[data-audio-id="${audioId}"]`);
@@ -2124,21 +2141,35 @@ function toggleAudioPlay(audioId, audioUrl) {
     
     // Toggle play/pause
     if (audioEl.paused) {
-        audioEl.play();
-        playIcon.classList.add('hidden');
-        pauseIcon.classList.remove('hidden');
+        // Usar promise do play() para capturar erros
+        const playPromise = audioEl.play();
         
-        // Armazenar referência
-        audioPlayers[audioId] = audioEl;
-        
-        // Atualizar progresso
-        audioEl.ontimeupdate = () => updateAudioProgress(audioId);
-        audioEl.onended = () => {
-            playIcon.classList.remove('hidden');
-            pauseIcon.classList.add('hidden');
-            playerDiv.querySelector('.audio-progress').style.width = '0%';
-            playerDiv.querySelector('.audio-time').textContent = '0:00';
-        };
+        if (playPromise !== undefined) {
+            playPromise.then(() => {
+                playIcon.classList.add('hidden');
+                pauseIcon.classList.remove('hidden');
+                
+                // Armazenar referência
+                audioPlayers[audioId] = audioEl;
+                
+                // Atualizar progresso
+                audioEl.ontimeupdate = () => updateAudioProgress(audioId);
+                audioEl.onended = () => {
+                    playIcon.classList.remove('hidden');
+                    pauseIcon.classList.add('hidden');
+                    if (playerDiv.querySelector('.audio-progress')) {
+                        playerDiv.querySelector('.audio-progress').style.width = '0%';
+                    }
+                    if (playerDiv.querySelector('.audio-time')) {
+                        playerDiv.querySelector('.audio-time').textContent = '0:00';
+                    }
+                    delete audioPlayers[audioId];
+                };
+            }).catch(error => {
+                console.log('Erro ao reproduzir áudio:', error.message);
+                // Não mostrar erro ao usuário se foi abortado
+            });
+        }
     } else {
         audioEl.pause();
         playIcon.classList.remove('hidden');
