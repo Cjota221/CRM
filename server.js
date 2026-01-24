@@ -864,7 +864,15 @@ app.post('/api/whatsapp/send-media', async (req, res) => {
                 break;
             case 'audio':
                 endpoint = 'sendWhatsAppAudio';
-                body.audio = media;
+                // Evolution API v2 - áudio deve ser URL ou base64 válido
+                // Remover prefixo data: se existir e recriar no formato correto
+                let audioBase64 = media;
+                if (audioBase64.includes(',')) {
+                    audioBase64 = audioBase64.split(',')[1]; // Pegar só o base64
+                }
+                // Enviar como data URI
+                body.audio = `data:audio/mp4;base64,${audioBase64}`;
+                console.log('[WhatsApp] Áudio base64 length:', audioBase64.length);
                 break;
             case 'document':
                 endpoint = 'sendMedia';

@@ -1670,7 +1670,20 @@ function processSnoozedChats() {
 async function startAudioRecording() {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+        
+        // Tentar usar formato compatível com WhatsApp
+        let mimeType = 'audio/webm;codecs=opus';
+        if (MediaRecorder.isTypeSupported('audio/mp4')) {
+            mimeType = 'audio/mp4';
+        } else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
+            mimeType = 'audio/ogg;codecs=opus';
+        } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+            mimeType = 'audio/webm';
+        }
+        
+        console.log('[Audio] Usando mimeType:', mimeType);
+        
+        mediaRecorder = new MediaRecorder(stream, { mimeType });
         audioChunks = [];
         
         mediaRecorder.ondataavailable = (e) => {
@@ -1817,13 +1830,19 @@ async function sendRecordedAudio() {
     lucide.createIcons();
     
     try {
-        // Converter para base64
+        // Converter para base64 - REMOVER PREFIXO data:...
         const reader = new FileReader();
         const base64Promise = new Promise((resolve) => {
-            reader.onloadend = () => resolve(reader.result);
+            reader.onloadend = () => {
+                // Remover prefixo "data:audio/webm;base64," para enviar apenas o base64 puro
+                const fullBase64 = reader.result;
+                resolve(fullBase64); // Enviar completo, o server vai processar
+            };
             reader.readAsDataURL(recordedAudioBlob);
         });
         const base64 = await base64Promise;
+        
+        console.log('[Audio] Enviando áudio, tamanho base64:', base64.length);
         
         const response = await fetch(`${API_BASE}/whatsapp/send-media`, {
             method: 'POST',
@@ -1831,7 +1850,8 @@ async function sendRecordedAudio() {
             body: JSON.stringify({
                 number: currentChatId,
                 mediaType: 'audio',
-                media: base64
+                media: base64,
+                mimetype: 'audio/ogg; codecs=opus' // Formato PTT do WhatsApp
             })
         });
         
