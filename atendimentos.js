@@ -35,16 +35,26 @@ const API_BASE = 'http://localhost:3000/api';
 // ============================================================================
 // FUNÇÃO GLOBAL: FORMATAÇÃO DE TELEFONE
 // ============================================================================
-function formatPhone(rawNumber) {
-    if (!rawNumber) return 'Sem número';
+function cleanPhoneNumber(rawNumber) {
+    if (!rawNumber) return '';
     
-    // Limpar: remover tudo que não é dígito
-    let cleaned = rawNumber.replace(/\D/g, '');
+    // Remover TUDO que não é dígito: @s.whatsapp.net, @c.us, @g.us, :, etc
+    let cleaned = String(rawNumber).replace(/\D/g, '');
     
-    // Se tiver DDI 55 (Brasil), remover para exibição
+    // Remover DDI 55 (Brasil) se tiver
     if (cleaned.startsWith('55') && cleaned.length >= 12) {
         cleaned = cleaned.substring(2);
     }
+    
+    return cleaned;
+}
+
+function formatPhone(rawNumber) {
+    if (!rawNumber) return 'Sem número';
+    
+    const cleaned = cleanPhoneNumber(rawNumber);
+    
+    if (!cleaned) return rawNumber;
     
     // Aplicar máscara visual (DD) NNNNN-NNNN
     if (cleaned.length === 11) {
@@ -58,18 +68,87 @@ function formatPhone(rawNumber) {
         return `${cleaned.substring(0, cleaned.length - 4)}-${cleaned.substring(cleaned.length - 4)}`;
     }
     
-    return cleaned || rawNumber;
+    return cleaned;
 }
 
 // Função para extrair apenas números do telefone (para busca no banco)
 function cleanPhoneForSearch(rawNumber) {
-    if (!rawNumber) return '';
-    let cleaned = rawNumber.replace(/\D/g, '');
-    // Remover DDI 55 se tiver
-    if (cleaned.startsWith('55') && cleaned.length >= 12) {
-        cleaned = cleaned.substring(2);
+    return cleanPhoneNumber(rawNumber);
+}
+
+// ============================================================================
+// FORMATAÇÃO DE TEXTO WHATSAPP
+// ============================================================================
+function formatWhatsAppText(text) {
+    if (!text || typeof text !== 'string') return '';
+    
+    // Escapar HTML primeiro para evitar XSS
+    let formatted = text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    
+    // Aplicar formatação WhatsApp
+    // *negrito*
+    formatted = formatted.replace(/\*([^*]+)\*/g, '<strong>$1</strong>');
+    
+    // _itálico_
+    formatted = formatted.replace(/_([^_]+)_/g, '<em>$1</em>');
+    
+    // ~tachado~
+    formatted = formatted.replace(/~([^~]+)~/g, '<del>$1</del>');
+    
+    // Quebras de linha
+    formatted = formatted.replace(/\n/g, '<br>');
+    
+    // Links clicáveis
+    formatted = formatted.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" class="text-blue-500 underline hover:text-blue-600">$1</a>');
+    
+    return formatted;
+}
+
+// Função para extrair nome de contato (prioridade: CRM > WhatsApp > Telefone)
+function getContactDisplayName(chatData) {
+    if (!chatData) return 'Desconhecido';
+    
+    const jid = chatData.id || chatData.remoteJid;
+    
+    // Se for grupo
+    if (jid?.includes('@g.us')) {
+        return chatData.name || chatData.subject || 'Grupo';
     }
-    return cleaned;
+    
+    // Tentar encontrar no CRM primeiro
+    const cleanPhone = cleanPhoneNumber(jid);
+    if (cleanPhone && allClients.length > 0) {
+        const lastDigits = cleanPhone.slice(-9);
+        const client = allClients.find(c => {
+            const p = cleanPhoneNumber(c.telefone || c.celular || c.whatsapp || '');
+            return p.includes(lastDigits) || lastDigits.includes(p.slice(-8));
+        });
+        
+        if (client && client.nome) {
+            return client.nome;
+        }
+    }
+    
+    // Se não achou no CRM, usar pushName do WhatsApp
+    if (chatData.pushName) {
+        return chatData.pushName;
+    }
+    
+    if (chatData.name) {
+        return chatData.name;
+    }
+    
+    // Último recurso: telefone formatado
+    if (jid) {
+        return formatPhone(jid);
+    }
+    
+    return 'Desconhecido';
 }
 
 // ============================================================================
@@ -409,21 +488,40 @@ function renderChatsList(chats) {
     
     filteredChats.forEach(chat => {
         const chatId = chat.id || chat.remoteJid;
-        const name = chat.name || chat.pushName || formatPhone(chatId);
+        
+        // Usar função getContactDisplayName para nome consistente
+        const name = getContactDisplayName(chat);
+        
         const isGroup = chat.isGroup || chatId?.includes('@g.us');
         const isCommunity = chat.isCommunity;
         
-        // Última mensagem
-        const lastMsg = chat.lastMessage?.message?.conversation || 
-                       chat.lastMessage?.message?.extendedTextMessage?.text || 
-                       (chat.lastMessage?.message?.imageMessage ? '📷 Imagem' : 
-                       chat.lastMessage?.message?.audioMessage ? '🎵 Áudio' : 
-                       chat.lastMessage?.message?.videoMessage ? '🎬 Vídeo' : 
-                       chat.lastMessage?.message?.documentMessage ? '📄 Documento' : 
-                       chat.lastMessage?.message?.stickerMessage ? '✨ Figurinha' :
-                       chat.lastMessage?.message?.contactMessage ? '👤 Contato' :
-                       chat.lastMessage?.message?.locationMessage ? '📍 Localização' :
-                       (chat.lastMessage ? 'Mídia' : ''));
+        // Última mensagem - limitar tamanho e remover formatação
+        let lastMsgText = '';
+        const lastMsgObj = chat.lastMessage?.message;
+        
+        if (lastMsgObj?.conversation) {
+            lastMsgText = lastMsgObj.conversation;
+        } else if (lastMsgObj?.extendedTextMessage?.text) {
+            lastMsgText = lastMsgObj.extendedTextMessage.text;
+        } else if (lastMsgObj?.imageMessage) {
+            lastMsgText = '📷 Imagem';
+        } else if (lastMsgObj?.audioMessage) {
+            lastMsgText = '🎵 Áudio';
+        } else if (lastMsgObj?.videoMessage) {
+            lastMsgText = '🎬 Vídeo';
+        } else if (lastMsgObj?.documentMessage) {
+            lastMsgText = '📄 Documento';
+        } else if (lastMsgObj?.stickerMessage) {
+            lastMsgText = '✨ Figurinha';
+        } else if (lastMsgObj?.contactMessage) {
+            lastMsgText = '👤 Contato';
+        } else if (lastMsgObj?.locationMessage) {
+            lastMsgText = '📍 Localização';
+        }
+        
+        // Remover formatação (*negrito*, etc) e limitar caracteres
+        const cleanLastMsg = lastMsgText.replace(/[\*_~]/g, '').substring(0, 50);
+        const lastMsg = cleanLastMsg.length < lastMsgText.length ? cleanLastMsg + '...' : cleanLastMsg;
         
         // Formatar hora
         const timestamp = chat.lastMessage?.messageTimestamp || chat.updatedAt;
@@ -518,8 +616,8 @@ async function openChat(chat) {
     // Renderizar tags do chat
     renderChatTags();
     
-    // Header Info
-    const name = chat.name || chat.pushName || formatPhone(chat.id);
+    // Header Info - Usar nome consistente
+    const name = getContactDisplayName(chat);
     document.getElementById('headerName').innerText = name;
     
     // Subtítulo: número ou info do grupo
@@ -660,18 +758,23 @@ async function loadMessages(remoteJid, isUpdate = false) {
             
             // Extrair conteúdo da mensagem
             let content = '';
+            let isTextMessage = false;
             const m = msg.message;
             
             if (m?.conversation) {
-                content = m.conversation;
+                content = formatWhatsAppText(m.conversation);
+                isTextMessage = true;
             } else if (m?.extendedTextMessage?.text) {
-                content = m.extendedTextMessage.text;
+                content = formatWhatsAppText(m.extendedTextMessage.text);
+                isTextMessage = true;
             } else if (m?.imageMessage) {
                 const caption = m.imageMessage.caption || '';
-                content = `<div class="flex items-center gap-2"><span class="text-lg">📷</span> <span>Imagem${caption ? ': ' + caption : ''}</span></div>`;
+                const captionHtml = caption ? '<br>' + formatWhatsAppText(caption) : '';
+                content = `<div class="flex items-center gap-2"><span class="text-lg">📷</span> <span>Imagem${captionHtml}</span></div>`;
             } else if (m?.videoMessage) {
                 const caption = m.videoMessage.caption || '';
-                content = `<div class="flex items-center gap-2"><span class="text-lg">🎬</span> <span>Vídeo${caption ? ': ' + caption : ''}</span></div>`;
+                const captionHtml = caption ? '<br>' + formatWhatsAppText(caption) : '';
+                content = `<div class="flex items-center gap-2"><span class="text-lg">🎬</span> <span>Vídeo${captionHtml}</span></div>`;
             } else if (m?.audioMessage) {
                 // Player de áudio estilo WhatsApp
                 const audioUrl = m.audioMessage.playableUrl || m.audioMessage.url || '';
@@ -726,18 +829,14 @@ async function loadMessages(remoteJid, isUpdate = false) {
                 content = '<span class="text-slate-400 italic">Mensagem não suportada</span>';
             }
             
-            // Converter links em clicáveis
-            if (typeof content === 'string' && !content.includes('<')) {
-                content = content.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" class="underline">$1</a>');
-            }
-            
+            // Renderizar balão de mensagem
             const div = document.createElement('div');
-            div.className = `p-3 max-w-[70%] text-sm shadow-sm ${isMe ? 'msg-out' : 'msg-in'}`;
-            div.innerHTML = `<p>${content}</p>`;
+            div.className = `p-3 max-w-[70%] text-sm shadow-sm rounded-lg ${isMe ? 'msg-out' : 'msg-in'}`;
+            div.innerHTML = content;
             
             // Container flex para alinhamento
             const wrap = document.createElement('div');
-            wrap.className = `w-full flex ${isMe ? 'justify-end' : 'justify-start'}`;
+            wrap.className = `w-full flex mb-2 ${isMe ? 'justify-end' : 'justify-start'}`;
             wrap.appendChild(div);
             
             container.appendChild(wrap);
