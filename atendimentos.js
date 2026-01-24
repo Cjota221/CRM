@@ -670,22 +670,39 @@ async function loadMessages(remoteJid, isUpdate = false) {
                 const caption = m.videoMessage.caption || '';
                 content = `<div class="flex items-center gap-2"><span class="text-lg">🎬</span> <span>Vídeo${caption ? ': ' + caption : ''}</span></div>`;
             } else if (m?.audioMessage) {
-                // Renderizar player de áudio
+                // Player de áudio estilo WhatsApp
                 const audioUrl = m.audioMessage.playableUrl || m.audioMessage.url || '';
                 const duration = m.audioMessage.seconds || 0;
+                const audioId = `audio-${msg.key.id}`;
                 
                 if (audioUrl) {
+                    const minutes = Math.floor(duration / 60);
+                    const seconds = Math.floor(duration % 60);
+                    const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                    
                     content = `
-                        <div class="flex flex-col gap-2">
-                            <div class="flex items-center gap-2">
-                                <span class="text-lg">🎵</span>
-                                <span class="text-xs text-gray-500">${duration}s</span>
+                        <div class="audio-player-whatsapp flex items-center gap-2 p-2 rounded-lg bg-white/50 min-w-[200px]" data-audio-id="${audioId}">
+                            <button onclick="toggleAudioPlay('${audioId}', '${audioUrl}')" class="flex-shrink-0 w-9 h-9 rounded-full bg-emerald-500 hover:bg-emerald-600 flex items-center justify-center text-white transition shadow-sm">
+                                <i data-lucide="play" class="w-4 h-4 play-icon"></i>
+                                <i data-lucide="pause" class="w-4 h-4 pause-icon hidden"></i>
+                            </button>
+                            <div class="flex-1 flex flex-col gap-1 min-w-0">
+                                <div class="flex items-center gap-2">
+                                    <div class="flex-1 h-1 bg-slate-200 rounded-full overflow-hidden cursor-pointer audio-progress-bar" onclick="seekAudio(event, '${audioId}')">
+                                        <div class="h-full bg-emerald-500 audio-progress" style="width: 0%"></div>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-2 text-xs text-slate-500">
+                                    <span class="audio-time">0:00</span>
+                                    <span>/</span>
+                                    <span>${timeStr}</span>
+                                    <button onclick="changePlaybackSpeed('${audioId}')" class="ml-auto text-[10px] font-medium text-emerald-600 hover:text-emerald-700 audio-speed">1x</button>
+                                </div>
                             </div>
-                            <audio controls class="w-full max-w-xs h-8" preload="metadata" style="height: 32px;">
+                            <audio class="hidden" id="${audioId}" preload="metadata">
                                 <source src="${audioUrl}" type="audio/ogg; codecs=opus">
                                 <source src="${audioUrl}" type="audio/mpeg">
                                 <source src="${audioUrl}" type="audio/mp4">
-                                Seu navegador não suporta áudio.
                             </audio>
                         </div>
                     `;
@@ -2077,6 +2094,103 @@ function escapeHtml(text) {
                .replace(/>/g, "&gt;")
                .replace(/"/g, "&quot;")
                .replace(/'/g, "&#039;");
+}
+
+// ============================================================================
+// PLAYER DE ÁUDIO ESTILO WHATSAPP
+// ============================================================================
+
+const audioPlayers = {}; // Armazena instâncias de áudio ativas
+
+function toggleAudioPlay(audioId, audioUrl) {
+    const audioEl = document.getElementById(audioId);
+    const playerDiv = document.querySelector(`[data-audio-id="${audioId}"]`);
+    const playIcon = playerDiv.querySelector('.play-icon');
+    const pauseIcon = playerDiv.querySelector('.pause-icon');
+    
+    if (!audioEl) return;
+    
+    // Pausar todos os outros áudios
+    Object.keys(audioPlayers).forEach(id => {
+        if (id !== audioId && audioPlayers[id] && !audioPlayers[id].paused) {
+            audioPlayers[id].pause();
+            const otherPlayer = document.querySelector(`[data-audio-id="${id}"]`);
+            if (otherPlayer) {
+                otherPlayer.querySelector('.play-icon')?.classList.remove('hidden');
+                otherPlayer.querySelector('.pause-icon')?.classList.add('hidden');
+            }
+        }
+    });
+    
+    // Toggle play/pause
+    if (audioEl.paused) {
+        audioEl.play();
+        playIcon.classList.add('hidden');
+        pauseIcon.classList.remove('hidden');
+        
+        // Armazenar referência
+        audioPlayers[audioId] = audioEl;
+        
+        // Atualizar progresso
+        audioEl.ontimeupdate = () => updateAudioProgress(audioId);
+        audioEl.onended = () => {
+            playIcon.classList.remove('hidden');
+            pauseIcon.classList.add('hidden');
+            playerDiv.querySelector('.audio-progress').style.width = '0%';
+            playerDiv.querySelector('.audio-time').textContent = '0:00';
+        };
+    } else {
+        audioEl.pause();
+        playIcon.classList.remove('hidden');
+        pauseIcon.classList.add('hidden');
+    }
+}
+
+function updateAudioProgress(audioId) {
+    const audioEl = document.getElementById(audioId);
+    const playerDiv = document.querySelector(`[data-audio-id="${audioId}"]`);
+    if (!audioEl || !playerDiv) return;
+    
+    const progress = (audioEl.currentTime / audioEl.duration) * 100;
+    const progressBar = playerDiv.querySelector('.audio-progress');
+    const timeDisplay = playerDiv.querySelector('.audio-time');
+    
+    if (progressBar) progressBar.style.width = `${progress}%`;
+    
+    if (timeDisplay) {
+        const minutes = Math.floor(audioEl.currentTime / 60);
+        const seconds = Math.floor(audioEl.currentTime % 60);
+        timeDisplay.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    }
+}
+
+function seekAudio(event, audioId) {
+    const audioEl = document.getElementById(audioId);
+    const progressBar = event.currentTarget;
+    if (!audioEl || !progressBar) return;
+    
+    const rect = progressBar.getBoundingClientRect();
+    const clickX = event.clientX - rect.left;
+    const percentage = clickX / rect.width;
+    
+    audioEl.currentTime = audioEl.duration * percentage;
+}
+
+function changePlaybackSpeed(audioId) {
+    const audioEl = document.getElementById(audioId);
+    const playerDiv = document.querySelector(`[data-audio-id="${audioId}"]`);
+    const speedBtn = playerDiv?.querySelector('.audio-speed');
+    
+    if (!audioEl || !speedBtn) return;
+    
+    const speeds = [1, 1.5, 2];
+    const currentSpeed = audioEl.playbackRate;
+    const currentIndex = speeds.indexOf(currentSpeed);
+    const nextIndex = (currentIndex + 1) % speeds.length;
+    const nextSpeed = speeds[nextIndex];
+    
+    audioEl.playbackRate = nextSpeed;
+    speedBtn.textContent = `${nextSpeed}x`;
 }
 
 // ============================================================================
