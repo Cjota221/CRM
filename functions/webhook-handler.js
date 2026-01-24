@@ -48,6 +48,7 @@ exports.handler = async (event) => {
                 valor_total: cart.valor_total,
                 quantidade_produtos: cart.quantidade_produtos,
                 produtos: cart.produtos || [],
+                link_carrinho: cart.link_carrinho,
                 iniciado_em: cart.iniciado_em,
                 ultima_atualizacao: cart.ultima_atualizacao,
                 status: cart.status
@@ -120,6 +121,9 @@ exports.handler = async (event) => {
                 
                 // SALVAR CARRINHO ABANDONADO NO SUPABASE
                 if (supabase) {
+                    // O link do carrinho pode vir em diferentes campos dependendo da versão do FacilZap
+                    const linkCarrinho = dados.url || dados.link_carrinho || dados.link || dados.checkout_url || null;
+                    
                     const cartData = {
                         id: dados.id?.toString() || webhookId,
                         cliente_id: dados.cliente?.id,
@@ -129,11 +133,15 @@ exports.handler = async (event) => {
                         valor_total: dados.valor_total || 0,
                         quantidade_produtos: dados.quantidade_produtos || 0,
                         produtos: dados.produtos || [],
+                        link_carrinho: linkCarrinho,
                         iniciado_em: dados.iniciado_em,
                         ultima_atualizacao: dados.ultima_atualizacao,
                         status: 'pendente',
                         created_at: new Date().toISOString()
                     };
+                    
+                    // Log para debug - ver todos os campos que chegam
+                    console.log('[WEBHOOK] Dados completos do carrinho:', JSON.stringify(dados, null, 2));
                     
                     const { error } = await supabase
                         .from('abandoned_carts')
@@ -231,6 +239,9 @@ function processPedidoAtualizado(dados, evento) {
 }
 
 function processCarrinhoAbandonado(dados) {
+    // O link do carrinho pode vir em diferentes campos
+    const linkCarrinho = dados.url || dados.link_carrinho || dados.link || dados.checkout_url || null;
+    
     return {
         tipo: 'carrinho_abandonado',
         carrinho_id: dados.id,
@@ -248,6 +259,7 @@ function processCarrinhoAbandonado(dados) {
             quantidade: p.quantidade,
             preco: p.preco
         })),
+        link_carrinho: linkCarrinho,
         iniciado_em: dados.iniciado_em,
         ultima_atualizacao: dados.ultima_atualizacao
     };

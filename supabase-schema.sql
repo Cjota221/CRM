@@ -120,6 +120,7 @@ CREATE TABLE IF NOT EXISTS abandoned_carts (
     valor_total DECIMAL(10,2) DEFAULT 0,
     quantidade_produtos INTEGER DEFAULT 0,
     produtos JSONB DEFAULT '[]'::jsonb,
+    link_carrinho TEXT, -- Link direto para o carrinho no FacilZap
     iniciado_em TIMESTAMP WITH TIME ZONE,
     ultima_atualizacao TIMESTAMP WITH TIME ZONE,
     status TEXT DEFAULT 'pendente', -- 'pendente', 'recuperado', 'expirado'

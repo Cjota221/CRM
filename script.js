@@ -4172,6 +4172,7 @@ const WebhookManager = {
         container.innerHTML = carts.map(cart => {
             const timeSince = this.getTimeSince(cart.ultima_atualizacao || cart.iniciado_em);
             const produtos = cart.produtos || [];
+            const linkCarrinho = cart.link_carrinho;
             
             return `
                 <div class="p-4 hover:bg-gray-50">
@@ -4186,10 +4187,15 @@ const WebhookManager = {
                         </div>
                     </div>
                     <div class="text-xs text-gray-500 mb-2">
-                        ${produtos.slice(0, 2).map(p => `${p.nome}${p.variacao?.nome ? ` (${p.variacao.nome})` : ''}`).join(', ')}
+                        ${produtos.slice(0, 2).map(p => `${p.nome}${p.variacao ? ` (${p.variacao})` : ''}`).join(', ')}
                         ${produtos.length > 2 ? ` +${produtos.length - 2} itens` : ''}
                     </div>
                     <div class="flex gap-2">
+                        ${linkCarrinho ? `
+                            <a href="${linkCarrinho}" target="_blank" class="flex-1 bg-blue-600 text-white text-xs px-3 py-1.5 rounded hover:bg-blue-700 text-center">
+                                <i class="fas fa-external-link-alt mr-1"></i> Ver Carrinho
+                            </a>
+                        ` : ''}
                         <button onclick="WebhookManager.sendRecoveryMessage('${cart.id}')" class="flex-1 bg-green-600 text-white text-xs px-3 py-1.5 rounded hover:bg-green-700">
                             <i class="fab fa-whatsapp mr-1"></i> Recuperar
                         </button>
