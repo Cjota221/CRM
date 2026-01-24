@@ -58,20 +58,27 @@
     <!-- Header -->
     <header class="bg-white border-b border-slate-100 h-16 flex items-center justify-between px-6 z-10">
         <div class="flex items-center gap-4">
-            <a href="index.html" class="flex items-center gap-2 text-slate-500 hover:text-slate-700 transition-colors">
-                <i data-lucide="arrow-left" class="w-4 h-4"></i>
-                <span class="text-sm font-medium">Voltar ao CRM</span>
+            <a href="index.html" class="flex items-center gap-2">
+                <div class="w-9 h-9 rounded-xl bg-primary-500 flex items-center justify-center">
+                    <i data-lucide="briefcase" class="w-5 h-5 text-white"></i>
+                </div>
+                <span class="font-bold text-lg text-slate-800">CRM</span>
             </a>
             <div class="w-px h-6 bg-slate-200"></div>
-            <div class="flex items-center gap-3">
-                <div class="w-9 h-9 rounded-xl bg-purple-100 flex items-center justify-center">
-                    <i data-lucide="megaphone" class="w-5 h-5 text-purple-600"></i>
-                </div>
-                <div>
-                    <h1 class="font-semibold text-slate-800">Campanhas</h1>
-                    <p class="text-xs text-slate-400">Disparo em massa inteligente</p>
-                </div>
-            </div>
+            <nav class="flex items-center gap-1">
+                <a href="index.html" class="px-3 py-2 rounded-lg text-sm font-medium text-slate-500 hover:bg-slate-100 transition-colors">
+                    <i data-lucide="layout-dashboard" class="w-4 h-4 inline mr-1"></i>Dashboard
+                </a>
+                <a href="atendimentos.html" class="px-3 py-2 rounded-lg text-sm font-medium text-slate-500 hover:bg-slate-100 transition-colors">
+                    <i data-lucide="message-circle" class="w-4 h-4 inline mr-1"></i>Atendimento
+                </a>
+                <a href="campanhas.html" class="px-3 py-2 rounded-lg text-sm font-medium bg-purple-100 text-purple-700">
+                    <i data-lucide="megaphone" class="w-4 h-4 inline mr-1"></i>Campanhas
+                </a>
+                <a href="anny.html" class="px-3 py-2 rounded-lg text-sm font-medium text-slate-500 hover:bg-slate-100 transition-colors">
+                    <i data-lucide="sparkles" class="w-4 h-4 inline mr-1"></i>Anny BI
+                </a>
+            </nav>
         </div>
         <button onclick="openNewCampaign()" class="btn btn-primary">
             <i data-lucide="plus" class="w-4 h-4"></i>
