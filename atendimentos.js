@@ -115,40 +115,47 @@ function getContactDisplayName(chatData) {
     
     const jid = chatData.id || chatData.remoteJid;
     
+    // NUNCA retornar "Você" para conversas
+    if (!jid) return 'Desconhecido';
+    
     // Se for grupo
-    if (jid?.includes('@g.us')) {
+    if (jid.includes('@g.us')) {
         return chatData.name || chatData.subject || 'Grupo';
     }
     
-    // Tentar encontrar no CRM primeiro
+    // 1. PRIORIDADE 1: Nome do CRM
     const cleanPhone = cleanPhoneNumber(jid);
-    if (cleanPhone && allClients.length > 0) {
+    if (cleanPhone && allClients && allClients.length > 0) {
         const lastDigits = cleanPhone.slice(-9);
+        const lastDigits8 = cleanPhone.slice(-8);
+        
         const client = allClients.find(c => {
             const p = cleanPhoneNumber(c.telefone || c.celular || c.whatsapp || '');
-            return p.includes(lastDigits) || lastDigits.includes(p.slice(-8));
+            if (!p) return false;
+            return p.includes(lastDigits) || p.includes(lastDigits8) || 
+                   lastDigits.includes(p.slice(-8)) || lastDigits8.includes(p.slice(-8));
         });
         
-        if (client && client.nome) {
-            return client.nome;
+        if (client && client.nome && client.nome.trim()) {
+            return client.nome.trim();
         }
     }
     
-    // Se não achou no CRM, usar pushName do WhatsApp
-    if (chatData.pushName) {
-        return chatData.pushName;
+    // 2. PRIORIDADE 2: PushName do WhatsApp
+    if (chatData.pushName && chatData.pushName.trim() && chatData.pushName !== 'undefined') {
+        return chatData.pushName.trim();
     }
     
-    if (chatData.name) {
-        return chatData.name;
+    if (chatData.name && chatData.name.trim() && chatData.name !== 'undefined') {
+        return chatData.name.trim();
     }
     
-    // Último recurso: telefone formatado
-    if (jid) {
+    // 3. PRIORIDADE 3: Telefone formatado
+    if (cleanPhone && cleanPhone.length >= 8) {
         return formatPhone(jid);
     }
     
-    return 'Desconhecido';
+    return 'Contato Desconhecido';
 }
 
 // ============================================================================
@@ -552,18 +559,16 @@ function renderChatsList(chats) {
         }
         
         const div = document.createElement('div');
-        div.className = 'flex items-center gap-3 p-3 border-b hover:bg-gray-100 cursor-pointer transition-colors';
+        const hasUnread = chat.unreadCount > 0;
+        div.className = `flex items-center gap-3 p-3 border-b hover:bg-slate-50 cursor-pointer transition-colors ${hasUnread ? 'bg-green-50/30' : ''}`;
         chat.id = chatId;
         div.onclick = () => openChat(chat);
         
-        // Indicador de mensagem não lida
-        const unreadBadge = chat.unreadCount > 0 
-            ? `<span class="bg-green-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">${chat.unreadCount}</span>` 
-            : '';
-        
-        // Indicador de participantes para grupos
-        const participantsInfo = isGroup && chat.participantsCount 
-            ? `<span class="text-xs text-slate-400">${chat.participantsCount} participantes</span>` 
+        // Indicador de mensagem não lida com bolinha verde
+        const unreadBadge = hasUnread
+            ? `<div class="flex flex-col items-center gap-1">
+                 <span class="bg-emerald-500 text-white text-xs rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5 font-medium">${chat.unreadCount}</span>
+               </div>` 
             : '';
         
         // Tags do chat
@@ -578,19 +583,23 @@ function renderChatsList(chats) {
         const isSnoozed = snoozedChats[chatId];
         const snoozeIcon = isSnoozed ? '<i data-lucide="alarm-clock" class="w-3 h-3 text-amber-500"></i>' : '';
         
+        // Nome com negrito se não lido
+        const nameClass = hasUnread ? 'font-bold text-slate-900' : 'font-medium text-slate-700';
+        const lastMsgClass = hasUnread ? 'text-slate-600 font-medium' : 'text-slate-500';
+        
         div.innerHTML = `
             ${avatarHtml}
             <div class="flex-1 min-w-0">
-                <div class="flex justify-between items-baseline">
-                    <h4 class="font-medium text-gray-800 truncate text-sm flex items-center gap-1">
+                <div class="flex justify-between items-baseline mb-1">
+                    <h4 class="${nameClass} truncate text-sm flex items-center gap-1">
                         ${name}
-                        ${isCommunity ? '<span class="text-xs bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded">Comunidade</span>' : ''}
+                        ${isCommunity ? '<span class="text-xs bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded font-normal">Comunidade</span>' : ''}
                         ${tagsHtml ? `<span class="flex gap-0.5 ml-1">${tagsHtml}</span>` : ''}
                     </h4>
-                    <span class="text-xs text-gray-400 flex items-center gap-1">${snoozeIcon}${time}</span>
+                    <span class="text-xs text-slate-400 flex items-center gap-1 flex-shrink-0 ml-2">${snoozeIcon}${time}</span>
                 </div>
-                <div class="flex justify-between items-center">
-                    <p class="text-xs text-gray-500 truncate flex-1">${lastMsg || participantsInfo}</p>
+                <div class="flex justify-between items-center gap-2">
+                    <p class="text-xs ${lastMsgClass} truncate flex-1">${lastMsg}</p>
                     ${unreadBadge}
                 </div>
             </div>
@@ -622,11 +631,23 @@ async function openChat(chat) {
     
     // Subtítulo: número ou info do grupo
     const headerNumber = document.getElementById('headerNumber');
+    const headerWhatsAppLink = document.getElementById('headerWhatsAppLink');
+    
     if (isGroup) {
         const participantsText = chat.participantsCount ? `${chat.participantsCount} participantes` : 'Grupo';
         headerNumber.innerText = isCommunity ? `Comunidade • ${participantsText}` : participantsText;
+        if (headerWhatsAppLink) headerWhatsAppLink.classList.add('hidden');
     } else {
-        headerNumber.innerText = formatPhone(chat.id);
+        const cleanPhone = cleanPhoneNumber(chat.id);
+        const formattedPhone = formatPhone(chat.id);
+        headerNumber.innerText = formattedPhone;
+        
+        // Link do WhatsApp Web/App
+        if (headerWhatsAppLink && cleanPhone) {
+            const whatsappUrl = `https://wa.me/55${cleanPhone}`;
+            headerWhatsAppLink.href = whatsappUrl;
+            headerWhatsAppLink.classList.remove('hidden');
+        }
     }
     
     // Avatar no header
@@ -1038,6 +1059,21 @@ function fileToBase64(file) {
 
 // Mapa de notas dos clientes
 let clientNotes = JSON.parse(localStorage.getItem('crm_client_notes') || '{}');
+
+// Função para abrir sidebar ao clicar no header
+function openClientSidebar() {
+    // Apenas garantir que a sidebar está visível e dar foco
+    const sidebar = document.getElementById('crmDataContainer');
+    if (sidebar) {
+        sidebar.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        // Adicionar um pequeno destaque visual
+        sidebar.style.transition = 'background-color 0.3s';
+        sidebar.style.backgroundColor = '#f1f5f9';
+        setTimeout(() => {
+            sidebar.style.backgroundColor = '';
+        }, 500);
+    }
+}
 
 function findAndRenderClientCRM(chatId) {
     // chatId vem como "5511999999999@s.whatsapp.net"
