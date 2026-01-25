@@ -1692,6 +1692,72 @@ function showAllOrders(clientId) {
     alert(`${clientOrders.length} pedidos encontrados para ${client.nome}`);
 }
 
+// ============================================================================
+// SINCRONIZAÇÃO DE DADOS: Quando editado no CRM, atualizar também no header
+// ============================================================================
+async function syncClientNameToUI(chatId, newName) {
+    console.log(`[SYNC] Atualizando nome de ${chatId} para: ${newName}`);
+    
+    // Atualizar nome no header imediatamente se este é o chat atual
+    if (currentRemoteJid === chatId || currentChatId === chatId) {
+        const headerNameEl = document.getElementById('headerName');
+        if (headerNameEl) {
+            headerNameEl.innerText = newName;
+            console.log('[SYNC] ✅ Header atualizado');
+        }
+    }
+    
+    // Atualizar na lista de chats (sidebar)
+    const chatElement = document.querySelector(`[data-chat-id="${chatId}"]`);
+    if (chatElement) {
+        const nameElement = chatElement.querySelector('.chat-name');
+        if (nameElement) {
+            nameElement.innerText = newName;
+            console.log('[SYNC] ✅ Lista de chats atualizada');
+        }
+    }
+    
+    // Atualizar no array em memória
+    const chatIndex = allChats.findIndex(c => c.id === chatId || c.remoteJid === chatId);
+    if (chatIndex !== -1) {
+        allChats[chatIndex].name = newName;
+        allChats[chatIndex].pushName = newName;
+        console.log('[SYNC] ✅ Array allChats atualizado');
+    }
+    
+    // Sincronizar com backend se tiver integração com Supabase/CRM
+    try {
+        const phone = extractPhoneFromJid(chatId);
+        if (phone) {
+            const res = await fetch(`${API_BASE}/sync-client-name`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    phone: phone,
+                    newName: newName,
+                    chatId: chatId
+                })
+            });
+            const result = await res.json();
+            console.log('[SYNC] Backend respondeu:', result);
+        }
+    } catch (e) {
+        console.warn('[SYNC] Não conseguiu sincronizar com backend:', e);
+        // Isso não é crítico - o frontend já está atualizado
+    }
+}
+
+// Chamar essa função quando editar o nome do cliente no painel
+function onClientNameChanged(newName) {
+    if (!currentRemoteJid && !currentChatId) {
+        console.warn('[SYNC] Nenhum chat selecionado');
+        return;
+    }
+    
+    const chatId = currentRemoteJid || currentChatId;
+    syncClientNameToUI(chatId, newName);
+}
+
 async function saveNewClient() {
     const name = document.getElementById('newClientName').value.trim();
     const email = document.getElementById('newClientEmail').value.trim();

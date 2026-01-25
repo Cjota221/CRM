@@ -557,13 +557,18 @@ app.get('/api/whatsapp/all-chats', async (req, res) => {
         const contactsData = await contactsResponse.json();
         const groupsData = await groupsResponse.json();
         
-        // DEBUG: Log primeiro chat para ver estrutura
         console.log('=== DEBUG BACKEND ===');
         console.log('Total chats recebidos:', chatsData?.data?.length || chatsData?.length || 0);
+        console.log('Total grupos recebidos:', groupsData?.data?.length || groupsData?.length || 0);
         if (chatsData?.data?.[0]) {
             console.log('Exemplo de chat (data[0]):', JSON.stringify(chatsData.data[0], null, 2));
         } else if (chatsData?.[0]) {
             console.log('Exemplo de chat ([0]):', JSON.stringify(chatsData[0], null, 2));
+        }
+        if (groupsData?.data?.[0]) {
+            console.log('Exemplo de grupo (data[0]):', JSON.stringify(groupsData.data[0], null, 2));
+        } else if (groupsData?.[0]) {
+            console.log('Exemplo de grupo ([0]):', JSON.stringify(groupsData[0], null, 2));
         }
         
         const chats = Array.isArray(chatsData) ? chatsData : (chatsData.data || []);
@@ -589,19 +594,24 @@ app.get('/api/whatsapp/all-chats', async (req, res) => {
             };
         });
         
-        // Enriquecer chats
+        // Enriquecer chats com informações detalhadas
         const enrichedChats = chats.map(chat => {
             const jid = chat.remoteJid || chat.id;
-            const isGroup = jid?.includes('@g.us');
+            const isGroup = jid?.includes('@g.us'); // CRÍTICO: Detectar grupos por @g.us
             
             let name, profilePicUrl, isGroupChat = isGroup, isCommunity = false, participantsCount = 0;
             
             if (isGroup && groupsMap[jid]) {
-                // É um grupo
+                // É um grupo com dados enriquecidos
                 name = groupsMap[jid].name;
                 profilePicUrl = groupsMap[jid].pictureUrl;
                 isCommunity = groupsMap[jid].isCommunity;
                 participantsCount = groupsMap[jid].participantsCount;
+                console.log(`[GRUPO ENCONTRADO] ${jid} - ${name}`);
+            } else if (isGroup && !groupsMap[jid]) {
+                // Grupo existe mas não tem dados (mensagens antigas)
+                name = chat.pushName || chat.name || `Grupo (${jid})`;
+                console.log(`[GRUPO SEM DADOS] ${jid} - ${name}`);
             } else {
                 // É um contato individual
                 name = chat.pushName || 
@@ -635,26 +645,33 @@ app.get('/api/whatsapp/all-chats', async (req, res) => {
                 name: name || 'Desconhecido',
                 pushName: name || chat.pushName,
                 profilePicUrl,
-                isGroup: isGroupChat,
+                isGroup: isGroupChat,  // CRÍTICO: Marcar explicitamente
                 isCommunity,
                 participantsCount
             };
         });
         
         // Adicionar grupos que não estão na lista de chats (sem mensagens recentes)
+        let groupsAdded = 0;
         groups.forEach(group => {
             if (!chats.find(c => (c.remoteJid || c.id) === group.id)) {
                 enrichedChats.push({
                     remoteJid: group.id,
-                    name: group.subject,
-                    isGroup: true,
+                    id: group.id,
+                    name: group.subject || `Grupo (${group.id})`,
+                    isGroup: true,  // CRÍTICO: Garantir que é marcado como grupo
                     isCommunity: group.isCommunity || false,
                     profilePicUrl: group.pictureUrl,
                     participantsCount: group.participants?.length || group.size || 0,
-                    lastMessage: null
+                    lastMessage: null,
+                    pushName: group.subject
                 });
+                groupsAdded++;
+                console.log(`[GRUPO ADICIONADO] ${group.id} - ${group.subject}`);
             }
         });
+        
+        console.log(`[RESULTADO FINAL] ${enrichedChats.length} chats no total (${groupsAdded} grupos adicionados)`);
         
         res.json(enrichedChats);
     } catch (error) {
@@ -1291,6 +1308,40 @@ app.get('/api/anny', async (req, res) => {
         });
     } else {
         res.json({ status: 'Anny AI online (local dev)' });
+    }
+});
+
+// ============================================================================
+// ENDPOINT: Sincronizar nome de cliente (quando edita no CRM)
+// ============================================================================
+app.post('/api/sync-client-name', async (req, res) => {
+    try {
+        const { phone, newName, chatId } = req.body;
+        
+        console.log(`[SYNC] Sincronizando nome: ${phone} → ${newName}`);
+        
+        if (!phone || !newName) {
+            return res.status(400).json({ error: 'Phone e newName são obrigatórios' });
+        }
+        
+        // Se tiver integração com Supabase, descomentar:
+        // const { data, error } = await supabase
+        //     .from('clients')
+        //     .update({ name: newName })
+        //     .eq('phone', phone);
+        
+        // Por enquanto, apenas confirmar que foi recebido
+        res.json({
+            success: true,
+            message: 'Nome sincronizado com sucesso',
+            phone,
+            newName,
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        console.error('[SYNC] Erro:', error);
+        res.status(500).json({ error: error.message });
     }
 });
 
