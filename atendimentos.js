@@ -1335,11 +1335,23 @@ function renderClientPanel(client, phone) {
         const status = (o.status || 'pendente').toLowerCase();
         const statusColor = statusColors[status] || 'bg-slate-100 text-slate-700';
         
+        // Buscar produtos deste pedido
+        const orderItems = allOrders.filter(item => item.id === o.id && item.produto_id);
+        const productsText = orderItems.length > 0 
+            ? orderItems.map(item => {
+                const product = allProducts.find(p => p.id == item.produto_id);
+                return product ? `${product.nome}` : 'Produto desconhecido';
+            }).join(', ')
+            : 'Sem produtos';
+        
         return `
             <div class="p-3 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors" onclick="showOrderDetails(${o.id})">
-                <div class="flex justify-between items-start mb-1">
+                <div class="flex justify-between items-start mb-2">
                     <span class="font-semibold text-slate-800 text-sm">#${o.id}</span>
-                    <span class="font-bold text-emerald-600 text-sm">R$ ${parseFloat(o.total).toFixed(2)}</span>
+                    <span class="font-bold text-emerald-600 text-sm">R$ ${parseFloat(o.total || 0).toFixed(2)}</span>
+                </div>
+                <div class="mb-2">
+                    <p class="text-xs text-slate-600 line-clamp-2">${productsText}</p>
                 </div>
                 <div class="flex justify-between items-center">
                     <span class="text-xs text-slate-500">${new Date(o.data).toLocaleDateString('pt-BR')}</span>
@@ -1444,6 +1456,67 @@ function renderClientPanel(client, phone) {
 function saveClientNotes(clientId, notes) {
     clientNotes[clientId] = notes;
     localStorage.setItem('crm_client_notes', JSON.stringify(clientNotes));
+}
+
+function showAllOrders(clientId) {
+    const client = allClients.find(c => c.id == clientId);
+    if (!client) return;
+    
+    const clientOrders = allOrders
+        .filter(o => o.cliente_id == clientId)
+        .sort((a, b) => new Date(b.data) - new Date(a.data));
+    
+    // Criar HTML com todos os pedidos
+    const ordersHtml = clientOrders.map(o => {
+        const statusColors = {
+            'entregue': 'bg-emerald-100 text-emerald-700',
+            'enviado': 'bg-blue-100 text-blue-700',
+            'pendente': 'bg-amber-100 text-amber-700',
+            'cancelado': 'bg-red-100 text-red-700'
+        };
+        const status = (o.status || 'pendente').toLowerCase();
+        const statusColor = statusColors[status] || 'bg-slate-100 text-slate-700';
+        
+        // Buscar itens do pedido
+        const orderItems = allOrders.filter(item => item.id === o.id && item.produto_id);
+        const productsHtml = orderItems.map(item => {
+            const product = allProducts.find(p => p.id == item.produto_id);
+            return `
+                <div class="p-2 bg-slate-50 rounded flex items-center gap-2 text-xs">
+                    ${product?.imagem ? `<img src="${product.imagem}" alt="${product?.nome}" class="w-8 h-8 rounded object-cover">` : '<div class="w-8 h-8 rounded bg-slate-200"></div>'}
+                    <div class="flex-1">
+                        <p class="font-medium text-slate-800">${product?.nome || 'Produto'}</p>
+                        <p class="text-slate-500">R$ ${product?.preco || '0.00'}</p>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+        return `
+            <div class="border border-slate-200 rounded-xl p-4 mb-3">
+                <div class="flex justify-between items-start mb-3">
+                    <div>
+                        <p class="font-bold text-slate-800">Pedido #${o.id}</p>
+                        <p class="text-xs text-slate-500">${new Date(o.data).toLocaleDateString('pt-BR')} às ${new Date(o.data).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}</p>
+                    </div>
+                    <span class="px-3 py-1 rounded-full text-xs font-medium ${statusColor}">${o.status || 'Pendente'}</span>
+                </div>
+                
+                <div class="mb-3">
+                    <p class="text-xs text-slate-500 mb-2">Produtos:</p>
+                    ${productsHtml}
+                </div>
+                
+                <div class="flex justify-between items-center pt-3 border-t border-slate-100">
+                    <span class="text-slate-600">Total:</span>
+                    <span class="font-bold text-lg text-emerald-600">R$ ${parseFloat(o.total || 0).toFixed(2)}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    // Mostrar em alert ou modal
+    alert(`${clientOrders.length} pedidos encontrados para ${client.nome}`);
 }
 
 async function saveNewClient() {
