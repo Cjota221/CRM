@@ -141,12 +141,14 @@ function getContactDisplayName(chatData) {
         }
     }
     
-    // 2. PRIORIDADE 2: PushName do WhatsApp
-    if (chatData.pushName && chatData.pushName.trim() && chatData.pushName !== 'undefined') {
+    // 2. PRIORIDADE 2: PushName do WhatsApp (mas NÃO "Você")
+    if (chatData.pushName && chatData.pushName.trim() && 
+        chatData.pushName !== 'undefined' && chatData.pushName !== 'Você') {
         return chatData.pushName.trim();
     }
     
-    if (chatData.name && chatData.name.trim() && chatData.name !== 'undefined') {
+    if (chatData.name && chatData.name.trim() && 
+        chatData.name !== 'undefined' && chatData.name !== 'Você') {
         return chatData.name.trim();
     }
     

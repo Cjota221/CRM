@@ -685,6 +685,9 @@ app.post('/api/whatsapp/messages/fetch', async (req, res) => {
     try {
         const { remoteJid } = req.body;
         const url = `${EVOLUTION_URL}/chat/findMessages/${INSTANCE_NAME}`;
+        
+        console.log(`[API] Buscando mensagens para remoteJid: ${remoteJid}`);
+        
         const response = await fetch(url, {
             method: 'POST',
             headers: evolutionHeaders,
@@ -695,6 +698,8 @@ app.post('/api/whatsapp/messages/fetch', async (req, res) => {
         });
         
         const data = await response.json();
+        
+        console.log(`[API] Resposta da Evolution para mensagens:`, JSON.stringify(data).substring(0, 200));
         
         // Processar mensagens para adicionar URLs de mídia acessíveis
         if (data && Array.isArray(data.messages)) {
@@ -716,6 +721,7 @@ app.post('/api/whatsapp/messages/fetch', async (req, res) => {
         
         res.json(data);
     } catch (error) {
+        console.error('[API] Erro ao buscar mensagens:', error);
         res.status(500).json({ error: error.message });
     }
 });
