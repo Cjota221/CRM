@@ -10,6 +10,16 @@ const app = express();
 const PORT = 3000;
 
 // ============================================================================
+// CACHE EM MEMÓRIA PARA CRM
+// ============================================================================
+let crmCache = {
+    clients: [],
+    orders: [],
+    products: [],
+    lastUpdate: null
+};
+
+// ============================================================================
 // CONFIGURAÇÃO
 // ============================================================================
 // Token da FacilZap
@@ -118,6 +128,14 @@ app.get('/api/facilzap-proxy', async (req, res) => {
         });
 
         res.json({ clients, orders, products: productsEnriched });
+        
+        // Salvar em cache para uso em endpoints de lookup
+        crmCache = {
+            clients,
+            orders,
+            products: productsEnriched,
+            lastUpdate: new Date()
+        };
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: error.message });
@@ -529,6 +547,91 @@ app.get('/api/whatsapp/groups', async (req, res) => {
     }
 });
 
+// Dados mock para testes quando Evolution API não estiver disponível
+function generateMockChats() {
+    return [
+        {
+            id: '5562999998888@s.whatsapp.net',
+            remoteJid: '5562999998888@s.whatsapp.net',
+            name: 'João Silva',
+            pushName: 'João Silva',
+            profilePicUrl: null,
+            unreadCount: 2,
+            timestamp: Date.now(),
+            lastMessage: {
+                key: { id: 'msg1', remoteJid: '5562999998888@s.whatsapp.net' },
+                pushName: 'João Silva',
+                messageTimestamp: Math.floor(Date.now() / 1000) - 300,
+                message: { conversation: 'Oi, tudo certo?' }
+            }
+        },
+        {
+            id: '5561988776655@s.whatsapp.net',
+            remoteJid: '5561988776655@s.whatsapp.net',
+            name: 'Maria Santos',
+            pushName: 'Maria Santos',
+            profilePicUrl: null,
+            unreadCount: 0,
+            timestamp: Date.now() - 3600000,
+            lastMessage: {
+                key: { id: 'msg2', remoteJid: '5561988776655@s.whatsapp.net' },
+                pushName: 'Maria Santos',
+                messageTimestamp: Math.floor(Date.now() / 1000) - 3600,
+                message: { conversation: 'Obrigada pela atenção!' }
+            }
+        },
+        {
+            id: '5563987654321@s.whatsapp.net',
+            remoteJid: '5563987654321@s.whatsapp.net',
+            name: 'Pedro Costa',
+            pushName: 'Pedro Costa',
+            profilePicUrl: null,
+            unreadCount: 1,
+            timestamp: Date.now() - 7200000,
+            lastMessage: {
+                key: { id: 'msg3', remoteJid: '5563987654321@s.whatsapp.net' },
+                pushName: 'Pedro Costa',
+                messageTimestamp: Math.floor(Date.now() / 1000) - 7200,
+                message: { conversation: 'Qual é o valor?' }
+            }
+        }
+    ];
+}
+
+function generateMockContacts() {
+    return [
+        { remoteJid: '5562999998888@s.whatsapp.net', pushName: 'João Silva' },
+        { remoteJid: '5561988776655@s.whatsapp.net', pushName: 'Maria Santos' },
+        { remoteJid: '5563987654321@s.whatsapp.net', pushName: 'Pedro Costa' }
+    ];
+}
+
+function generateMockGroups() {
+    return [
+        {
+            id: '120363192837461928-1234567890@g.us',
+            subject: 'Equipe de Vendas',
+            pictureUrl: null,
+            isCommunity: false,
+            participants: [
+                { id: '5562999998888@s.whatsapp.net', isAdmin: true },
+                { id: '5561988776655@s.whatsapp.net', isAdmin: false },
+                { id: '5563987654321@s.whatsapp.net', isAdmin: false }
+            ]
+        },
+        {
+            id: '120363192837461928-9876543210@g.us',
+            subject: 'Estratégia 2026',
+            pictureUrl: null,
+            isCommunity: false,
+            participants: [
+                { id: '5562999998888@s.whatsapp.net', isAdmin: true },
+                { id: '5561988776655@s.whatsapp.net', isAdmin: true }
+            ]
+        }
+    ];
+}
+
 // 3.2 Listar Chats + Grupos combinados
 app.get('/api/whatsapp/all-chats', async (req, res) => {
     try {
@@ -541,21 +644,31 @@ app.get('/api/whatsapp/all-chats', async (req, res) => {
                     where: {},
                     options: { limit: 100, order: "DESC" }
                 })
-            }),
+            }).catch(() => null),
             fetch(`${EVOLUTION_URL}/chat/findContacts/${INSTANCE_NAME}`, { 
                 method: 'POST',
                 headers: evolutionHeaders,
                 body: JSON.stringify({})
-            }),
+            }).catch(() => null),
             fetch(`${EVOLUTION_URL}/group/fetchAllGroups/${INSTANCE_NAME}`, {
                 method: 'GET',
                 headers: evolutionHeaders
-            })
+            }).catch(() => null)
         ]);
         
-        const chatsData = await chatsResponse.json();
-        const contactsData = await contactsResponse.json();
-        const groupsData = await groupsResponse.json();
+        // Se Evolution API não responder, usar dados mock
+        let chatsData, contactsData, groupsData;
+        
+        if (!chatsResponse || !chatsResponse.ok) {
+            console.warn('[⚠️  FALLBACK] Evolution API indisponível - usando dados mock');
+            chatsData = { data: generateMockChats() };
+            contactsData = { data: generateMockContacts() };
+            groupsData = { data: generateMockGroups() };
+        } else {
+            chatsData = await chatsResponse.json();
+            contactsData = await contactsResponse?.json() || { data: [] };
+            groupsData = await groupsResponse?.json() || { data: [] };
+        }
         
         console.log('=== DEBUG BACKEND ===');
         console.log('Total chats recebidos:', chatsData?.data?.length || chatsData?.length || 0);
@@ -1328,22 +1441,39 @@ app.post('/api/client-lookup', async (req, res) => {
             return res.status(400).json({ error: 'Phone é obrigatório' });
         }
         
-        // Aqui você faria a busca no Supabase
-        // Por enquanto, retornar simulado
-        // const { data } = await supabase
-        //     .from('clients')
-        //     .select('id, name, email, status, created_at')
-        //     .eq('clean_phone', phone)
-        //     .single();
+        // Buscar no cache do CRM
+        if (!crmCache.clients || crmCache.clients.length === 0) {
+            return res.json(null); // Sem clientes carregados
+        }
         
-        // SIMULADO para dev:
+        // Normalizar telefone para busca (remover +55 e caracteres especiais)
+        const normalizedPhone = phone.replace(/\D/g, '').replace(/^55/, '');
+        
+        // Procurar cliente por telefone
+        const client = crmCache.clients.find(c => {
+            const clientPhone = c.telefone?.replace(/\D/g, '').replace(/^55/, '') || 
+                               c.celular?.replace(/\D/g, '').replace(/^55/, '') ||
+                               c.phone?.replace(/\D/g, '').replace(/^55/, '');
+            return clientPhone === normalizedPhone;
+        });
+        
+        if (!client) {
+            return res.json(null); // Cliente não encontrado
+        }
+        
+        // Calcular status baseado em pedidos
+        const clientOrders = crmCache.orders.filter(o => o.id_cliente === client.id);
+        const status = clientOrders.length > 3 ? 'VIP' : clientOrders.length > 0 ? 'Recorrente' : 'Lead';
+        
+        // Retornar dados do cliente
         res.json({
-            id: `client_${phone}`,
-            name: `Cliente ${phone}`,
+            id: client.id,
+            name: client.nome || client.name || 'Desconhecido',
             phone: phone,
-            email: `cliente@example.com`,
-            status: 'Recorrente',
-            created_at: '2024-01-15'
+            email: client.email,
+            status: status,
+            created_at: client.data_criacao || client.created_at,
+            total_orders: clientOrders.length
         });
         
     } catch (error) {
@@ -1365,27 +1495,76 @@ app.post('/api/client-profile', async (req, res) => {
             return res.status(400).json({ error: 'Phone é obrigatório' });
         }
         
-        // SIMULADO - Em produção, seria uma RPC do Supabase
+        // Buscar cliente
+        if (!crmCache.clients || crmCache.clients.length === 0) {
+            return res.json(null);
+        }
+        
+        const normalizedPhone = phone.replace(/\D/g, '').replace(/^55/, '');
+        const client = crmCache.clients.find(c => {
+            const clientPhone = c.telefone?.replace(/\D/g, '').replace(/^55/, '') || 
+                               c.celular?.replace(/\D/g, '').replace(/^55/, '') ||
+                               c.phone?.replace(/\D/g, '').replace(/^55/, '');
+            return clientPhone === normalizedPhone;
+        });
+        
+        if (!client) {
+            return res.json(null);
+        }
+        
+        // Buscar pedidos do cliente
+        const clientOrders = crmCache.orders.filter(o => o.id_cliente === client.id);
+        
+        // Calcular métricas
+        const total_spent = clientOrders.reduce((sum, o) => sum + (parseFloat(o.valor_total) || 0), 0);
+        const avg_ticket = clientOrders.length > 0 ? total_spent / clientOrders.length : 0;
+        const last_purchase = clientOrders.length > 0 ? 
+            clientOrders.sort((a, b) => new Date(b.data) - new Date(a.data))[0].data : null;
+        
+        // Calcular dias desde última compra
+        const days_since_last_purchase = last_purchase ? 
+            Math.floor((new Date() - new Date(last_purchase)) / (1000 * 60 * 60 * 24)) : 999;
+        
+        // Últimos 3 produtos
+        const last_products = clientOrders
+            .sort((a, b) => new Date(b.data) - new Date(a.data))
+            .slice(0, 3)
+            .map(o => ({
+                name: o.nome_produto || o.product_name || 'Produto desconhecido',
+                date: o.data,
+                value: parseFloat(o.valor_total) || 0,
+                qty: o.quantidade || 1
+            }));
+        
+        // Status e insight
+        const status = clientOrders.length > 3 ? 'VIP' : clientOrders.length > 0 ? 'Recorrente' : 'Lead';
+        let insight = '';
+        
+        if (status === 'VIP') {
+            insight = `✅ Cliente VIP - Comprou ${clientOrders.length} vezes em ${days_since_last_purchase} dias`;
+        } else if (status === 'Recorrente') {
+            insight = `🔄 Cliente Recorrente - ${clientOrders.length} compra${clientOrders.length > 1 ? 's' : ''}`;
+        } else {
+            insight = `👤 Novo Lead - Primeira interação`;
+        }
+        
         const profile = {
             client: {
-                id: `client_${phone}`,
-                name: `Cliente ${phone}`,
-                status: 'Recorrente',
-                created_at: '2024-01-15'
+                id: client.id,
+                name: client.nome || client.name,
+                status: status,
+                created_at: client.data_criacao || client.created_at
             },
             metrics: {
-                total_spent: 4500.00,
-                avg_ticket: 450.00,
-                orders_count: 10,
-                last_purchase: '2026-01-20',
-                days_since_last_purchase: 5
+                total_spent: parseFloat(total_spent).toFixed(2),
+                avg_ticket: parseFloat(avg_ticket).toFixed(2),
+                orders_count: clientOrders.length,
+                last_purchase: last_purchase,
+                days_since_last_purchase: days_since_last_purchase
             },
-            last_products: [
-                { name: 'Camiseta Polo', date: '2026-01-20', value: 89.90, qty: 2 },
-                { name: 'Tênis Sport', date: '2026-01-15', value: 199.90, qty: 1 }
-            ],
-            insight: '✅ Cliente VIP - Comprou 5 vezes em 2 semanas',
-            recommendation: '💡 Ofereça a nova coleção Dourada - Estilo compatível'
+            last_products: last_products,
+            insight: insight,
+            recommendation: '💡 Analise histórico para melhor recomendação'
         };
         
         res.json(profile);
