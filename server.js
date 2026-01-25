@@ -1397,7 +1397,10 @@ app.post('/api/client-profile', async (req, res) => {
 });
 
 /**
- * POST /api/sync-client-name (Já existe, apenas adicionar log)
+ * POST /api/sync-client-name
+ * Sincronizar nome de cliente (quando edita no CRM)
+ */
+app.post('/api/sync-client-name', async (req, res) => {
     try {
         const { phone, newName, chatId } = req.body;
         
@@ -1408,22 +1411,20 @@ app.post('/api/client-profile', async (req, res) => {
         }
         
         // Se tiver integração com Supabase, descomentar:
-        // const { data, error } = await supabase
+        // const { data } = await supabase
         //     .from('clients')
         //     .update({ name: newName })
-        //     .eq('phone', phone);
+        //     .eq('clean_phone', phone);
         
-        // Por enquanto, apenas confirmar que foi recebido
         res.json({
             success: true,
-            message: 'Nome sincronizado com sucesso',
+            message: 'Nome sincronizado',
             phone,
-            newName,
-            timestamp: new Date().toISOString()
+            newName
         });
         
     } catch (error) {
-        console.error('[SYNC] Erro:', error);
+        console.error('[sync-client-name] Erro:', error);
         res.status(500).json({ error: error.message });
     }
 });
