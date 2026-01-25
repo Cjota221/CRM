@@ -1312,9 +1312,92 @@ app.get('/api/anny', async (req, res) => {
 });
 
 // ============================================================================
-// ENDPOINT: Sincronizar nome de cliente (quando edita no CRM)
+// DATA LAYER ENDPOINTS - Auto-Match e Perfil do Cliente
 // ============================================================================
-app.post('/api/sync-client-name', async (req, res) => {
+
+/**
+ * POST /api/client-lookup
+ * Buscar cliente pelo telefone (normalizado)
+ * Retorna dados básicos do cliente ou null
+ */
+app.post('/api/client-lookup', async (req, res) => {
+    try {
+        const { phone } = req.body;
+        
+        if (!phone) {
+            return res.status(400).json({ error: 'Phone é obrigatório' });
+        }
+        
+        // Aqui você faria a busca no Supabase
+        // Por enquanto, retornar simulado
+        // const { data } = await supabase
+        //     .from('clients')
+        //     .select('id, name, email, status, created_at')
+        //     .eq('clean_phone', phone)
+        //     .single();
+        
+        // SIMULADO para dev:
+        res.json({
+            id: `client_${phone}`,
+            name: `Cliente ${phone}`,
+            phone: phone,
+            email: `cliente@example.com`,
+            status: 'Recorrente',
+            created_at: '2024-01-15'
+        });
+        
+    } catch (error) {
+        console.error('[client-lookup] Erro:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * POST /api/client-profile
+ * Perfil COMPLETO do cliente (para o painel Anne)
+ * Retorna: dados, métricas, últimas compras, sugestões
+ */
+app.post('/api/client-profile', async (req, res) => {
+    try {
+        const { phone } = req.body;
+        
+        if (!phone) {
+            return res.status(400).json({ error: 'Phone é obrigatório' });
+        }
+        
+        // SIMULADO - Em produção, seria uma RPC do Supabase
+        const profile = {
+            client: {
+                id: `client_${phone}`,
+                name: `Cliente ${phone}`,
+                status: 'Recorrente',
+                created_at: '2024-01-15'
+            },
+            metrics: {
+                total_spent: 4500.00,
+                avg_ticket: 450.00,
+                orders_count: 10,
+                last_purchase: '2026-01-20',
+                days_since_last_purchase: 5
+            },
+            last_products: [
+                { name: 'Camiseta Polo', date: '2026-01-20', value: 89.90, qty: 2 },
+                { name: 'Tênis Sport', date: '2026-01-15', value: 199.90, qty: 1 }
+            ],
+            insight: '✅ Cliente VIP - Comprou 5 vezes em 2 semanas',
+            recommendation: '💡 Ofereça a nova coleção Dourada - Estilo compatível'
+        };
+        
+        res.json(profile);
+        
+    } catch (error) {
+        console.error('[client-profile] Erro:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * POST /api/sync-client-name (Já existe, apenas adicionar log)
     try {
         const { phone, newName, chatId } = req.body;
         

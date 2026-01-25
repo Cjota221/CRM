@@ -1,0 +1,277 @@
+// ============================================================================
+// DATA LAYER - NORMALIZAÇÃO E CRUZAMENTO DE DADOS
+// ============================================================================
+// Este arquivo centraliza TODA a lógica de dados. Nenhum componente deve
+// trabalhar com dados brutos. Tudo passa por aqui.
+
+/**
+ * NORMALIZAR TELEFONE - A função mais importante do sistema
+ * @param {string} raw - Número bruto ("+55 62 99999-8888" ou "556299998888@s.whatsapp.net")
+ * @returns {string} - Número limpo (ex: "62999998888")
+ */
+function normalizePhone(raw) {
+    if (!raw) return '';
+    
+    // 1. Converter para string e remover tudo que não é dígito
+    let cleaned = String(raw)
+        .replace(/\D/g, ''); // Remove +, -, parênteses, espaços, @, etc
+    
+    // 2. Se começar com 55 (DDI do Brasil) e tiver 12+ dígitos, remover DDI
+    if (cleaned.startsWith('55') && cleaned.length > 11) {
+        cleaned = cleaned.substring(2);
+    }
+    
+    // 3. Se ficou com mais de 11 dígitos, algo está errado - pegar últimos 11
+    if (cleaned.length > 11) {
+        console.warn(`[normalizePhone] Número muito longo (${cleaned.length} dígitos): ${raw}`);
+        cleaned = cleaned.slice(-11);
+    }
+    
+    // 4. Validação: deve ter 10 ou 11 dígitos
+    if (cleaned.length < 10 || cleaned.length > 11) {
+        console.error(`[normalizePhone] Número inválido após limpeza: ${cleaned} (${cleaned.length} dígitos)`);
+        return '';
+    }
+    
+    return cleaned;
+}
+
+/**
+ * Extrair número puro de um JID (remoteJid da Evolution API)
+ * @param {string} jid - "556299998888@s.whatsapp.net" ou "1234567890@g.us"
+ * @returns {string} - "62999998888"
+ */
+function extractPhoneFromJid(jid) {
+    if (!jid) return '';
+    // Remover qualquer sufixo (@s.whatsapp.net, @c.us, @g.us, etc)
+    return normalizePhone(jid);
+}
+
+/**
+ * Detectar se é grupo
+ * @param {string} jid - remoteJid ou chat.id
+ * @returns {boolean}
+ */
+function isGroupJid(jid) {
+    if (!jid) return false;
+    return String(jid).includes('@g.us');
+}
+
+/**
+ * Criar um "key" único para um chat (usado para cache/lookup)
+ * @param {string} jid - remoteJid
+ * @returns {string}
+ */
+function createChatKey(jid) {
+    if (isGroupJid(jid)) {
+        return `GROUP:${jid}`; // Grupos usam JID completo
+    }
+    const phone = normalizePhone(jid);
+    return `CONTACT:${phone}`; // Contatos usam telefone normalizado
+}
+
+// ============================================================================
+// AUTO-MATCH: Cruzar telefone com dados de cliente no Supabase
+// ============================================================================
+
+class DataLayer {
+    constructor() {
+        this.clientCache = new Map(); // Cache de clientes { phone -> clientData }
+        this.chatCache = new Map();   // Cache de chats enriquecidos
+        this.clientLookupInProgress = new Set(); // Evitar requisições duplicadas
+    }
+    
+    /**
+     * Buscar cliente no Supabase pelo telefone
+     * @param {string} phone - Número normalizado (ex: "62999998888")
+     * @returns {Promise<Object|null>}
+     */
+    async fetchClientByPhone(phone) {
+        if (!phone) return null;
+        
+        // Se está em cache, retornar imediatamente
+        if (this.clientCache.has(phone)) {
+            return this.clientCache.get(phone);
+        }
+        
+        // Se já está buscando, não fazer requisição duplicada
+        if (this.clientLookupInProgress.has(phone)) {
+            // Aguardar a requisição em progresso (implementar com Promise)
+            let attempts = 0;
+            while (this.clientLookupInProgress.has(phone) && attempts < 50) {
+                await new Promise(r => setTimeout(r, 10));
+                attempts++;
+            }
+            return this.clientCache.get(phone) || null;
+        }
+        
+        try {
+            this.clientLookupInProgress.add(phone);
+            
+            // Buscar no Supabase (usar RPC para performance)
+            const response = await fetch('/api/client-lookup', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone })
+            });
+            
+            if (!response.ok) {
+                console.warn(`[DataLayer] Erro ao buscar cliente ${phone}:`, response.status);
+                return null;
+            }
+            
+            const client = await response.json();
+            
+            // Guardar em cache
+            if (client && client.id) {
+                this.clientCache.set(phone, client);
+                console.log(`[DataLayer] ✅ Cliente encontrado: ${phone} → ${client.name}`);
+                return client;
+            }
+            
+            return null;
+            
+        } catch (error) {
+            console.error(`[DataLayer] Erro ao buscar cliente ${phone}:`, error);
+            return null;
+        } finally {
+            this.clientLookupInProgress.delete(phone);
+        }
+    }
+    
+    /**
+     * Enriquecer um chat com dados do cliente
+     * Isso transforma um chat bruto em um chat "inteligente"
+     */
+    async enrichChat(rawChat) {
+        const chatKey = createChatKey(rawChat.remoteJid || rawChat.id);
+        
+        // Se já foi enriquecido e está em cache, retornar
+        if (this.chatCache.has(chatKey)) {
+            return this.chatCache.get(chatKey);
+        }
+        
+        const enrichedChat = {
+            ...rawChat,
+            isGroup: isGroupJid(rawChat.remoteJid || rawChat.id),
+            cleanPhone: extractPhoneFromJid(rawChat.remoteJid || rawChat.id),
+            client: null, // Será preenchido abaixo
+            displayName: rawChat.pushName || rawChat.name || 'Desconhecido',
+            isKnownClient: false,
+            clientStatus: null, // 'VIP', 'Recorrente', 'Lead Novo'
+        };
+        
+        // Se não é grupo, tentar encontrar cliente
+        if (!enrichedChat.isGroup && enrichedChat.cleanPhone) {
+            const client = await this.fetchClientByPhone(enrichedChat.cleanPhone);
+            
+            if (client) {
+                enrichedChat.client = client;
+                enrichedChat.displayName = client.name; // Usar nome do CRM
+                enrichedChat.isKnownClient = true;
+                enrichedChat.clientStatus = client.status || 'Cliente';
+            } else {
+                enrichedChat.clientStatus = 'Lead Novo';
+            }
+        }
+        
+        // Guardar em cache
+        this.chatCache.set(chatKey, enrichedChat);
+        
+        return enrichedChat;
+    }
+    
+    /**
+     * Enriquecer múltiplos chats (paralelo para performance)
+     */
+    async enrichChats(rawChats) {
+        console.log(`[DataLayer] Enriquecendo ${rawChats.length} chats...`);
+        const start = performance.now();
+        
+        const enrichedChats = await Promise.all(
+            rawChats.map(chat => this.enrichChat(chat))
+        );
+        
+        const elapsed = performance.now() - start;
+        console.log(`[DataLayer] ✅ Enriquecimento completo em ${elapsed.toFixed(0)}ms`);
+        
+        return enrichedChats;
+    }
+    
+    /**
+     * Buscar perfil completo do cliente (para o painel Anne)
+     */
+    async fetchClientProfile(phone) {
+        try {
+            const response = await fetch('/api/client-profile', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone })
+            });
+            
+            if (!response.ok) return null;
+            
+            return await response.json();
+        } catch (error) {
+            console.error('[DataLayer] Erro ao buscar perfil:', error);
+            return null;
+        }
+    }
+    
+    /**
+     * Limpar caches (útil ao recarregar)
+     */
+    clearCache() {
+        this.clientCache.clear();
+        this.chatCache.clear();
+        console.log('[DataLayer] Cache limpo');
+    }
+}
+
+// Instância global
+const dataLayer = new DataLayer();
+
+// ============================================================================
+// FORMATO PARA EXIBIÇÃO
+// ============================================================================
+
+/**
+ * Formatar telefone para exibição
+ * @param {string} phone - "62999998888"
+ * @returns {string} "+55 (62) 99999-8888"
+ */
+function formatPhoneForDisplay(phone) {
+    if (!phone || phone.length < 10) return phone;
+    
+    const normalized = normalizePhone(phone);
+    if (normalized.length === 11) {
+        // Celular: (XX) 9XXXX-XXXX
+        return `+55 (${normalized.substring(0, 2)}) ${normalized.substring(2, 7)}-${normalized.substring(7)}`;
+    } else if (normalized.length === 10) {
+        // Fixo: (XX) XXXX-XXXX
+        return `+55 (${normalized.substring(0, 2)}) ${normalized.substring(2, 6)}-${normalized.substring(6)}`;
+    }
+    return phone;
+}
+
+/**
+ * Status visual do cliente
+ */
+function getClientStatusBadge(status) {
+    const badges = {
+        'VIP': { text: '👑 VIP', color: 'bg-yellow-100 text-yellow-800' },
+        'Recorrente': { text: '🔄 Recorrente', color: 'bg-blue-100 text-blue-800' },
+        'Cliente': { text: '✓ Cliente', color: 'bg-green-100 text-green-800' },
+        'Lead Novo': { text: '✨ Lead Novo', color: 'bg-gray-100 text-gray-800' },
+    };
+    return badges[status] || badges['Lead Novo'];
+}
+
+// Exportar para uso global
+window.normalizePhone = normalizePhone;
+window.extractPhoneFromJid = extractPhoneFromJid;
+window.isGroupJid = isGroupJid;
+window.createChatKey = createChatKey;
+window.dataLayer = dataLayer;
+window.formatPhoneForDisplay = formatPhoneForDisplay;
+window.getClientStatusBadge = getClientStatusBadge;

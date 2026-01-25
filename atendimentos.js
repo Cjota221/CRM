@@ -1,3 +1,57 @@
+// ============================================================================
+// INICIALIZAÇÃO DO SISTEMA - Nova Arquitetura Profissional
+// ============================================================================
+
+/**
+ * Inicializar o sistema de chats com a nova arquitetura
+ * Chama: Data Layer → Chat Loader → Anne Panel
+ */
+async function initializeApp() {
+    console.log('🚀 Inicializando Central de Atendimento v2...');
+    
+    try {
+        // 1. Carregar todos os chats (com auto-match + grupos)
+        const allChatsData = await chatLoader.loadAllChats();
+        
+        // 2. Aplicar filtro inicial
+        chatLoader.applyFilter('all');
+        
+        // 3. Renderizar lista
+        chatLoader.renderChatsList();
+        
+        console.log('✅ Sistema inicializado com sucesso');
+        
+    } catch (error) {
+        console.error('❌ Erro ao inicializar:', error);
+    }
+}
+
+/**
+ * Filtrar chats por tipo (contatos, grupos, etc)
+ */
+function filterChatsBy(type) {
+    chatLoader.applyFilter(type);
+    chatLoader.renderChatsList();
+}
+
+/**
+ * Chamar quando clicar em um chat
+ */
+function selectChat(chat, chatKey) {
+    console.log('[selectChat] Selecionado:', chat.displayName);
+    
+    // Atualizar UI
+    document.querySelectorAll('.chat-item').forEach(el => {
+        el.classList.remove('active');
+    });
+    document.querySelector(`[data-chat-key="${chatKey}"]`)?.classList.add('active');
+    
+    // Disparar evento global (Anne panel escuta isso)
+    window.dispatchEvent(new CustomEvent('chatSelected', { 
+        detail: { chat, chatKey } 
+    }));
+}
+
 // Variáveis de Estado
 let currentChatId = null;
 let currentClient = null;
@@ -279,8 +333,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 2. Carregar dados do CRM (Clientes/Produtos/Pedidos)
     loadCRMData();
 
-    // 3. Carregar Conversas
-    loadChats();
+    // 3. Inicializar novo sistema de chats
+    await initializeApp();
 
     // 4. Processar snoozes (verificar se algum deve "acordar")
     processSnoozedChats();
