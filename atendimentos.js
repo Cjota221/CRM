@@ -741,8 +741,9 @@ async function openChat(chat) {
         headerNumber.innerText = isCommunity ? `Comunidade • ${participantsText}` : participantsText;
         if (headerWhatsAppLink) headerWhatsAppLink.classList.add('hidden');
     } else {
-        const cleanPhone = cleanPhoneNumber(chat.id);
-        const formattedPhone = formatPhone(chat.id);
+        const jid = chat.remoteJid || chat.id;
+        const cleanPhone = cleanPhoneNumber(jid);
+        const formattedPhone = cleanPhone ? formatPhone(jid) : 'Número desconhecido';
         headerNumber.innerText = formattedPhone;
         
         // Link do WhatsApp Web/App
@@ -803,7 +804,8 @@ async function openChat(chat) {
     
     // Buscar Dados CRM (só para contatos individuais)
     if (!isGroup) {
-        findAndRenderClientCRM(chat.id);
+        const jid = chat.remoteJid || chat.id;
+        findAndRenderClientCRM(jid);
     } else {
         // Mostrar info do grupo no painel lateral
         renderGroupInfo(chat);
