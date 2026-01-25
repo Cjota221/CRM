@@ -832,11 +832,10 @@ async function openChat(chat) {
     
     console.log('✅ Chat aberto com sucesso');
     console.log('==================================\n');
-}
     
     // Auto refresh (simples - polling a cada 5s)
     if (chatRefreshInterval) clearInterval(chatRefreshInterval);
-    chatRefreshInterval = setInterval(() => loadMessages(currentChatId, true), 10000);
+    chatRefreshInterval = setInterval(() => loadMessages(currentRemoteJid, true), 10000);
 }
 
 // Renderizar info do grupo no painel lateral
