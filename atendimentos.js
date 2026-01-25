@@ -2,6 +2,7 @@
 let currentChatId = null;
 let currentClient = null;
 let currentChatData = null; // Dados completos do chat atual
+let currentRemoteJid = null; // CRÍTICO: Rastreia qual remoteJid está sendo exibido para validação
 let allClients = [];
 let allProducts = [];
 let allOrders = [];
@@ -33,8 +34,52 @@ let audioElement = null;
 const API_BASE = 'http://localhost:3000/api';
 
 // ============================================================================
-// FUNÇÃO GLOBAL: FORMATAÇÃO DE TELEFONE
+// FUNÇÕES DE EXTRAÇÃO ROBUSTA DE DADOS DO REMOTEJID
 // ============================================================================
+// Extrai o número puro do remoteJid (p.ex., "556282237075@s.whatsapp.net" → "6282237075")
+function extractPhoneFromJid(jid) {
+    if (!jid) return '';
+    
+    // Remover sufixo @s.whatsapp.net, @c.us, @g.us, :, etc
+    let phone = String(jid)
+        .replace(/@s\.whatsapp\.net/g, '')
+        .replace(/@c\.us/g, '')
+        .replace(/@g\.us/g, '')
+        .replace(/:/g, '')
+        .replace(/\D/g, ''); // Remover tudo que não é dígito
+    
+    // Se começar com 55 e tiver 12+ dígitos, é DDI + número
+    if (phone.startsWith('55') && phone.length >= 12) {
+        phone = phone.substring(2);
+    }
+    
+    // Se ficou com mais de 11 dígitos, pegar só os últimos 11
+    if (phone.length > 11) {
+        phone = phone.slice(-11);
+    }
+    
+    return phone;
+}
+
+// Normaliza o remoteJid para comparação (sempre com DDI 55 no início)
+function normalizeJid(jid) {
+    if (!jid) return '';
+    
+    // Se for um remoteJid normal, retornar como está
+    if (String(jid).includes('@s.whatsapp.net') || String(jid).includes('@c.us')) {
+        return jid;
+    }
+    
+    // Se for um número limpo, adicionar DDI e sufixo
+    const phone = extractPhoneFromJid(jid);
+    if (phone && !phone.startsWith('55')) {
+        return '55' + phone + '@s.whatsapp.net';
+    }
+    
+    return phone + '@s.whatsapp.net';
+}
+
+// Função para extrair apenas números do telefone (para busca no banco)
 function cleanPhoneNumber(rawNumber) {
     if (!rawNumber) return '';
     
@@ -661,33 +706,56 @@ function renderChatsList(chats) {
 // CHAT ATIVO
 // ============================================================================
 async function openChat(chat) {
-    currentChatId = chat.id; // remoteJid
-    currentChatData = chat; // Salvar dados completos
+    if (!chat || !chat.id) {
+        console.error('[ERRO] Chat inválido:', chat);
+        return;
+    }
     
-    // DEBUG: Ver o que está vindo
-    console.log('=== DEBUG CHAT ===');
-    console.log('chat.id:', chat.id);
-    console.log('chat.remoteJid:', chat.remoteJid);
-    console.log('chat.name:', chat.name);
-    console.log('chat.pushName:', chat.pushName);
-    console.log('chat completo:', chat);
+    console.log('\n==================================');
+    console.log('🔄 ABRINDO NOVO CHAT');
+    console.log('==================================');
+    console.log('ID:', chat.id);
+    console.log('RemoteJid:', chat.remoteJid);
+    console.log('Nome:', chat.name || chat.pushName);
     
-    const isGroup = chat.isGroup || chat.id?.includes('@g.us');
-    const isCommunity = chat.isCommunity;
+    // ====== PASSO 1: RESET ABSOLUTO DO STATE ======
+    // CRÍTICO: Zerar TUDO para garantir isolamento
+    currentChatId = chat.id;
+    currentChatData = chat;
+    currentClient = null;
     
-    // UI Update
+    // Extrair e normalizar o remoteJid para este chat
+    const remoteJidParam = chat.remoteJid || chat.id;
+    currentRemoteJid = remoteJidParam; // GUARDAR para validação depois
+    const cleanPhone = extractPhoneFromJid(remoteJidParam);
+    
+    console.log('Telefone extraído:', cleanPhone);
+    console.log('RemoteJid para validação:', currentRemoteJid);
+    
+    // ====== PASSO 2: MOSTRAR LOADING IMEDIATAMENTE ======
+    // Limpar COMPLETAMENTE o container
+    const messagesContainer = document.getElementById('messagesContainer');
+    if (!messagesContainer) {
+        console.error('[ERRO] Container de mensagens não encontrado!');
+        return;
+    }
+    
+    messagesContainer.innerHTML = '';
+    messagesContainer.innerHTML = '<div class="flex flex-col items-center justify-center h-full text-gray-400"><i class="fas fa-spinner fa-spin text-2xl mb-2"></i><p>Carregando conversa...</p></div>';
+    
+    // ====== PASSO 3: ATUALIZAR HEADER ======
     document.getElementById('chatHeader').classList.remove('hidden');
     document.getElementById('inputArea').classList.remove('hidden');
-    document.getElementById('messagesContainer').innerHTML = '<div class="text-center p-4 text-gray-500"><i class="fas fa-spinner fa-spin"></i> Carregando mensagens...</div>';
     
-    // Renderizar tags do chat
-    renderChatTags();
+    const isGroup = chat.isGroup || remoteJidParam.includes('@g.us');
+    const isCommunity = chat.isCommunity;
     
-    // Header Info - Usar nome consistente
+    // Nome do chat
     const name = getContactDisplayName(chat);
     document.getElementById('headerName').innerText = name;
+    console.log('Nome do header:', name);
     
-    // Subtítulo: número ou info do grupo
+    // Número ou info do grupo
     const headerNumber = document.getElementById('headerNumber');
     const headerWhatsAppLink = document.getElementById('headerWhatsAppLink');
     
@@ -695,27 +763,27 @@ async function openChat(chat) {
         const participantsText = chat.participantsCount ? `${chat.participantsCount} participantes` : 'Grupo';
         headerNumber.innerText = isCommunity ? `Comunidade • ${participantsText}` : participantsText;
         if (headerWhatsAppLink) headerWhatsAppLink.classList.add('hidden');
+        console.log('Chat é grupo:', participantsText);
     } else {
-        const jid = chat.remoteJid || chat.id;
-        const cleanPhone = cleanPhoneNumber(jid);
-        const formattedPhone = cleanPhone ? formatPhone(jid) : 'Número desconhecido';
+        const formattedPhone = cleanPhone ? formatPhone(cleanPhone) : 'Número desconhecido';
         headerNumber.innerText = formattedPhone;
+        console.log('Telefone formatado no header:', formattedPhone);
         
-        // Link do WhatsApp Web/App
         if (headerWhatsAppLink && cleanPhone) {
-            const whatsappUrl = `https://wa.me/55${cleanPhone}`;
-            headerWhatsAppLink.href = whatsappUrl;
+            headerWhatsAppLink.href = `https://wa.me/55${cleanPhone}`;
             headerWhatsAppLink.classList.remove('hidden');
         }
     }
     
-    // Avatar no header
+    // ====== PASSO 4: AVATAR/FOTO ESPECÍFICA DO CHAT ======
+    // IMPORTANTE: Forçar a foto DESTE chat, não da anterior
     const headerAvatar = document.getElementById('headerAvatar');
     const headerInitials = document.getElementById('headerInitials');
     
     if (isGroup) {
         // Avatar de grupo
         if (chat.profilePicUrl) {
+            console.log('Foto de grupo:', chat.profilePicUrl);
             if (headerAvatar) {
                 headerAvatar.src = chat.profilePicUrl;
                 headerAvatar.classList.remove('hidden');
@@ -732,6 +800,7 @@ async function openChat(chat) {
     } else {
         // Avatar de contato individual
         if (chat.profilePicUrl) {
+            console.log('Foto do contato:', chat.profilePicUrl);
             if (headerAvatar) {
                 headerAvatar.src = chat.profilePicUrl;
                 headerAvatar.classList.remove('hidden');
@@ -746,18 +815,24 @@ async function openChat(chat) {
         }
     }
     
-    // Carregar Mensagens usando remoteJid (NÃO currentChatId que é UUID)
-    const remoteJidToLoad = chat.remoteJid || chat.id;
-    await loadMessages(remoteJidToLoad);
+    // Renderizar tags
+    renderChatTags();
     
-    // Buscar Dados CRM (só para contatos individuais)
+    // ====== PASSO 5: CARREGAR MENSAGENS APENAS DESTE CHAT ======
+    console.log('📨 Carregando mensagens para:', remoteJidParam);
+    await loadMessages(remoteJidParam);
+    
+    // ====== PASSO 6: CARREGAR DADOS DO CRM OU GRUPO ======
     if (!isGroup) {
-        const jid = chat.remoteJid || chat.id;
-        findAndRenderClientCRM(jid);
+        console.log('🔍 Buscando dados do CRM');
+        findAndRenderClientCRM(remoteJidParam);
     } else {
-        // Mostrar info do grupo no painel lateral
         renderGroupInfo(chat);
     }
+    
+    console.log('✅ Chat aberto com sucesso');
+    console.log('==================================\n');
+}
     
     // Auto refresh (simples - polling a cada 5s)
     if (chatRefreshInterval) clearInterval(chatRefreshInterval);
@@ -795,7 +870,23 @@ function renderGroupInfo(group) {
 }
 
 async function loadMessages(remoteJid, isUpdate = false) {
-    if (!remoteJid) return;
+    if (!remoteJid) {
+        console.error('[❌ ERRO] RemoteJid inválido:', remoteJid);
+        return;
+    }
+    
+    console.log('\n📨 INICIANDO CARREGAMENTO DE MENSAGENS');
+    console.log('RemoteJid solicitado:', remoteJid);
+    console.log('RemoteJid atual no state:', currentRemoteJid);
+    
+    // VALIDAÇÃO CRÍTICA: Garantir que esse carregamento é para o chat atual
+    if (currentRemoteJid !== remoteJid) {
+        console.warn('[⚠️ AVISO] RemoteJid diferente do esperado!');
+        console.warn('Esperado:', currentRemoteJid);
+        console.warn('Recebido:', remoteJid);
+        // Atualizar para o correto
+        currentRemoteJid = remoteJid;
+    }
     
     try {
         const res = await fetch(`${API_BASE}/whatsapp/messages/fetch`, {
@@ -804,7 +895,11 @@ async function loadMessages(remoteJid, isUpdate = false) {
             headers: {'Content-Type': 'application/json'}
         });
         const data = await res.json();
-        console.log('Mensagens recebidas:', data);
+        
+        console.log('📦 Resposta da API recebida');
+        console.log('Tipo:', typeof data);
+        console.log('É array?', Array.isArray(data));
+        console.log('Tem property "messages"?', !!data?.messages);
         
         let messages = [];
         if (Array.isArray(data)) {
@@ -818,24 +913,68 @@ async function loadMessages(remoteJid, isUpdate = false) {
             messages = data.data;
         }
         
-        const container = document.getElementById('messagesContainer');
+        console.log(`📊 Total de mensagens recebidas: ${messages.length}`);
         
-        // Se não tiver mensagens ou formato inválido, limpar e sair
+        const container = document.getElementById('messagesContainer');
+        if (!container) {
+            console.error('[❌ ERRO] Container de mensagens não encontrado!');
+            return;
+        }
+        
+        // ====== VALIDAÇÃO CRÍTICA: FILTRAR MENSAGENS POR REMOTEJID ======
+        // Isso garante que NÃO haja mistura de conversas
+        const beforeFilterCount = messages.length;
+        
+        messages = messages.filter(msg => {
+            const msgRemoteJid = msg.key?.remoteJid || msg.remoteJid || '';
+            
+            // Comparar remoteJid (com e sem sufixo)
+            const msgJidNormalized = String(msgRemoteJid)
+                .replace(/@s\.whatsapp\.net/g, '')
+                .replace(/@c\.us/g, '')
+                .replace(/:/g, '');
+            
+            const requestJidNormalized = String(remoteJid)
+                .replace(/@s\.whatsapp\.net/g, '')
+                .replace(/@c\.us/g, '')
+                .replace(/:/g, '');
+            
+            const matches = msgJidNormalized === requestJidNormalized;
+            
+            if (!matches) {
+                console.warn(`[⚠️ REJEITADO] Mensagem não pertence a este chat:`, msgRemoteJid);
+            }
+            
+            return matches;
+        });
+        
+        console.log(`🔍 Filtrado: ${beforeFilterCount} → ${messages.length} mensagens válidas`);
+        
+        // Se não tiver mensagens ou formato inválido, mostrar mensagem vazia
         if (!messages || !Array.isArray(messages)) {
-             container.innerHTML = '<div class="text-center p-4 text-gray-500">Nenhuma mensagem encontrada.</div>';
-             return;
+            console.log('❌ Sem mensagens ou formato inválido');
+            container.innerHTML = '<div class="text-center p-4 text-gray-500">Nenhuma mensagem nesta conversa.</div>';
+            return;
         }
 
         // Pausar todos os áudios antes de limpar o container
         pauseAllAudios();
 
+        // LIMPAR COMPLETAMENTE o container anterior
         container.innerHTML = '';
         
-        // Inverter ordem para aparecer de baixo para cima (histórico)
-        // A API geralmente retorna as ultimas primeiro.
+        if (messages.length === 0) {
+            console.log('ℹ️ Sem mensagens para exibir');
+            container.innerHTML = '<div class="text-center p-4 text-gray-500">Nenhuma mensagem nesta conversa.</div>';
+            return;
+        }
+        
+        // Ordenar por timestamp (ascendente = mais antigo para mais novo)
         const sortedMsgs = messages.sort((a, b) => (a.messageTimestamp || 0) - (b.messageTimestamp || 0));
         
-        sortedMsgs.forEach(msg => {
+        console.log(`📝 Renderizando ${sortedMsgs.length} mensagens...`);
+        
+        sortedMsgs.forEach((msg, index) => {
             const isMe = msg.key.fromMe;
             
             // Extrair conteúdo da mensagem
@@ -927,8 +1066,15 @@ async function loadMessages(remoteJid, isUpdate = false) {
         // Scroll to bottom
         container.scrollTop = container.scrollHeight;
         
+        console.log('✅ Mensagens carregadas com sucesso');
+        console.log('════════════════════════════════\n');
+        
     } catch (e) {
-        console.error('Erro ao carregar msgs', e);
+        console.error('❌ Erro ao carregar mensagens:', e);
+        const container = document.getElementById('messagesContainer');
+        if (container) {
+            container.innerHTML = '<div class="text-center p-4 text-red-500">Erro ao carregar mensagens</div>';
+        }
     }
 }
 
