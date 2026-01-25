@@ -159,6 +159,80 @@ function getContactDisplayName(chatData) {
 }
 
 // ============================================================================
+// PAINEL DE CONTATO (tipo WhatsApp Web)
+// ============================================================================
+
+function showContactPanel(chat, displayName) {
+    const panel = document.getElementById('contactPanel');
+    if (!panel) return;
+    
+    // Mostrar painel
+    panel.classList.remove('hidden');
+    
+    // Foto/Avatar
+    const photo = document.getElementById('contactPanelPhoto');
+    const initials = document.getElementById('contactPanelInitials');
+    
+    if (chat.profilePicUrl) {
+        if (photo) {
+            photo.src = chat.profilePicUrl;
+            photo.classList.remove('hidden');
+        }
+        if (initials) initials.classList.add('hidden');
+    } else {
+        if (photo) photo.classList.add('hidden');
+        if (initials) {
+            initials.classList.remove('hidden');
+            initials.innerText = displayName.charAt(0).toUpperCase();
+        }
+    }
+    
+    // Nome
+    const nameEl = document.getElementById('contactPanelName');
+    if (nameEl) nameEl.innerText = displayName;
+    
+    // Status (online/offline) - pode vir do chat.status ou definir como 'offline'
+    const statusEl = document.getElementById('contactPanelStatus');
+    const statusTextEl = document.getElementById('contactPanelStatusText');
+    const isOnline = chat.lastSeen ? false : true; // Simplificado
+    
+    if (statusEl) {
+        statusEl.className = 'w-3 h-3 rounded-full ' + (isOnline ? 'bg-green-500' : 'bg-gray-400');
+    }
+    if (statusTextEl) {
+        statusTextEl.innerText = isOnline ? 'Online' : 'Offline';
+    }
+    
+    // Número de telefone
+    const cleanPhone = cleanPhoneNumber(chat.id);
+    const formattedPhone = formatPhone(chat.id);
+    
+    const phoneEl = document.getElementById('contactPanelPhone');
+    if (phoneEl) phoneEl.innerText = formattedPhone;
+    
+    // Link do WhatsApp
+    const phoneLinkEl = document.getElementById('contactPanelPhoneLink');
+    if (phoneLinkEl && cleanPhone) {
+        phoneLinkEl.href = `https://wa.me/55${cleanPhone}`;
+    }
+}
+
+function hideContactPanel() {
+    const panel = document.getElementById('contactPanel');
+    if (panel) panel.classList.add('hidden');
+}
+
+function copyPhone() {
+    const phoneEl = document.getElementById('contactPanelPhone');
+    if (!phoneEl) return;
+    
+    const phone = phoneEl.innerText.replace(/\D/g, '');
+    navigator.clipboard.writeText(phone).then(() => {
+        alert('Número copiado: ' + phoneEl.innerText);
+    });
+}
+
+// ============================================================================
 // INICIALIZAÇÃO
 // ============================================================================
 
@@ -705,6 +779,14 @@ async function openChat(chat) {
             }
         }
     }
+    
+    // ========== NOVO: Preencher Painel de Contato (tipo WhatsApp) ==========
+    if (!isGroup) {
+        showContactPanel(chat, name);
+    } else {
+        hideContactPanel();
+    }
+    // =========================================================================
     
     // Carregar Mensagens
     await loadMessages(currentChatId);
