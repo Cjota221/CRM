@@ -688,7 +688,8 @@ app.post('/api/whatsapp/messages/fetch', async (req, res) => {
         
         console.log(`[API] Buscando mensagens para remoteJid: ${remoteJid}`);
         
-        const response = await fetch(url, {
+        // Tentar primeira forma (estrutura padrão)
+        let response = await fetch(url, {
             method: 'POST',
             headers: evolutionHeaders,
             body: JSON.stringify({
@@ -697,9 +698,48 @@ app.post('/api/whatsapp/messages/fetch', async (req, res) => {
             })
         });
         
-        const data = await response.json();
+        let data = await response.json();
         
-        console.log(`[API] Resposta da Evolution para mensagens:`, JSON.stringify(data).substring(0, 200));
+        console.log(`[API] Tentativa 1 (key.remoteJid): mensagens encontradas = ${data?.messages?.length || data?.data?.length || 0}`);
+        
+        // Se não encontrar, tentar segunda forma
+        if (!data?.messages?.length && !data?.data?.length) {
+            console.log(`[API] Tentativa 2: buscando por remoteJid direto...`);
+            response = await fetch(url, {
+                method: 'POST',
+                headers: evolutionHeaders,
+                body: JSON.stringify({
+                    where: { remoteJid },
+                    options: { limit: 50, order: "DESC" } 
+                })
+            });
+            data = await response.json();
+            console.log(`[API] Tentativa 2 (remoteJid): mensagens encontradas = ${data?.messages?.length || data?.data?.length || 0}`);
+        }
+        
+        // Se ainda não encontrar, tentar terceira forma (sem where)
+        if (!data?.messages?.length && !data?.data?.length) {
+            console.log(`[API] Tentativa 3: buscando todas as mensagens e filtrando...`);
+            response = await fetch(url, {
+                method: 'POST',
+                headers: evolutionHeaders,
+                body: JSON.stringify({
+                    options: { limit: 100, order: "DESC" } 
+                })
+            });
+            data = await response.json();
+            
+            // Filtrar manualmente se tiver retornado
+            if (data?.messages && Array.isArray(data.messages)) {
+                data.messages = data.messages.filter(msg => 
+                    msg.key?.remoteJid === remoteJid || 
+                    msg.remoteJid === remoteJid
+                );
+            }
+            console.log(`[API] Tentativa 3 (todas + filtro): mensagens encontradas = ${data?.messages?.length || 0}`);
+        }
+        
+        console.log(`[API] Resposta final:`, JSON.stringify(data).substring(0, 300));
         
         // Processar mensagens para adicionar URLs de mídia acessíveis
         if (data && Array.isArray(data.messages)) {

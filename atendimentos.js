@@ -123,8 +123,10 @@ function getContactDisplayName(chatData) {
         return chatData.name || chatData.subject || 'Grupo';
     }
     
-    // 1. PRIORIDADE 1: Nome do CRM
+    // Extrair número limpo do JID
     const cleanPhone = cleanPhoneNumber(jid);
+    
+    // 1. PRIORIDADE 1: Nome do CRM
     if (cleanPhone && allClients && allClients.length > 0) {
         const lastDigits = cleanPhone.slice(-9);
         const lastDigits8 = cleanPhone.slice(-8);
@@ -141,23 +143,26 @@ function getContactDisplayName(chatData) {
         }
     }
     
-    // 2. PRIORIDADE 2: PushName do WhatsApp (mas NÃO "Você")
+    // 2. PRIORIDADE 2: PushName do WhatsApp (mas NUNCA "Você" ou "Desconhecido")
     if (chatData.pushName && chatData.pushName.trim() && 
-        chatData.pushName !== 'undefined' && chatData.pushName !== 'Você') {
+        chatData.pushName !== 'undefined' && chatData.pushName !== 'Você' &&
+        chatData.pushName !== 'Desconhecido' && chatData.pushName !== cleanPhone) {
         return chatData.pushName.trim();
     }
     
     if (chatData.name && chatData.name.trim() && 
-        chatData.name !== 'undefined' && chatData.name !== 'Você') {
+        chatData.name !== 'undefined' && chatData.name !== 'Você' &&
+        chatData.name !== 'Desconhecido' && chatData.name !== cleanPhone) {
         return chatData.name.trim();
     }
     
-    // 3. PRIORIDADE 3: Telefone formatado
+    // 3. PRIORIDADE 3: Telefone formatado (se tiver número válido)
     if (cleanPhone && cleanPhone.length >= 8) {
         return formatPhone(jid);
     }
     
     return 'Contato Desconhecido';
+}
 }
 
 // ============================================================================
