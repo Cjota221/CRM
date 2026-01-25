@@ -56,19 +56,22 @@ function formatPhone(rawNumber) {
     
     if (!cleaned) return rawNumber;
     
-    // Aplicar máscara visual (DD) NNNNN-NNNN
+    // Adicionar DDI 55 (Brasil) e aplicar máscara visual +55 (DD) NNNNN-NNNN
+    let fullNumber = cleaned;
+    
+    // Se tiver 10 ou 11 dígitos, é um número válido de Brasil
     if (cleaned.length === 11) {
-        // Celular: (XX) XXXXX-XXXX
-        return `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 7)}-${cleaned.substring(7)}`;
+        // Celular: +55 (XX) XXXXX-XXXX
+        return `+55 (${cleaned.substring(0, 2)}) ${cleaned.substring(2, 7)}-${cleaned.substring(7)}`;
     } else if (cleaned.length === 10) {
-        // Fixo: (XX) XXXX-XXXX
-        return `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 6)}-${cleaned.substring(6)}`;
+        // Fixo: +55 (XX) XXXX-XXXX
+        return `+55 (${cleaned.substring(0, 2)}) ${cleaned.substring(2, 6)}-${cleaned.substring(6)}`;
     } else if (cleaned.length >= 8) {
         // Formato básico com hífen
-        return `${cleaned.substring(0, cleaned.length - 4)}-${cleaned.substring(cleaned.length - 4)}`;
+        return `+55 ${cleaned.substring(0, cleaned.length - 4)}-${cleaned.substring(cleaned.length - 4)}`;
     }
     
-    return cleaned;
+    return `+55 ${cleaned}`;
 }
 
 // Função para extrair apenas números do telefone (para busca no banco)
@@ -210,8 +213,9 @@ function showContactPanel(chat, displayName) {
     }
     
     // Número de telefone
-    const cleanPhone = cleanPhoneNumber(chat.id);
-    const formattedPhone = formatPhone(chat.id);
+    const jid = chat.remoteJid || chat.id;
+    const cleanPhone = cleanPhoneNumber(jid);
+    const formattedPhone = cleanPhone ? formatPhone(jid) : 'Número desconhecido';
     
     const phoneEl = document.getElementById('contactPanelPhone');
     if (phoneEl) phoneEl.innerText = formattedPhone;
@@ -990,6 +994,9 @@ async function sendMessage() {
     
     if (!text || !currentChatId) return;
     
+    // Usar remoteJid correto (não o ID)
+    const remoteJid = currentChatData?.remoteJid || currentChatId;
+    
     // UI otimista
     input.value = '';
     const container = document.getElementById('messagesContainer');
@@ -1000,15 +1007,26 @@ async function sendMessage() {
     container.scrollTop = container.scrollHeight;
 
     try {
-        await fetch(`${API_BASE}/whatsapp/send-message`, {
+        const response = await fetch(`${API_BASE}/whatsapp/send-message`, {
             method: 'POST',
-            body: JSON.stringify({ number: currentChatId, text: text }),
+            body: JSON.stringify({ number: remoteJid, text: text }),
             headers: {'Content-Type': 'application/json'}
         });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            console.error('Erro ao enviar:', data);
+            alert('Erro ao enviar: ' + (data.error || 'Desconhecido'));
+            wrap.remove();
+            return;
+        }
+        
         // Atualiza chat real após delay pequeno
-        setTimeout(() => loadMessages(currentChatId), 1000);
+        setTimeout(() => loadMessages(remoteJid), 1000);
     } catch (e) {
-        alert('Erro ao enviar');
+        console.error('Erro:', e);
+        alert('Erro ao enviar: ' + e.message);
         wrap.remove();
     }
 }
@@ -1101,6 +1119,8 @@ function formatFileSize(bytes) {
 async function sendMedia() {
     if (!selectedFile || !currentChatId) return;
     
+    // Usar remoteJid correto
+    const remoteJid = currentChatData?.remoteJid || currentChatId;
     const caption = document.getElementById('fileCaption')?.value || '';
     const container = document.getElementById('messagesContainer');
     
@@ -1126,7 +1146,7 @@ async function sendMedia() {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
-                number: currentChatId,
+                number: remoteJid,
                 mediaType: selectedMediaType,
                 media: base64,
                 caption: caption,
@@ -1142,7 +1162,7 @@ async function sendMedia() {
         
         // Limpar preview e recarregar mensagens
         clearFilePreview();
-        setTimeout(() => loadMessages(currentChatId), 1000);
+        setTimeout(() => loadMessages(remoteJid), 1000);
         
     } catch (e) {
         console.error('Erro ao enviar mídia:', e);
