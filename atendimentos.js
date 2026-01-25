@@ -163,7 +163,6 @@ function getContactDisplayName(chatData) {
     
     return 'Contato Desconhecido';
 }
-}
 
 // ============================================================================
 // PAINEL DE CONTATO (tipo WhatsApp Web)
