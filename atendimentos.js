@@ -171,73 +171,16 @@ function getContactDisplayName(chatData) {
 // PAINEL DE CONTATO (tipo WhatsApp Web)
 // ============================================================================
 
-function showContactPanel(chat, displayName) {
-    const panel = document.getElementById('contactPanel');
-    if (!panel) return;
-    
-    // Mostrar painel
-    panel.classList.remove('hidden');
-    
-    // Foto/Avatar
-    const photo = document.getElementById('contactPanelPhoto');
-    const initials = document.getElementById('contactPanelInitials');
-    
-    if (chat.profilePicUrl) {
-        if (photo) {
-            photo.src = chat.profilePicUrl;
-            photo.classList.remove('hidden');
-        }
-        if (initials) initials.classList.add('hidden');
-    } else {
-        if (photo) photo.classList.add('hidden');
-        if (initials) {
-            initials.classList.remove('hidden');
-            initials.innerText = displayName.charAt(0).toUpperCase();
-        }
-    }
-    
-    // Nome
-    const nameEl = document.getElementById('contactPanelName');
-    if (nameEl) nameEl.innerText = displayName;
-    
-    // Status (online/offline) - pode vir do chat.status ou definir como 'offline'
-    const statusEl = document.getElementById('contactPanelStatus');
-    const statusTextEl = document.getElementById('contactPanelStatusText');
-    const isOnline = chat.lastSeen ? false : true; // Simplificado
-    
-    if (statusEl) {
-        statusEl.className = 'w-3 h-3 rounded-full ' + (isOnline ? 'bg-green-500' : 'bg-gray-400');
-    }
-    if (statusTextEl) {
-        statusTextEl.innerText = isOnline ? 'Online' : 'Offline';
-    }
-    
-    // Número de telefone
-    const jid = chat.remoteJid || chat.id;
-    const cleanPhone = cleanPhoneNumber(jid);
-    const formattedPhone = cleanPhone ? formatPhone(jid) : 'Número desconhecido';
-    
-    const phoneEl = document.getElementById('contactPanelPhone');
-    if (phoneEl) phoneEl.innerText = formattedPhone;
-    
-    // Link do WhatsApp
-    const phoneLinkEl = document.getElementById('contactPanelPhoneLink');
-    if (phoneLinkEl && cleanPhone) {
-        phoneLinkEl.href = `https://wa.me/55${cleanPhone}`;
-    }
-}
-
-function hideContactPanel() {
-    const panel = document.getElementById('contactPanel');
-    if (panel) panel.classList.add('hidden');
-}
+// ============================================================================
+// GERENCIAMENTO DE CLIENTE (Consolidado)
+// ============================================================================
 
 function copyPhone() {
-    const phoneEl = document.getElementById('contactPanelPhone');
-    if (!phoneEl) return;
+    const currentJid = currentChatData?.remoteJid;
+    if (!currentJid) return;
     
-    const phone = phoneEl.innerText.replace(/\D/g, '');
-    navigator.clipboard.writeText(phone).then(() => {
+    const cleanedPhone = cleanPhoneNumber(currentJid);
+    navigator.clipboard.writeText(cleanedPhone).then(() => {
         alert('Número copiado: ' + phoneEl.innerText);
     });
 }
@@ -791,16 +734,9 @@ async function openChat(chat) {
         }
     }
     
-    // ========== NOVO: Preencher Painel de Contato (tipo WhatsApp) ==========
-    if (!isGroup) {
-        showContactPanel(chat, name);
-    } else {
-        hideContactPanel();
-    }
-    // =========================================================================
-    
-    // Carregar Mensagens
-    await loadMessages(currentChatId);
+    // Carregar Mensagens usando remoteJid (NÃO currentChatId que é UUID)
+    const remoteJidToLoad = chat.remoteJid || chat.id;
+    await loadMessages(remoteJidToLoad);
     
     // Buscar Dados CRM (só para contatos individuais)
     if (!isGroup) {
@@ -1205,25 +1141,73 @@ function openClientSidebar() {
 }
 
 function findAndRenderClientCRM(chatId) {
-    // chatId vem como "5511999999999@s.whatsapp.net"
+    // chatId vem como "5511999999999@s.whatsapp.net" ou "556282237075@s.whatsapp.net"
     const panel = document.getElementById('crmDataContainer');
-    const cleanPhone = chatId.replace('@s.whatsapp.net', '').replace(/\D/g, '');
     
-    // Estratégia de Match: últimos 8-9 dígitos
-    const lastDigits = cleanPhone.slice(-9);
-    const lastDigits8 = cleanPhone.slice(-8);
+    // Limpar o JID para extrair apenas dígitos
+    const whatsappPhone = chatId.replace('@s.whatsapp.net', '').replace(/\D/g, '');
     
-    const client = allClients.find(c => {
-        const p = (c.telefone || c.celular || c.whatsapp || '').replace(/\D/g, '');
-        return p.includes(lastDigits) || p.includes(lastDigits8) || lastDigits.includes(p.slice(-8));
+    // Remover o DDI "55" do início se presente para comparação com números armazenados
+    let phoneWithoutDDI = whatsappPhone;
+    if (whatsappPhone.startsWith('55') && whatsappPhone.length > 11) {
+        phoneWithoutDDI = whatsappPhone.substring(2); // Remove "55"
+    }
+    
+    console.log('[CRM] Buscando cliente para phone:', {
+        original: chatId,
+        whatsappPhone,
+        phoneWithoutDDI,
+        clientCount: allClients.length
+    });
+    
+    // Estratégia de Match melhorada:
+    // 1. Tentar match exato (com ou sem DDI)
+    // 2. Tentar match pelo último 9 dígitos
+    // 3. Tentar match pelo último 8 dígitos
+    let client = null;
+    
+    client = allClients.find(c => {
+        const storedPhone = (c.telefone || c.celular || c.whatsapp || '').replace(/\D/g, '');
+        if (!storedPhone) return false;
+        
+        // Match 1: Exato
+        if (storedPhone === whatsappPhone) {
+            console.log('[CRM] Match EXATO encontrado:', { stored: storedPhone, whatsapp: whatsappPhone });
+            return true;
+        }
+        
+        // Match 2: Exato sem DDI
+        if (storedPhone === phoneWithoutDDI) {
+            console.log('[CRM] Match EXATO (sem DDI) encontrado:', { stored: storedPhone, whatsapp: phoneWithoutDDI });
+            return true;
+        }
+        
+        // Match 3: Últimos 9 dígitos
+        const last9stored = storedPhone.slice(-9);
+        const last9whatsapp = phoneWithoutDDI.slice(-9);
+        if (last9stored && last9whatsapp && last9stored === last9whatsapp) {
+            console.log('[CRM] Match ÚLTIMOS 9 DÍGITOS encontrado:', { stored: last9stored, whatsapp: last9whatsapp });
+            return true;
+        }
+        
+        // Match 4: Últimos 8 dígitos
+        const last8stored = storedPhone.slice(-8);
+        const last8whatsapp = phoneWithoutDDI.slice(-8);
+        if (last8stored && last8whatsapp && last8stored === last8whatsapp) {
+            console.log('[CRM] Match ÚLTIMOS 8 DÍGITOS encontrado:', { stored: last8stored, whatsapp: last8whatsapp });
+            return true;
+        }
+        
+        return false;
     });
     
     // Nome do perfil WhatsApp (pushname)
     const whatsappName = currentChatData?.pushName || currentChatData?.name || 'Contato';
     
     if (!client) {
+        console.log('[CRM] Cliente NÃO encontrado. Exibindo Lead Novo.');
         // CENÁRIO B: Cliente não encontrado - Lead Novo
-        renderNewLeadPanel(cleanPhone, whatsappName);
+        renderNewLeadPanel(whatsappPhone, whatsappName);
         currentClient = null;
         
         // Adicionar tag "Lead Novo" automaticamente
@@ -1237,9 +1221,11 @@ function findAndRenderClientCRM(chatId) {
         return;
     }
     
+    console.log('[CRM] Cliente ENCONTRADO:', client.nome, client.telefone || client.celular || client.whatsapp);
+    
     // CENÁRIO A: Cliente encontrado
     currentClient = client;
-    renderClientPanel(client, cleanPhone);
+    renderClientPanel(client, whatsappPhone);
 }
 
 function renderNewLeadPanel(phone, whatsappName) {
