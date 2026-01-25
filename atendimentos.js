@@ -1207,7 +1207,9 @@ function findAndRenderClientCRM(chatId) {
     if (!client) {
         console.log('[CRM] Cliente NÃO encontrado. Exibindo Lead Novo.');
         // CENÁRIO B: Cliente não encontrado - Lead Novo
-        renderNewLeadPanel(whatsappPhone, whatsappName);
+        // Passar o número completo com DDI para renderização
+        const displayPhone = whatsappPhone.startsWith('55') ? whatsappPhone : '55' + whatsappPhone;
+        renderNewLeadPanel(displayPhone, whatsappName);
         currentClient = null;
         
         // Adicionar tag "Lead Novo" automaticamente
@@ -1248,7 +1250,7 @@ function renderNewLeadPanel(phone, whatsappName) {
             <div class="bg-slate-50 rounded-xl p-4">
                 <p class="text-xs text-slate-500 mb-1">Nome no WhatsApp</p>
                 <p class="font-semibold text-slate-800">${escapeHtml(whatsappName)}</p>
-                <p class="text-xs text-slate-400 mt-2">Telefone: +${phone}</p>
+                <p class="text-xs text-slate-400 mt-2">Telefone: ${formatPhone(phone)}</p>
             </div>
             
             <!-- Formulário de Cadastro Rápido -->
