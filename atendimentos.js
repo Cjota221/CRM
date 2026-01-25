@@ -46,6 +46,12 @@ function cleanPhoneNumber(rawNumber) {
         cleaned = cleaned.substring(2);
     }
     
+    // Se tiver mais de 11 dígitos, pegar apenas os últimos 11 (número principal)
+    // Isso trata casos onde há dígitos extras ou múltiplos números concatenados
+    if (cleaned.length > 11) {
+        cleaned = cleaned.slice(-11);
+    }
+    
     return cleaned;
 }
 
@@ -54,24 +60,30 @@ function formatPhone(rawNumber) {
     
     const cleaned = cleanPhoneNumber(rawNumber);
     
-    if (!cleaned) return rawNumber;
+    if (!cleaned || cleaned.length < 8) return rawNumber;
     
-    // Adicionar DDI 55 (Brasil) e aplicar máscara visual +55 (DD) NNNNN-NNNN
-    let fullNumber = cleaned;
-    
-    // Se tiver 10 ou 11 dígitos, é um número válido de Brasil
-    if (cleaned.length === 11) {
-        // Celular: +55 (XX) XXXXX-XXXX
-        return `+55 (${cleaned.substring(0, 2)}) ${cleaned.substring(2, 7)}-${cleaned.substring(7)}`;
-    } else if (cleaned.length === 10) {
-        // Fixo: +55 (XX) XXXX-XXXX
-        return `+55 (${cleaned.substring(0, 2)}) ${cleaned.substring(2, 6)}-${cleaned.substring(6)}`;
-    } else if (cleaned.length >= 8) {
-        // Formato básico com hífen
-        return `+55 ${cleaned.substring(0, cleaned.length - 4)}-${cleaned.substring(cleaned.length - 4)}`;
+    // Garantir que temos exatamente 10 ou 11 dígitos
+    let normalized = cleaned;
+    if (normalized.length > 11) {
+        normalized = normalized.slice(-11); // Pegar últimos 11
+    } else if (normalized.length < 10) {
+        // Número muito pequeno, retornar como está
+        return `+55 ${normalized}`;
     }
     
-    return `+55 ${cleaned}`;
+    // Se tiver 10 ou 11 dígitos, é um número válido de Brasil
+    if (normalized.length === 11) {
+        // Celular: +55 (XX) XXXXX-XXXX
+        return `+55 (${normalized.substring(0, 2)}) ${normalized.substring(2, 7)}-${normalized.substring(7)}`;
+    } else if (normalized.length === 10) {
+        // Fixo: +55 (XX) XXXX-XXXX
+        return `+55 (${normalized.substring(0, 2)}) ${normalized.substring(2, 6)}-${normalized.substring(6)}`;
+    } else if (normalized.length > 8) {
+        // Formato básico com hífen (para números com 8-9 dígitos)
+        return `+55 ${normalized.substring(0, normalized.length - 4)}-${normalized.substring(normalized.length - 4)}`;
+    }
+    
+    return `+55 ${normalized}`;
 }
 
 // Função para extrair apenas números do telefone (para busca no banco)
