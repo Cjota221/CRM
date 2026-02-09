@@ -732,7 +732,106 @@ async function generatePersonalizedCopy(profile, clientName = '{nome}', productN
     };
 }
 
-// 4. MORNING BRIEFING (Relatório Matinal CEO)
+// 4.5 DASHBOARD BI DATA (espelho do /api/anny/dashboard do server.js)
+async function getDashboardData() {
+    if (!supabase) return { error: 'Banco de dados não configurado' };
+
+    try {
+        const now = new Date();
+
+        const [clientsRes, ordersRes] = await Promise.all([
+            supabase.from('clients').select('id, name, phone, email, total_spent, order_count, last_purchase_date').order('total_spent', { ascending: false }).limit(2000),
+            supabase.from('orders').select('client_id, client_name, total, data').order('data', { ascending: false }).limit(5000)
+        ]);
+
+        const clients = clientsRes.data || [];
+        const orders = ordersRes.data || [];
+
+        const enriched = clients.map(c => {
+            const lp = c.last_purchase_date ? new Date(c.last_purchase_date) : null;
+            const daysInactive = lp ? Math.floor((now - lp) / 864e5) : 999;
+            const avgTicket = c.order_count > 0 ? Math.round(c.total_spent / c.order_count) : 0;
+            const clientOrders = orders.filter(o => o.client_id === c.id).map(o => new Date(o.data)).sort((a, b) => a - b);
+            let cycle = 0;
+            if (clientOrders.length > 1) {
+                const totalDays = (clientOrders[clientOrders.length - 1] - clientOrders[0]) / 864e5;
+                cycle = Math.round(totalDays / (clientOrders.length - 1));
+            }
+            let tier = 4;
+            if (c.total_spent >= 2000 && c.order_count >= 3) tier = 1;
+            else if (c.total_spent >= 800 && c.order_count >= 2) tier = 2;
+            else if (c.total_spent >= 500) tier = 3;
+            return { ...c, days_inactive: daysInactive, avg_ticket: avgTicket, cycle, tier };
+        });
+
+        // UTI
+        const uti = enriched
+            .filter(c => c.total_spent >= 500 && c.days_inactive > 30)
+            .sort((a, b) => b.total_spent - a.total_spent)
+            .slice(0, 20);
+
+        // Oportunidades
+        const opportunities = enriched
+            .filter(c => c.avg_ticket >= 300 && c.days_inactive >= 15 && c.days_inactive <= 120 && c.order_count >= 2)
+            .sort((a, b) => b.avg_ticket - a.avg_ticket)
+            .slice(0, 20);
+
+        // C4 Candidatos
+        const ninetyAgo = new Date(now.getTime() - 90 * 864e5);
+        const recentByClient = {};
+        orders.forEach(o => {
+            if (new Date(o.data) >= ninetyAgo && o.client_id) {
+                if (!recentByClient[o.client_id]) recentByClient[o.client_id] = { count: 0, total: 0 };
+                recentByClient[o.client_id].count++;
+                recentByClient[o.client_id].total += parseFloat(o.total || 0);
+            }
+        });
+        const c4Candidates = Object.entries(recentByClient)
+            .filter(([_, s]) => s.count >= 3)
+            .map(([id, s]) => {
+                const client = enriched.find(c => String(c.id) === String(id));
+                if (!client) return null;
+                return { ...client, recent_orders: s.count, recent_total: s.total, recent_avg: Math.round(s.total / s.count) };
+            })
+            .filter(Boolean)
+            .sort((a, b) => b.recent_orders - a.recent_orders)
+            .slice(0, 20);
+
+        // Recuperados
+        const thirtyAgo = new Date(now.getTime() - 30 * 864e5);
+        const recentBuyerIds = new Set(orders.filter(o => new Date(o.data) >= thirtyAgo).map(o => o.client_id));
+        const recovered = enriched.filter(c => {
+            if (!recentBuyerIds.has(c.id)) return false;
+            const cOrders = orders.filter(o => o.client_id === c.id).map(o => new Date(o.data)).sort((a, b) => b - a);
+            if (cOrders.length < 2) return false;
+            return Math.floor((now - cOrders[1]) / 864e5) > 60;
+        });
+        const recoveredValue = recovered.reduce((s, c) => {
+            const lastOrder = orders.filter(o => o.client_id === c.id && new Date(o.data) >= thirtyAgo);
+            return s + lastOrder.reduce((ss, o) => ss + parseFloat(o.total || 0), 0);
+        }, 0);
+
+        const ltvAtRisk = uti.reduce((s, c) => s + parseFloat(c.total_spent || 0), 0);
+
+        return {
+            kpis: {
+                ltvAtRisk: { value: ltvAtRisk, count: uti.length },
+                opportunities: { value: opportunities.length, hotCount: opportunities.filter(c => c.days_inactive < 45).length },
+                recovered: { value: recoveredValue, count: recovered.length },
+                c4Potential: { value: c4Candidates.length, estimatedRevenue: c4Candidates.reduce((s, c) => s + (c.recent_total || 0), 0) }
+            },
+            uti,
+            opportunities,
+            c4Candidates,
+            updatedAt: now.toISOString()
+        };
+    } catch (err) {
+        console.error('[Dashboard Netlify] Error:', err);
+        return { error: err.message };
+    }
+}
+
+// 5. MORNING BRIEFING (Relatório Matinal CEO)
 async function getMorningBriefing() {
     if (!supabase) return { error: 'Banco de dados não configurado' };
 
@@ -1572,6 +1671,15 @@ exports.handler = async (event, context) => {
                 statusCode: 200,
                 headers,
                 body: JSON.stringify(briefing)
+            };
+        }
+
+        if (action === 'dashboard') {
+            const dashData = await getDashboardData();
+            return {
+                statusCode: 200,
+                headers,
+                body: JSON.stringify(dashData)
             };
         }
 

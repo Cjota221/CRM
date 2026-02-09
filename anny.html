@@ -490,24 +490,30 @@
 
         render() {
             const d = this.data;
-            if (!d) return;
+            if (!d || !d.kpis) return;
 
-            // KPIs
+            // KPIs (acesso defensivo)
             const fmtR = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            document.getElementById('kpi-ltv-value').textContent = fmtR(d.kpis.ltvAtRisk.value);
-            document.getElementById('kpi-ltv-badge').textContent = d.kpis.ltvAtRisk.count + ' clientes';
-            document.getElementById('kpi-ltv-badge').setAttribute('data-tip', d.kpis.ltvAtRisk.count + ' clientes VIP inativos >30d');
+            const kpis = d.kpis;
+            const ltv = kpis.ltvAtRisk || { value: 0, count: 0 };
+            const opp = kpis.opportunities || { value: 0, hotCount: 0 };
+            const rec = kpis.recovered || { value: 0, count: 0 };
+            const c4  = kpis.c4Potential || { value: 0, estimatedRevenue: 0 };
 
-            document.getElementById('kpi-opp-value').textContent = d.kpis.opportunities.value;
-            document.getElementById('kpi-opp-badge').textContent = d.kpis.opportunities.hotCount + ' quentes';
-            document.getElementById('kpi-opp-badge').setAttribute('data-tip', d.kpis.opportunities.hotCount + ' prontos para reativar (<45d)');
+            document.getElementById('kpi-ltv-value').textContent = fmtR(ltv.value);
+            document.getElementById('kpi-ltv-badge').textContent = ltv.count + ' clientes';
+            document.getElementById('kpi-ltv-badge').setAttribute('data-tip', ltv.count + ' clientes VIP inativos >30d');
 
-            document.getElementById('kpi-rec-value').textContent = fmtR(d.kpis.recovered.value);
-            document.getElementById('kpi-rec-badge').textContent = d.kpis.recovered.count + ' clientes';
+            document.getElementById('kpi-opp-value').textContent = opp.value;
+            document.getElementById('kpi-opp-badge').textContent = opp.hotCount + ' quentes';
+            document.getElementById('kpi-opp-badge').setAttribute('data-tip', opp.hotCount + ' prontos para reativar (<45d)');
 
-            document.getElementById('kpi-c4-value').textContent = d.kpis.c4Potential.value + ' candidatas';
-            document.getElementById('kpi-c4-badge').textContent = fmtR(d.kpis.c4Potential.estimatedRevenue);
-            document.getElementById('kpi-c4-badge').setAttribute('data-tip', 'Faturamento recente: ' + fmtR(d.kpis.c4Potential.estimatedRevenue));
+            document.getElementById('kpi-rec-value').textContent = fmtR(rec.value);
+            document.getElementById('kpi-rec-badge').textContent = rec.count + ' clientes';
+
+            document.getElementById('kpi-c4-value').textContent = c4.value + ' candidatas';
+            document.getElementById('kpi-c4-badge').textContent = fmtR(c4.estimatedRevenue);
+            document.getElementById('kpi-c4-badge').setAttribute('data-tip', 'Faturamento recente: ' + fmtR(c4.estimatedRevenue));
 
             // UTI
             this.renderClientList('uti', d.uti, (c, i) => {
