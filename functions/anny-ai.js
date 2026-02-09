@@ -1540,6 +1540,31 @@ exports.handler = async (event, context) => {
                 };
             }
 
+            // Gerar mensagem de campanha via IA
+            const actionParam = event.queryStringParameters?.action;
+            if (actionParam === 'generate-campaign') {
+                const { daysInactive, tone, couponName, clientCount, context: ctx } = JSON.parse(event.body || '{}');
+                const prompt = `Gere uma mensagem curta e persuasiva para WhatsApp (máx 300 caracteres) para clientes de rasteirinhas que não compram há ${daysInactive || 30} dias.
+Use um tom ${tone || 'Amigável'}.
+${couponName ? `Mencione o cupom ${couponName} como incentivo.` : 'Não mencione cupom.'}
+${ctx ? `Contexto adicional: ${ctx}` : ''}
+Foque em novidades da coleção e no benefício do frete grátis acima de R$2.000.
+A mensagem deve ser para ${clientCount || 'vários'} clientes, então use {{nome}} como variável para personalizar.
+${couponName ? 'Use {{cupom}} como variável para o código do cupom.' : ''}
+Responda APENAS com o texto da mensagem, sem aspas, sem explicação.`;
+
+                const completion = await callGroqAPI([
+                    { role: 'system', content: ANNY_SYSTEM_PROMPT },
+                    { role: 'user', content: prompt }
+                ]);
+                const generatedMessage = completion.choices[0].message.content.trim();
+                return {
+                    statusCode: 200,
+                    headers,
+                    body: JSON.stringify({ success: true, message: generatedMessage })
+                };
+            }
+
             const { message, history = [] } = JSON.parse(event.body);
 
             if (!message) {

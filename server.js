@@ -2010,6 +2010,59 @@ app.post('/api/anny', async (req, res) => {
     }
 });
 
+// ============================================================================
+// ANNY AI - Gerador de mensagem de campanha via IA
+// ============================================================================
+app.post('/api/anny/generate-campaign-message', async (req, res) => {
+    try {
+        if (!GROQ_API_KEY) {
+            return res.status(500).json({ error: 'GROQ_API_KEY não configurada' });
+        }
+
+        const { daysInactive, tone, couponName, clientCount, context } = req.body;
+
+        const prompt = `Gere uma mensagem curta e persuasiva para WhatsApp (máx 300 caracteres) para clientes de rasteirinhas que não compram há ${daysInactive || 30} dias.
+Use um tom ${tone || 'Amigável'}.
+${couponName ? `Mencione o cupom ${couponName} como incentivo.` : 'Não mencione cupom.'}
+${context ? `Contexto adicional: ${context}` : ''}
+Foque em novidades da coleção e no benefício do frete grátis acima de R$2.000.
+A mensagem deve ser para ${clientCount || 'vários'} clientes, então use {{nome}} como variável para personalizar.
+${couponName ? 'Use {{cupom}} como variável para o código do cupom.' : ''}
+Responda APENAS com o texto da mensagem, sem aspas, sem explicação.`;
+
+        const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${GROQ_API_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: 'llama-3.3-70b-versatile',
+                messages: [
+                    { role: 'system', content: ANNY_SYSTEM_PROMPT },
+                    { role: 'user', content: prompt }
+                ],
+                temperature: 0.8,
+                max_tokens: 512
+            })
+        });
+
+        if (!groqResponse.ok) {
+            const errorText = await groqResponse.text();
+            throw new Error(`Groq API error: ${groqResponse.status} - ${errorText}`);
+        }
+
+        const data = await groqResponse.json();
+        const generatedMessage = data.choices[0].message.content.trim();
+
+        res.json({ success: true, message: generatedMessage });
+
+    } catch (error) {
+        console.error('[Anny] Generate campaign message error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Insights endpoint
 app.get('/api/anny', async (req, res) => {
     const action = req.query.action;

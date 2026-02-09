@@ -280,19 +280,63 @@
             </div>
             <div class="p-6">
                 <p id="action-modal-count" class="text-sm text-slate-600 mb-4">0 clientes selecionados</p>
+
+                <!-- Tom da mensagem -->
                 <div class="mb-4">
-                    <label class="block text-sm font-medium text-slate-700 mb-2">Mensagem</label>
-                    <textarea id="campaign-message" class="input h-32 resize-none" placeholder="Digite a mensagem da campanha..."></textarea>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Tom da Mensagem</label>
+                    <select id="campaign-tone" class="input">
+                        <option value="Amigável">Amigável</option>
+                        <option value="Promocional">Promocional</option>
+                        <option value="Urgente">Urgente</option>
+                        <option value="Exclusivo VIP">Exclusivo VIP</option>
+                    </select>
                 </div>
+
+                <!-- Cupom -->
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-slate-700 mb-2">Cupom (opcional)</label>
                     <select id="campaign-coupon" class="input">
                         <option value="">Sem cupom</option>
                     </select>
+                    <p class="text-xs text-slate-400 mt-1">Use <code class="bg-slate-100 px-1 rounded">{{cupom}}</code> na mensagem para inserir o código</p>
                 </div>
+
+                <!-- Mensagem + Gerar com IA -->
+                <div class="mb-4">
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="block text-sm font-medium text-slate-700">Mensagem</label>
+                        <button onclick="AnnyChat.generateWithAI()" id="btn-generate-ai" class="btn btn-anny text-xs py-1 px-3">
+                            <i data-lucide="sparkles" class="w-3 h-3"></i>
+                            Gerar com IA
+                        </button>
+                    </div>
+                    <textarea id="campaign-message" class="input h-32 resize-none" placeholder="Digite a mensagem ou gere com IA... Use {{nome}} e {{cupom}} como variáveis."></textarea>
+                    <p class="text-xs text-slate-400 mt-1">Variáveis: <code class="bg-slate-100 px-1 rounded">{{nome}}</code> <code class="bg-slate-100 px-1 rounded">{{cupom}}</code> <code class="bg-slate-100 px-1 rounded">{{telefone}}</code></p>
+                </div>
+
+                <!-- Anti-ban settings -->
+                <div class="mb-4 bg-slate-50 rounded-xl p-4">
+                    <p class="text-xs font-semibold text-slate-600 mb-2 flex items-center gap-1">
+                        <i data-lucide="shield" class="w-3 h-3"></i> Proteção Anti-Ban
+                    </p>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="text-xs text-slate-500">Lote (msgs por vez)</label>
+                            <input id="campaign-batch-size" type="number" class="input text-sm mt-1" value="10" min="1" max="50">
+                        </div>
+                        <div>
+                            <label class="text-xs text-slate-500">Intervalo entre lotes (min)</label>
+                            <input id="campaign-batch-interval" type="number" class="input text-sm mt-1" value="20" min="5" max="120">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Feedback area (hidden initially) -->
+                <div id="campaign-feedback" class="hidden mb-4 rounded-xl p-4 text-sm"></div>
+
                 <div class="flex gap-3">
                     <button onclick="AnnyChat.closeActionModal()" class="btn btn-secondary flex-1">Cancelar</button>
-                    <button onclick="AnnyChat.sendCampaign()" class="btn btn-success flex-1">
+                    <button onclick="AnnyChat.sendCampaign()" id="btn-send-campaign" class="btn btn-success flex-1">
                         <i data-lucide="send" class="w-4 h-4"></i>
                         Enviar via WhatsApp
                     </button>
@@ -502,13 +546,98 @@
                     return;
                 }
                 document.getElementById('action-modal-count').textContent = `${this.selectedClients.length} cliente(s) selecionado(s)`;
+                // Resetar estado do modal
+                document.getElementById('campaign-message').value = '';
+                document.getElementById('campaign-feedback').classList.add('hidden');
+                document.getElementById('btn-send-campaign').disabled = false;
+                document.getElementById('btn-send-campaign').innerHTML = '<i data-lucide="send" class="w-4 h-4"></i> Enviar via WhatsApp';
+                // Carregar cupons do localStorage/Supabase
+                this.loadCoupons();
                 document.getElementById('action-modal').classList.remove('hidden');
+                lucide.createIcons();
             },
 
             closeActionModal() {
                 document.getElementById('action-modal').classList.add('hidden');
             },
 
+            // ============================================================
+            // CARREGAR CUPONS DO CRM (localStorage / Supabase)
+            // ============================================================
+            loadCoupons() {
+                const select = document.getElementById('campaign-coupon');
+                select.innerHTML = '<option value="">Sem cupom</option>';
+                try {
+                    const raw = localStorage.getItem('crm_coupons');
+                    const coupons = raw ? JSON.parse(raw) : [];
+                    coupons.filter(c => c.isActive).forEach(c => {
+                        const opt = document.createElement('option');
+                        opt.value = c.code;
+                        opt.textContent = `${c.code} (${c.discount}${c.type === 'percent' ? '%' : ' R$'} OFF)`;
+                        select.appendChild(opt);
+                    });
+                } catch (e) {
+                    console.error('[Anny] Erro ao carregar cupons:', e);
+                }
+            },
+
+            // ============================================================
+            // GERAR MENSAGEM COM IA (Groq)
+            // ============================================================
+            async generateWithAI() {
+                const btn = document.getElementById('btn-generate-ai');
+                const textarea = document.getElementById('campaign-message');
+                const tone = document.getElementById('campaign-tone').value;
+                const couponCode = document.getElementById('campaign-coupon').value;
+
+                // Calcular média de dias inativos dos clientes selecionados
+                let avgDays = 30;
+                const clientsWithDays = this.selectedClients.filter(c => c.days_inactive);
+                if (clientsWithDays.length > 0) {
+                    avgDays = Math.round(clientsWithDays.reduce((sum, c) => sum + c.days_inactive, 0) / clientsWithDays.length);
+                }
+
+                btn.disabled = true;
+                btn.innerHTML = '<i data-lucide="loader" class="w-3 h-3 animate-spin"></i> Gerando...';
+                lucide.createIcons();
+
+                try {
+                    const apiUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+                        ? '/api/anny/generate-campaign-message'
+                        : '/.netlify/functions/anny-ai?action=generate-campaign';
+
+                    const res = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            daysInactive: avgDays,
+                            tone,
+                            couponName: couponCode || null,
+                            clientCount: this.selectedClients.length,
+                            context: `${this.selectedClients.length} clientes selecionados, média de ${avgDays} dias inativos`
+                        })
+                    });
+
+                    const data = await res.json();
+                    if (data.success && data.message) {
+                        textarea.value = data.message;
+                        textarea.focus();
+                    } else {
+                        alert('Erro ao gerar: ' + (data.error || 'Tente novamente'));
+                    }
+                } catch (err) {
+                    console.error('[Anny] Erro IA:', err);
+                    alert('Erro de conexão com a IA. Verifique a GROQ_API_KEY.');
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i data-lucide="sparkles" class="w-3 h-3"></i> Gerar com IA';
+                    lucide.createIcons();
+                }
+            },
+
+            // ============================================================
+            // ENVIAR CAMPANHA VIA EVOLUTION API (mesmo serviço do CRM)
+            // ============================================================
             async sendCampaign() {
                 const message = document.getElementById('campaign-message').value.trim();
                 if (!message) {
@@ -516,14 +645,124 @@
                     return;
                 }
 
-                const couponId = document.getElementById('campaign-coupon').value;
-                
-                // Here you would integrate with WhatsApp sending
-                alert(`Campanha configurada para ${this.selectedClients.length} clientes!\n\nMensagem: ${message}\n\nIntegracao com WhatsApp sera processada.`);
-                
-                this.closeActionModal();
-                this.selectedClients = [];
-                this.updateSelectedCount();
+                const couponCode = document.getElementById('campaign-coupon').value;
+                const batchSize = parseInt(document.getElementById('campaign-batch-size').value) || 10;
+                const batchInterval = parseInt(document.getElementById('campaign-batch-interval').value) || 20;
+                const feedbackEl = document.getElementById('campaign-feedback');
+                const sendBtn = document.getElementById('btn-send-campaign');
+
+                // Preparar contatos no formato da API de campanhas
+                const contacts = this.selectedClients.map(c => ({
+                    id: c.id || c.phone,
+                    name: c.name || 'Cliente',
+                    phone: c.phone || ''
+                })).filter(c => c.phone);
+
+                if (contacts.length === 0) {
+                    alert('Nenhum cliente selecionado possui telefone válido.');
+                    return;
+                }
+
+                // Desabilitar botão
+                sendBtn.disabled = true;
+                sendBtn.innerHTML = '<i data-lucide="loader" class="w-4 h-4 animate-spin"></i> Criando campanha...';
+                lucide.createIcons();
+
+                // Feedback: processando
+                feedbackEl.className = 'mb-4 rounded-xl p-4 text-sm bg-blue-50 border border-blue-200 text-blue-700';
+                feedbackEl.innerHTML = '<i data-lucide="loader" class="w-4 h-4 inline animate-spin mr-1"></i> Criando campanha e iniciando disparo...';
+                feedbackEl.classList.remove('hidden');
+                lucide.createIcons();
+
+                try {
+                    // 1. Criar a campanha no servidor (usa o mesmo sistema de campanhas do CRM)
+                    const createRes = await fetch('/api/campaigns/create', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            name: `Anny BI - ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'})}`,
+                            message: message,
+                            contacts: contacts,
+                            segment: 'anny-bi',
+                            batchSize: batchSize,
+                            batchInterval: batchInterval,
+                            couponCode: couponCode || null
+                        })
+                    });
+
+                    const createData = await createRes.json();
+                    if (!createData.success || !createData.campaign) {
+                        throw new Error(createData.error || 'Erro ao criar campanha');
+                    }
+
+                    const campaignId = createData.campaign.id;
+
+                    // 2. Iniciar disparo
+                    sendBtn.innerHTML = '<i data-lucide="loader" class="w-4 h-4 animate-spin"></i> Disparando...';
+                    lucide.createIcons();
+
+                    const startRes = await fetch(`/api/campaigns/${campaignId}/start`, { method: 'POST' });
+                    const startData = await startRes.json();
+
+                    if (!startData.success) {
+                        throw new Error(startData.error || 'Erro ao iniciar disparo');
+                    }
+
+                    // 3. Feedback de sucesso
+                    this.showFeedback('success', contacts.length, campaignId);
+
+                    // 4. Adicionar mensagem de feedback no chat da Anny
+                    this.addMessage('anny', `Pronto! Enviei a campanha para **${contacts.length}** clientes inativos com sucesso! 🎯\n\n` +
+                        `📊 **Detalhes:**\n` +
+                        `• Campanha: ${createData.campaign.name}\n` +
+                        `• Contatos: ${contacts.length}\n` +
+                        `• Lote: ${batchSize} msgs por vez\n` +
+                        `• Intervalo: ${batchInterval} min entre lotes\n` +
+                        `${couponCode ? `• Cupom: ${couponCode}\n` : ''}` +
+                        `\nO disparo está rodando em segundo plano no servidor. Pode acompanhar na Central de Atendimento > Campanhas.`);
+
+                    // Limpar seleção
+                    this.selectedClients = [];
+                    this.updateSelectedCount();
+
+                } catch (err) {
+                    console.error('[Anny] Erro campanha:', err);
+                    this.showFeedback('error', 0, null, err.message);
+                } finally {
+                    sendBtn.disabled = false;
+                    sendBtn.innerHTML = '<i data-lucide="send" class="w-4 h-4"></i> Enviar via WhatsApp';
+                    lucide.createIcons();
+                }
+            },
+
+            // ============================================================
+            // FEEDBACK DE ENVIO
+            // ============================================================
+            showFeedback(type, count, campaignId, errorMsg) {
+                const feedbackEl = document.getElementById('campaign-feedback');
+                feedbackEl.classList.remove('hidden');
+
+                if (type === 'success') {
+                    feedbackEl.className = 'mb-4 rounded-xl p-4 text-sm bg-emerald-50 border border-emerald-200 text-emerald-700';
+                    feedbackEl.innerHTML = `
+                        <div class="flex items-center gap-2 font-semibold mb-1">
+                            <i data-lucide="check-circle" class="w-4 h-4"></i>
+                            Campanha enviada com sucesso!
+                        </div>
+                        <p>${count} cliente(s) receberão a mensagem em lotes para evitar bloqueio.</p>
+                        <p class="mt-1 text-xs text-emerald-600">ID: ${campaignId} — Acompanhe em Campanhas</p>
+                    `;
+                } else {
+                    feedbackEl.className = 'mb-4 rounded-xl p-4 text-sm bg-red-50 border border-red-200 text-red-700';
+                    feedbackEl.innerHTML = `
+                        <div class="flex items-center gap-2 font-semibold mb-1">
+                            <i data-lucide="alert-circle" class="w-4 h-4"></i>
+                            Erro ao enviar campanha
+                        </div>
+                        <p>${errorMsg || 'Verifique a conexão com a Evolution API.'}</p>
+                    `;
+                }
+                lucide.createIcons();
             },
 
             showTypingIndicator() {
