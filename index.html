@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CRM - Sistema de Gestão</title>
     <link rel="icon" type="image/png" href="/V.png">
+    <script>fetch('/api/auth/check').then(r=>r.json()).then(d=>{if(!d.authenticated)window.location.href='/login.html'}).catch(()=>{});</script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {

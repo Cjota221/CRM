@@ -9,6 +9,12 @@ for = "/*.html"
 Cache-Control = "no-cache"
 
 [[redirects]]
+from = "/api/auth/*"
+to = "/.netlify/functions/auth/:splat"
+status = 200
+force = true
+
+[[redirects]]
 from = "/api/anny"
 to = "/.netlify/functions/anny-ai"
 status = 200
