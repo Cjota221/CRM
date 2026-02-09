@@ -44,6 +44,37 @@ to = "/.netlify/functions/image-proxy?url=:splat"
 status = 200
 force = true
 
+# WhatsApp & CRM proxy routes (Central de Atendimento)
+[[redirects]]
+from = "/api/whatsapp/*"
+to = "/.netlify/functions/whatsapp-proxy?route=whatsapp/:splat"
+status = 200
+force = true
+
+[[redirects]]
+from = "/api/client-brain/*"
+to = "/.netlify/functions/whatsapp-proxy?route=client-brain/:splat"
+status = 200
+force = true
+
+[[redirects]]
+from = "/api/client-profile"
+to = "/.netlify/functions/whatsapp-proxy?route=client-profile"
+status = 200
+force = true
+
+[[redirects]]
+from = "/api/client-lookup"
+to = "/.netlify/functions/whatsapp-proxy?route=client-lookup"
+status = 200
+force = true
+
+[[redirects]]
+from = "/api/sync-client-name"
+to = "/.netlify/functions/whatsapp-proxy?route=sync-client-name"
+status = 200
+force = true
+
 [functions]
 node_bundler = "esbuild"
 
@@ -55,3 +86,6 @@ timeout = 30
 
 [functions."image-proxy"]
 timeout = 10
+
+[functions."whatsapp-proxy"]
+timeout = 30
