@@ -3,16 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Anny - Assistente de BI | CRM CJOTA</title>
+    <title>Anny BI - Dashboard de Inteligência | CRM CJOTA</title>
     <link rel="icon" type="image/png" href="/V.png">
     <script>fetch('/api/auth/check').then(r=>r.json()).then(d=>{if(!d.authenticated)window.location.href='/login.html?redirect='+encodeURIComponent(window.location.pathname)}).catch(()=>{});</script>
-    <script>
-        window.onerror = function(msg, url, line, col, error) {
-            console.error('Erro JS:', msg, 'Linha:', line);
-            alert('Erro JavaScript: ' + msg);
-            return false;
-        };
-    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -37,242 +30,377 @@
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-        
+
+        /* === NAV === */
         .nav-item { display: flex; align-items: center; padding: 0.625rem 1rem; border-radius: 0.75rem; color: #64748b; font-size: 0.875rem; font-weight: 500; transition: all 0.15s ease; gap: 0.75rem; }
         .nav-item:hover { background-color: #f1f5f9; color: #1e293b; }
         .nav-item.active { background-color: #1e3a5f; color: white; }
-        
-        .card { background: white; border-radius: 1rem; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05); border: 1px solid #f1f5f9; }
-        
-        .btn { display: inline-flex; align-items: center; justify-content: center; padding: 0.625rem 1.25rem; font-size: 0.875rem; font-weight: 500; border-radius: 0.75rem; transition: all 0.15s ease; gap: 0.5rem; }
-        .btn-primary { background-color: #1e3a5f; color: white; }
-        .btn-primary:hover { background-color: #162d4d; }
-        .btn-anny { background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%); color: white; }
-        .btn-anny:hover { background: linear-gradient(135deg, #9333ea 0%, #6b21a8 100%); }
-        .btn-secondary { background-color: #f1f5f9; color: #475569; }
+
+        /* === CARD BASE === */
+        .card { background: white; border-radius: 1rem; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.04); border: 1px solid #f1f5f9; padding: 1.5rem; }
+
+        /* === KPI CARDS === */
+        .kpi-card { position: relative; padding: 1.25rem 1.5rem; border-radius: 1rem; background: white; border: 1px solid #f1f5f9; box-shadow: 0 1px 3px rgb(0 0 0 / 0.04); transition: all 0.2s; }
+        .kpi-card:hover { box-shadow: 0 4px 12px rgb(0 0 0 / 0.08); transform: translateY(-1px); }
+        .kpi-value { font-size: 1.75rem; font-weight: 700; line-height: 1.2; }
+        .kpi-label { font-size: 0.8rem; font-weight: 500; color: #64748b; margin-top: 0.125rem; }
+        .kpi-badge { font-size: 0.7rem; color: #94a3b8; cursor: help; }
+        .kpi-icon { width: 2.5rem; height: 2.5rem; border-radius: 0.75rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+        /* === SECTION CONTAINERS === */
+        .section-group { background: white; border: 1px solid #f1f5f9; border-radius: 1.25rem; overflow: hidden; }
+        .section-group-header { padding: 1rem 1.5rem; border-bottom: 1px solid rgba(0,0,0,0.04); font-size: 0.95rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem; }
+        .section-title { font-size: 0.85rem; font-weight: 600; color: #475569; display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; }
+
+        /* === CLIENT CARDS (priority hierarchy) === */
+        .client-card { border: 1px solid #f1f5f9; border-radius: 0.75rem; padding: 0.875rem 1rem; transition: all 0.15s; cursor: pointer; position: relative; }
+        .client-card:hover { border-color: #e2e8f0; box-shadow: 0 2px 8px rgb(0 0 0 / 0.06); }
+        .client-card.priority-1 { border-left: 3px solid #EF4444; box-shadow: 0 1px 4px rgb(239 68 68 / 0.08); }
+        .client-card.priority-1 .client-value { color: #DC2626; font-weight: 700; }
+        .client-card.priority-2 { border-left: 3px solid #F59E0B; opacity: 0.95; }
+        .client-card.priority-2 .client-value { color: #D97706; font-weight: 600; }
+        .client-card.priority-3 { border-left: 3px solid #6B7280; opacity: 0.85; }
+        .client-card.priority-4 { border-left: 3px solid #D1D5DB; opacity: 0.7; }
+        .client-name { font-size: 0.85rem; font-weight: 600; color: #1e293b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+        .client-value { font-size: 0.85rem; font-weight: 600; }
+        .client-meta { font-size: 0.72rem; color: #94a3b8; }
+
+        /* === BUTTONS === */
+        .btn { display: inline-flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 500; border-radius: 0.625rem; transition: all 0.15s ease; gap: 0.375rem; cursor: pointer; border: none; }
+        .btn-primary { background-color: #8B5CF6; color: white; padding: 0.5rem 1rem; }
+        .btn-primary:hover { background-color: #7C3AED; }
+        .btn-secondary { background-color: #f1f5f9; color: #475569; padding: 0.4rem 0.75rem; }
         .btn-secondary:hover { background-color: #e2e8f0; }
-        .btn-success { background-color: #059669; color: white; }
+        .btn-outline { background: transparent; border: 1px solid #e2e8f0; color: #64748b; padding: 0.4rem 0.75rem; }
+        .btn-outline:hover { border-color: #cbd5e1; background: #f8fafc; }
+        .btn-success { background-color: #059669; color: white; padding: 0.5rem 1rem; }
         .btn-success:hover { background-color: #047857; }
-        .btn-recording { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important; color: white !important; animation: pulse-recording 1.5s infinite; }
-        @keyframes pulse-recording { 0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); } 50% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } }
-        
-        .input { width: 100%; padding: 0.625rem 1rem; font-size: 0.875rem; border: 1px solid #e2e8f0; border-radius: 0.75rem; background: white; transition: all 0.15s ease; }
-        .input:focus { outline: none; border-color: #a855f7; box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.1); }
-        
-        /* Chat Styles */
-        .chat-container { display: flex; flex-direction: column; height: calc(100vh - 180px); }
-        .chat-messages { flex: 1; overflow-y: auto; padding: 1.5rem; }
-        
-        .message { max-width: 85%; margin-bottom: 1rem; }
+        .btn-anny { background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%); color: white; padding: 0.5rem 1rem; }
+        .btn-anny:hover { background: linear-gradient(135deg, #9333ea 0%, #6b21a8 100%); }
+        .btn-text { background: none; color: #8B5CF6; padding: 0.25rem 0.5rem; font-size: 0.75rem; }
+        .btn-text:hover { background: #faf5ff; }
+
+        /* === EXPAND/COLLAPSE === */
+        .expand-btn { width: 100%; text-align: center; padding: 0.5rem; font-size: 0.75rem; color: #8B5CF6; cursor: pointer; border-top: 1px solid #f1f5f9; margin-top: 0.5rem; transition: all 0.15s; }
+        .expand-btn:hover { background: #faf5ff; }
+
+        /* === FLOATING CHAT === */
+        .chat-fab { position: fixed; bottom: 1.5rem; right: 1.5rem; width: 3.5rem; height: 3.5rem; border-radius: 1rem; background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 40; box-shadow: 0 4px 16px rgb(168 85 247 / 0.35); transition: all 0.2s; border: none; }
+        .chat-fab:hover { transform: scale(1.05); box-shadow: 0 6px 24px rgb(168 85 247 / 0.45); }
+        .chat-fab .badge { position: absolute; top: -4px; right: -4px; width: 1.1rem; height: 1.1rem; background: #EF4444; border-radius: 50%; font-size: 0.6rem; display: flex; align-items: center; justify-content: center; font-weight: 700; border: 2px solid white; }
+
+        /* === CHAT DRAWER === */
+        .chat-drawer { position: fixed; top: 0; right: -420px; width: 420px; height: 100vh; background: white; z-index: 50; box-shadow: -4px 0 24px rgb(0 0 0 / 0.12); transition: right 0.3s cubic-bezier(0.4,0,0.2,1); display: flex; flex-direction: column; }
+        .chat-drawer.open { right: 0; }
+        .chat-overlay { position: fixed; inset: 0; background: rgb(15 23 42 / 0.3); z-index: 45; opacity: 0; pointer-events: none; transition: opacity 0.3s; }
+        .chat-overlay.open { opacity: 1; pointer-events: auto; }
+
+        /* === CHAT MESSAGES === */
+        .message { max-width: 90%; margin-bottom: 0.75rem; }
         .message-user { margin-left: auto; }
         .message-anny { margin-right: auto; }
-        
-        .message-bubble { padding: 1rem 1.25rem; border-radius: 1rem; line-height: 1.5; }
+        .message-bubble { padding: 0.75rem 1rem; border-radius: 0.875rem; line-height: 1.5; font-size: 0.85rem; }
         .message-user .message-bubble { background: linear-gradient(135deg, #1e3a5f 0%, #0f1f33 100%); color: white; border-bottom-right-radius: 0.25rem; }
-        .message-anny .message-bubble { background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%); color: #1e293b; border: 1px solid #e9d5ff; border-bottom-left-radius: 0.25rem; }
-        
-        .message-sender { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem; }
+        .message-anny .message-bubble { background: #f8fafc; color: #1e293b; border: 1px solid #e2e8f0; border-bottom-left-radius: 0.25rem; }
+        .message-sender { font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.15rem; }
         .message-user .message-sender { color: #94a3b8; text-align: right; }
         .message-anny .message-sender { color: #a855f7; }
-        
-        .message-time { font-size: 0.65rem; color: #94a3b8; margin-top: 0.25rem; }
+        .message-time { font-size: 0.6rem; color: #94a3b8; margin-top: 0.15rem; }
         .message-user .message-time { text-align: right; }
-        
+
         /* Result Table */
-        .result-table { width: 100%; margin-top: 1rem; border-collapse: collapse; font-size: 0.8rem; }
-        .result-table th { background: #f8fafc; padding: 0.75rem 1rem; text-align: left; font-weight: 600; color: #64748b; border-bottom: 2px solid #e2e8f0; }
-        .result-table td { padding: 0.75rem 1rem; border-bottom: 1px solid #f1f5f9; }
+        .result-table { width: 100%; margin-top: 0.75rem; border-collapse: collapse; font-size: 0.72rem; }
+        .result-table th { background: #f8fafc; padding: 0.5rem 0.75rem; text-align: left; font-weight: 600; color: #64748b; border-bottom: 2px solid #e2e8f0; }
+        .result-table td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #f1f5f9; }
         .result-table tr:hover { background: #faf5ff; }
-        .result-table input[type="checkbox"] { width: 1rem; height: 1rem; accent-color: #a855f7; }
-        
-        /* Typing Animation */
-        .typing-indicator { display: flex; gap: 0.25rem; padding: 0.75rem 1rem; }
-        .typing-dot { width: 0.5rem; height: 0.5rem; background: #a855f7; border-radius: 50%; animation: typing 1.4s infinite ease-in-out; }
+        .result-table input[type="checkbox"] { width: 0.875rem; height: 0.875rem; accent-color: #a855f7; }
+
+        /* Typing */
+        .typing-indicator { display: flex; gap: 0.25rem; padding: 0.5rem 0.75rem; }
+        .typing-dot { width: 6px; height: 6px; background: #a855f7; border-radius: 50%; animation: typing 1.4s infinite ease-in-out; }
         .typing-dot:nth-child(2) { animation-delay: 0.2s; }
         .typing-dot:nth-child(3) { animation-delay: 0.4s; }
-        @keyframes typing { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-0.5rem); } }
-        
-        /* Suggestion Chips */
-        .suggestion-chip { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; background: white; border: 1px solid #e9d5ff; border-radius: 2rem; font-size: 0.8rem; color: #7e22ce; cursor: pointer; transition: all 0.15s; }
-        .suggestion-chip:hover { background: #faf5ff; border-color: #a855f7; }
-        
-        /* Anny Avatar */
-        .anny-avatar { width: 2.5rem; height: 2.5rem; background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%); border-radius: 0.75rem; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 0.9rem; }
-        
-        /* Insight Cards */
-        .insight-card { background: white; border: 1px solid #f1f5f9; border-radius: 0.75rem; padding: 1rem; margin-bottom: 0.75rem; transition: all 0.15s; }
-        .insight-card:hover { border-color: #e9d5ff; box-shadow: 0 4px 6px -1px rgb(168 85 247 / 0.1); }
-        .insight-card.priority-high { border-left: 3px solid #dc2626; }
-        .insight-card.priority-medium { border-left: 3px solid #f59e0b; }
-        .insight-card.priority-low { border-left: 3px solid #10b981; }
+        @keyframes typing { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }
 
-        /* Fix: hidden + flex lint conflict */
+        /* Suggestions */
+        .suggestion-chip { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.375rem 0.75rem; background: white; border: 1px solid #e9d5ff; border-radius: 2rem; font-size: 0.72rem; color: #7e22ce; cursor: pointer; transition: all 0.15s; }
+        .suggestion-chip:hover { background: #faf5ff; border-color: #a855f7; }
+
+        /* Input */
+        .input { width: 100%; padding: 0.5rem 0.875rem; font-size: 0.85rem; border: 1px solid #e2e8f0; border-radius: 0.625rem; background: white; transition: all 0.15s ease; }
+        .input:focus { outline: none; border-color: #a855f7; box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.1); }
+
+        /* Pulse recording */
+        .btn-recording { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important; color: white !important; animation: pulse-recording 1.5s infinite; }
+        @keyframes pulse-recording { 0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); } 50% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } }
+
+        /* Tooltip */
+        .tooltip { position: relative; }
+        .tooltip::after { content: attr(data-tip); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: #1e293b; color: white; padding: 0.35rem 0.6rem; border-radius: 0.5rem; font-size: 0.65rem; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity 0.15s; z-index: 20; margin-bottom: 4px; }
+        .tooltip:hover::after { opacity: 1; }
+
+        /* Skeleton loading */
+        .skeleton { background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 0.5rem; }
+        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+        /* Fix: hidden + flex */
         .d-flex:not(.hidden) { display: flex; }
     </style>
 </head>
 <body class="bg-slate-50 min-h-screen">
     <div class="flex h-screen">
         <!-- Sidebar -->
-        <aside class="w-64 bg-white border-r border-slate-100 flex flex-col">
+        <aside class="w-64 bg-white border-r border-slate-100 flex flex-col flex-shrink-0">
             <div class="px-6 py-6 border-b border-slate-100">
                 <h1 class="text-xl font-semibold text-slate-800">CRM</h1>
                 <p class="text-xs text-slate-400 mt-0.5">Sistema de Gestão</p>
             </div>
             <nav class="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-                <a href="index.html" class="nav-item">
-                    <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
-                    <span>Dashboard</span>
-                </a>
-                <a href="atendimentos.html" class="nav-item">
-                    <i data-lucide="message-circle" class="w-5 h-5"></i>
-                    <span>Atendimento</span>
-                </a>
-                <a href="anny.html" class="nav-item active bg-gradient-to-r from-purple-500 to-purple-600 text-white">
-                    <i data-lucide="sparkles" class="w-5 h-5"></i>
-                    <span>Anny BI</span>
-                </a>
-                <a href="index.html#clients" class="nav-item">
-                    <i data-lucide="users" class="w-5 h-5"></i>
-                    <span>Clientes</span>
-                </a>
-                <a href="atendimentos.html" class="nav-item">
-                    <i data-lucide="megaphone" class="w-5 h-5"></i>
-                    <span>Campanhas</span>
-                </a>
-                <a href="index.html#coupons" class="nav-item">
-                    <i data-lucide="ticket" class="w-5 h-5"></i>
-                    <span>Gestão de Cupons</span>
-                </a>
+                <a href="index.html" class="nav-item"><i data-lucide="layout-dashboard" class="w-5 h-5"></i><span>Dashboard</span></a>
+                <a href="atendimentos.html" class="nav-item"><i data-lucide="message-circle" class="w-5 h-5"></i><span>Atendimento</span></a>
+                <a href="anny.html" class="nav-item active bg-gradient-to-r from-purple-500 to-purple-600 text-white"><i data-lucide="sparkles" class="w-5 h-5"></i><span>Anny BI</span></a>
+                <a href="index.html#clients" class="nav-item"><i data-lucide="users" class="w-5 h-5"></i><span>Clientes</span></a>
+                <a href="campanhas.html" class="nav-item"><i data-lucide="megaphone" class="w-5 h-5"></i><span>Campanhas</span></a>
+                <a href="index.html#coupons" class="nav-item"><i data-lucide="ticket" class="w-5 h-5"></i><span>Gestão de Cupons</span></a>
                 <div class="pt-4 mt-4 border-t border-slate-100">
                     <p class="px-3 mb-2 text-xs font-medium text-slate-400 uppercase tracking-wider">Dados</p>
-                    <a href="index.html#products" class="nav-item">
-                        <i data-lucide="package" class="w-5 h-5"></i>
-                        <span>Produtos</span>
-                    </a>
-                    <a href="index.html#orders" class="nav-item">
-                        <i data-lucide="receipt" class="w-5 h-5"></i>
-                        <span>Pedidos</span>
-                    </a>
+                    <a href="index.html#products" class="nav-item"><i data-lucide="package" class="w-5 h-5"></i><span>Produtos</span></a>
+                    <a href="index.html#orders" class="nav-item"><i data-lucide="receipt" class="w-5 h-5"></i><span>Pedidos</span></a>
                 </div>
             </nav>
             <div class="px-3 py-3 border-t border-slate-100">
-                <a href="#" onclick="handleLogout(event)" class="nav-item text-red-500 hover:bg-red-50">
-                    <i data-lucide="log-out" class="w-5 h-5"></i>
-                    <span>Sair do CRM</span>
-                </a>
+                <a href="#" onclick="handleLogout(event)" class="nav-item text-red-500 hover:bg-red-50"><i data-lucide="log-out" class="w-5 h-5"></i><span>Sair do CRM</span></a>
             </div>
         </aside>
+
+        <!-- Main Content -->
         <main class="flex-1 flex flex-col overflow-hidden">
             <!-- Header -->
-            <header class="bg-white border-b border-slate-100 px-8 py-5">
+            <header class="bg-white border-b border-slate-100 px-8 py-4 flex-shrink-0">
                 <div class="flex justify-between items-center">
-                    <div class="flex items-center gap-4">
-                        <div class="anny-avatar">
-                            <i data-lucide="sparkles" class="w-5 h-5"></i>
+                    <div class="flex items-center gap-3">
+                        <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center text-white">
+                            <i data-lucide="sparkles" class="w-4 h-4"></i>
                         </div>
                         <div>
-                            <h1 class="text-xl font-semibold text-slate-800">Anny - Assistente de BI</h1>
-                            <p class="text-sm text-slate-500 mt-0.5">Estrategista de vendas CJOTA Rasteirinhas</p>
+                            <h1 class="text-lg font-semibold text-slate-800">Anny BI</h1>
+                            <p class="text-xs text-slate-400">Dashboard de Inteligência Comercial</p>
                         </div>
                     </div>
-                    <div class="flex items-center gap-3">
-                        <span id="status-indicator" class="flex items-center gap-2 text-xs text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-full">
-                            <span class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-                            Online
-                        </span>
-                        <button onclick="AnnyChat.clearHistory()" class="btn btn-secondary text-xs">
-                            <i data-lucide="trash-2" class="w-4 h-4"></i>
-                            Limpar Chat
+                    <div class="flex items-center gap-2">
+                        <span id="last-update" class="text-xs text-slate-400"></span>
+                        <button onclick="Dashboard.load()" class="btn btn-secondary">
+                            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Atualizar
                         </button>
                     </div>
                 </div>
             </header>
 
-            <!-- Content Area -->
-            <div class="flex-1 flex overflow-hidden">
-                <!-- Chat Area -->
-                <div class="flex-1 flex flex-col bg-slate-50">
-                    <!-- Messages -->
-                    <div id="chat-messages" class="flex-1 overflow-y-auto p-6 space-y-4">
-                        <!-- Welcome Message -->
-                        <div class="message message-anny">
-                            <div class="message-sender">Anny</div>
-                            <div class="message-bubble">
-                                <p class="font-medium mb-2">Ola! Sou a Anny, sua estrategista de vendas.</p>
-                                <p class="text-sm text-slate-600 mb-3">Estou aqui para ajudar a CJOTA Rasteirinhas a recuperar o faturamento de R$ 200k/mes. Posso analisar sua base de clientes, identificar oportunidades e sugerir acoes de venda.</p>
-                                <p class="text-sm text-slate-600">Como posso ajudar hoje?</p>
+            <!-- Dashboard Content -->
+            <div class="flex-1 overflow-y-auto">
+                <div class="max-w-6xl mx-auto px-8 py-6">
+
+                    <!-- KPI Cards -->
+                    <div class="grid grid-cols-4 gap-6 mb-8" id="kpi-row">
+                        <!-- KPI 1: LTV em Risco -->
+                        <div class="kpi-card">
+                            <div class="flex items-center justify-between">
+                                <div class="kpi-icon bg-red-50"><i data-lucide="trending-down" class="w-5 h-5 text-red-500"></i></div>
+                                <span class="kpi-badge tooltip" data-tip="Clientes VIP inativos >30 dias" id="kpi-ltv-badge">--</span>
                             </div>
-                            <div class="message-time">Agora</div>
+                            <div class="mt-3">
+                                <div class="kpi-value text-red-600" id="kpi-ltv-value">--</div>
+                                <div class="kpi-label">LTV em Risco</div>
+                            </div>
+                        </div>
+                        <!-- KPI 2: Oportunidades -->
+                        <div class="kpi-card">
+                            <div class="flex items-center justify-between">
+                                <div class="kpi-icon bg-amber-50"><i data-lucide="target" class="w-5 h-5 text-amber-500"></i></div>
+                                <span class="kpi-badge tooltip" data-tip="Quentes: prontos para reativar" id="kpi-opp-badge">--</span>
+                            </div>
+                            <div class="mt-3">
+                                <div class="kpi-value text-amber-600" id="kpi-opp-value">--</div>
+                                <div class="kpi-label">Oportunidades</div>
+                            </div>
+                        </div>
+                        <!-- KPI 3: Recuperados -->
+                        <div class="kpi-card">
+                            <div class="flex items-center justify-between">
+                                <div class="kpi-icon bg-emerald-50"><i data-lucide="arrow-up-circle" class="w-5 h-5 text-emerald-500"></i></div>
+                                <span class="kpi-badge tooltip" data-tip="Reativados nos últimos 30 dias" id="kpi-rec-badge">--</span>
+                            </div>
+                            <div class="mt-3">
+                                <div class="kpi-value text-emerald-600" id="kpi-rec-value">--</div>
+                                <div class="kpi-label">Recuperados (30d)</div>
+                            </div>
+                        </div>
+                        <!-- KPI 4: Potencial C4 (quick access) -->
+                        <div class="kpi-card" style="cursor:pointer" onclick="document.getElementById('c4-section').scrollIntoView({behavior:'smooth'})">
+                            <div class="flex items-center justify-between">
+                                <div class="kpi-icon bg-purple-50"><i data-lucide="rocket" class="w-5 h-5 text-purple-500"></i></div>
+                                <span class="kpi-badge tooltip" data-tip="Candidatas C4 Franquias" id="kpi-c4-badge">--</span>
+                            </div>
+                            <div class="mt-3">
+                                <div class="kpi-value text-purple-600" id="kpi-c4-value">--</div>
+                                <div class="kpi-label">Potencial C4</div>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Suggestions -->
-                    <div id="suggestions-area" class="px-6 pb-4">
-                        <div class="flex flex-wrap gap-2">
-                            <button class="suggestion-chip" onclick="AnnyChat.sendSuggestion('Quais clientes VIP estao inativos ha mais de 30 dias?')">
-                                <i data-lucide="users" class="w-4 h-4"></i>
-                                VIPs Inativos
-                            </button>
-                            <button class="suggestion-chip" onclick="AnnyChat.sendSuggestion('Quem faz aniversario este mes?')">
-                                <i data-lucide="cake" class="w-4 h-4"></i>
-                                Aniversariantes
-                            </button>
-                            <button class="suggestion-chip" onclick="AnnyChat.sendSuggestion('Analise a queda de vendas e identifique os clientes que pararam de comprar')">
-                                <i data-lucide="trending-down" class="w-4 h-4"></i>
-                                Analise de Churn
-                            </button>
-                            <button class="suggestion-chip" onclick="AnnyChat.sendSuggestion('Quem comprava Rasteirinha Soft em quantidade?')">
-                                <i data-lucide="package" class="w-4 h-4"></i>
-                                Historico de Produto
-                            </button>
+                    <!-- Section: ATENÇÃO IMEDIATA -->
+                    <div class="section-group mb-12">
+                        <div class="section-group-header text-red-700 bg-red-50/50">
+                            <i data-lucide="alert-triangle" class="w-4 h-4"></i>
+                            ATENÇÃO IMEDIATA
+                        </div>
+                        <div class="grid grid-cols-2 gap-0">
+                            <!-- UTI de Vendas -->
+                            <div class="p-6 border-r border-slate-50">
+                                <div class="section-title">
+                                    <span>UTI de Vendas</span>
+                                    <button onclick="Dashboard.openAnnyWith('Gere estratégia de recuperação para os clientes da UTI de Vendas')" class="btn btn-primary text-xs">
+                                        <i data-lucide="zap" class="w-3 h-3"></i> Gerar Estratégia
+                                    </button>
+                                </div>
+                                <div id="uti-list" class="space-y-2">
+                                    <div class="skeleton h-14 mb-2"></div>
+                                    <div class="skeleton h-14 mb-2"></div>
+                                    <div class="skeleton h-14"></div>
+                                </div>
+                                <div id="uti-expand" class="expand-btn hidden" onclick="Dashboard.toggleExpand('uti')">
+                                    <i data-lucide="chevron-down" class="w-3.5 h-3.5 inline"></i> Ver mais <span id="uti-extra-count"></span>
+                                </div>
+                            </div>
+
+                            <!-- Oportunidades Quentes -->
+                            <div class="p-6">
+                                <div class="section-title">
+                                    <span>Oportunidades Quentes</span>
+                                    <button onclick="Dashboard.openAnnyWith('Crie mensagens personalizadas para as oportunidades quentes identificadas')" class="btn btn-primary text-xs" style="background:#D97706">
+                                        <i data-lucide="message-square" class="w-3 h-3"></i> Gerar Mensagens
+                                    </button>
+                                </div>
+                                <div id="opp-list" class="space-y-2">
+                                    <div class="skeleton h-14 mb-2"></div>
+                                    <div class="skeleton h-14 mb-2"></div>
+                                    <div class="skeleton h-14"></div>
+                                </div>
+                                <div id="opp-expand" class="expand-btn hidden" onclick="Dashboard.toggleExpand('opp')">
+                                    <i data-lucide="chevron-down" class="w-3.5 h-3.5 inline"></i> Ver mais <span id="opp-extra-count"></span>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Input Area -->
-                    <div class="bg-white border-t border-slate-100 p-4">
-                        <form id="chat-form" class="flex gap-3">
-                            <input type="text" id="chat-input" class="input flex-1" placeholder="Digite ou clique no microfone para falar..." autocomplete="off">
-                            <button type="button" id="voice-btn" onclick="toggleVoiceRecognition()" class="btn btn-secondary" title="Falar com a Anny">
-                                <i data-lucide="mic" class="w-4 h-4" id="mic-icon"></i>
-                            </button>
-                            <button type="submit" class="btn btn-anny">
-                                <i data-lucide="send" class="w-4 h-4"></i>
-                                Enviar
-                            </button>
-                        </form>
-                        <div id="voice-status" class="text-xs text-center mt-2 hidden">
-                            <span class="text-purple-600 animate-pulse">🎤 Ouvindo... Fale agora!</span>
+                    <!-- Section: CRESCIMENTO -->
+                    <div class="section-group" id="c4-section">
+                        <div class="section-group-header text-purple-700 bg-purple-50/50">
+                            <i data-lucide="rocket" class="w-4 h-4"></i>
+                            CRESCIMENTO
+                        </div>
+                        <div class="p-6">
+                            <div class="section-title">
+                                <span>Performance C4 Franquias</span>
+                                <button onclick="Dashboard.openAnnyWith('Analise o potencial das candidatas C4 Franquias e sugira abordagem para cada uma')" class="btn btn-primary text-xs" style="background:#7C3AED">
+                                    <i data-lucide="bar-chart-3" class="w-3 h-3"></i> Analisar Potencial
+                                </button>
+                            </div>
+                            <div id="c4-list" class="grid grid-cols-2 gap-3">
+                                <div class="skeleton h-14"></div>
+                                <div class="skeleton h-14"></div>
+                                <div class="skeleton h-14"></div>
+                                <div class="skeleton h-14"></div>
+                            </div>
+                            <div id="c4-expand" class="expand-btn hidden" onclick="Dashboard.toggleExpand('c4')">
+                                <i data-lucide="chevron-down" class="w-3.5 h-3.5 inline"></i> Ver mais <span id="c4-extra-count"></span>
+                            </div>
                         </div>
                     </div>
+
+                    <!-- Dashboard Empty State -->
+                    <div id="dashboard-error" class="hidden text-center py-16">
+                        <i data-lucide="alert-circle" class="w-10 h-10 mx-auto mb-3 text-slate-300"></i>
+                        <p class="text-slate-500 text-sm mb-1">Não foi possível carregar o dashboard</p>
+                        <p class="text-slate-400 text-xs mb-4" id="dashboard-error-msg"></p>
+                        <button onclick="Dashboard.load()" class="btn btn-secondary">Tentar novamente</button>
+                    </div>
+
                 </div>
-
-                <!-- Insights Sidebar -->
-                <aside class="w-80 bg-white border-l border-slate-100 flex flex-col overflow-hidden">
-                    <div class="px-5 py-4 border-b border-slate-100">
-                        <h3 class="font-semibold text-slate-800 flex items-center gap-2">
-                            <i data-lucide="lightbulb" class="w-4 h-4 text-amber-500"></i>
-                            Insights Proativos
-                        </h3>
-                        <p class="text-xs text-slate-500 mt-0.5">Alertas automaticos da Anny</p>
-                    </div>
-                    <div id="insights-container" class="flex-1 overflow-y-auto p-4">
-                        <div class="text-center py-8 text-slate-400">
-                            <i data-lucide="loader" class="w-8 h-8 mx-auto mb-2 animate-spin"></i>
-                            <p class="text-sm">Carregando insights...</p>
-                        </div>
-                    </div>
-                    <div class="p-4 border-t border-slate-100">
-                        <button onclick="AnnyChat.refreshInsights()" class="btn btn-secondary w-full text-sm">
-                            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
-                            Atualizar Insights
-                        </button>
-                    </div>
-                </aside>
             </div>
         </main>
     </div>
 
-    <!-- Action Modal (for sending campaigns) -->
+    <!-- Floating Anny Chat Button -->
+    <button class="chat-fab" onclick="ChatDrawer.toggle()" id="chat-fab">
+        <i data-lucide="message-circle" class="w-5 h-5" id="chat-fab-icon"></i>
+    </button>
+
+    <!-- Chat Overlay -->
+    <div class="chat-overlay" id="chat-overlay" onclick="ChatDrawer.close()"></div>
+
+    <!-- Chat Drawer -->
+    <div class="chat-drawer" id="chat-drawer">
+        <!-- Chat Header -->
+        <div class="px-5 py-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
+            <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center text-white">
+                    <i data-lucide="sparkles" class="w-4 h-4"></i>
+                </div>
+                <div>
+                    <h3 class="text-sm font-semibold text-slate-800">Anny BI</h3>
+                    <span class="text-xs text-emerald-500 flex items-center gap-1"><span class="w-1.5 h-1.5 bg-emerald-400 rounded-full"></span> Online</span>
+                </div>
+            </div>
+            <div class="flex items-center gap-1">
+                <button onclick="AnnyChat.clearHistory()" class="btn btn-text" title="Limpar chat">
+                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                </button>
+                <button onclick="ChatDrawer.close()" class="btn btn-text" title="Fechar">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Chat Messages -->
+        <div id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-3">
+            <!-- Welcome Message -->
+            <div class="message message-anny">
+                <div class="message-sender">Anny</div>
+                <div class="message-bubble">
+                    <p class="font-medium mb-1">Ola! Sou a Anny 3.0</p>
+                    <p class="text-xs text-slate-500">Consultora Comercial Senior da CJOTA. Pergunte sobre clientes, vendas ou peca uma estrategia.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Suggestions -->
+        <div id="suggestions-area" class="px-4 pb-2">
+            <div class="flex flex-wrap gap-1.5">
+                <button class="suggestion-chip" onclick="AnnyChat.sendSuggestion('Quais clientes VIP estao inativos ha mais de 30 dias?')">VIPs Inativos</button>
+                <button class="suggestion-chip" onclick="AnnyChat.sendSuggestion('Analise a queda de vendas')">Churn</button>
+                <button class="suggestion-chip" onclick="AnnyChat.sendSuggestion('Quem faz aniversario este mes?')">Aniversariantes</button>
+            </div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="border-t border-slate-100 p-3 flex-shrink-0">
+            <form id="chat-form" class="flex gap-2">
+                <input type="text" id="chat-input" class="input flex-1" placeholder="Pergunte algo..." autocomplete="off">
+                <button type="button" id="voice-btn" onclick="toggleVoiceRecognition()" class="btn btn-secondary p-2" title="Falar">
+                    <i data-lucide="mic" class="w-4 h-4" id="mic-icon"></i>
+                </button>
+                <button type="submit" class="btn btn-anny p-2">
+                    <i data-lucide="send" class="w-4 h-4"></i>
+                </button>
+            </form>
+            <div id="voice-status" class="text-xs text-center mt-1.5 hidden">
+                <span class="text-purple-600 animate-pulse">Ouvindo...</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Action Modal (Campaign) -->
     <div id="action-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm hidden z-50 d-flex items-center justify-center">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4">
             <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
@@ -283,8 +411,6 @@
             </div>
             <div class="p-6">
                 <p id="action-modal-count" class="text-sm text-slate-600 mb-4">0 clientes selecionados</p>
-
-                <!-- Tom da mensagem -->
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-slate-700 mb-2">Tom da Mensagem</label>
                     <select id="campaign-tone" class="input">
@@ -294,34 +420,23 @@
                         <option value="Exclusivo VIP">Exclusivo VIP</option>
                     </select>
                 </div>
-
-                <!-- Cupom -->
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-slate-700 mb-2">Cupom (opcional)</label>
-                    <select id="campaign-coupon" class="input">
-                        <option value="">Sem cupom</option>
-                    </select>
-                    <p class="text-xs text-slate-400 mt-1">Use <code class="bg-slate-100 px-1 rounded">{{cupom}}</code> na mensagem para inserir o código</p>
+                    <select id="campaign-coupon" class="input"><option value="">Sem cupom</option></select>
+                    <p class="text-xs text-slate-400 mt-1">Use <code class="bg-slate-100 px-1 rounded">{{cupom}}</code> na mensagem</p>
                 </div>
-
-                <!-- Mensagem + Gerar com IA -->
                 <div class="mb-4">
                     <div class="flex justify-between items-center mb-2">
                         <label class="block text-sm font-medium text-slate-700">Mensagem</label>
                         <button onclick="AnnyChat.generateWithAI()" id="btn-generate-ai" class="btn btn-anny text-xs py-1 px-3">
-                            <i data-lucide="sparkles" class="w-3 h-3"></i>
-                            Gerar com IA
+                            <i data-lucide="sparkles" class="w-3 h-3"></i> Gerar com IA
                         </button>
                     </div>
-                    <textarea id="campaign-message" class="input h-32 resize-none" placeholder="Digite a mensagem ou gere com IA... Use {{nome}} e {{cupom}} como variáveis."></textarea>
-                    <p class="text-xs text-slate-400 mt-1">Variáveis: <code class="bg-slate-100 px-1 rounded">{{nome}}</code> <code class="bg-slate-100 px-1 rounded">{{cupom}}</code> <code class="bg-slate-100 px-1 rounded">{{telefone}}</code></p>
+                    <textarea id="campaign-message" class="input h-28 resize-none" placeholder="Digite a mensagem ou gere com IA..."></textarea>
+                    <p class="text-xs text-slate-400 mt-1">Variáveis: <code class="bg-slate-100 px-1 rounded">{{nome}}</code> <code class="bg-slate-100 px-1 rounded">{{cupom}}</code></p>
                 </div>
-
-                <!-- Anti-ban settings -->
                 <div class="mb-4 bg-slate-50 rounded-xl p-4">
-                    <p class="text-xs font-semibold text-slate-600 mb-2 flex items-center gap-1">
-                        <i data-lucide="shield" class="w-3 h-3"></i> Proteção Anti-Ban
-                    </p>
+                    <p class="text-xs font-semibold text-slate-600 mb-2 flex items-center gap-1"><i data-lucide="shield" class="w-3 h-3"></i> Proteção Anti-Ban</p>
                     <div class="grid grid-cols-2 gap-3">
                         <div>
                             <label class="text-xs text-slate-500">Lote (msgs por vez)</label>
@@ -333,15 +448,11 @@
                         </div>
                     </div>
                 </div>
-
-                <!-- Feedback area (hidden initially) -->
                 <div id="campaign-feedback" class="hidden mb-4 rounded-xl p-4 text-sm"></div>
-
                 <div class="flex gap-3">
-                    <button onclick="AnnyChat.closeActionModal()" class="btn btn-secondary flex-1">Cancelar</button>
-                    <button onclick="AnnyChat.sendCampaign()" id="btn-send-campaign" class="btn btn-success flex-1">
-                        <i data-lucide="send" class="w-4 h-4"></i>
-                        Enviar via WhatsApp
+                    <button onclick="AnnyChat.closeActionModal()" class="btn btn-secondary flex-1 py-2.5">Cancelar</button>
+                    <button onclick="AnnyChat.sendCampaign()" id="btn-send-campaign" class="btn btn-success flex-1 py-2.5">
+                        <i data-lucide="send" class="w-4 h-4"></i> Enviar via WhatsApp
                     </button>
                 </div>
             </div>
@@ -349,762 +460,530 @@
     </div>
 
     <script>
-        // ============================================================================
-        // ANNY CHAT - Business Intelligence Assistant
-        // ============================================================================
-        const AnnyChat = {
-            messages: [],
-            selectedClients: [],
-            isProcessing: false,
+    // ============================================================================
+    // DASHBOARD - BI Intelligence
+    // ============================================================================
+    const Dashboard = {
+        data: null,
+        expandedSections: {},
+        SHOW_LIMIT: 5,
 
-            // API Configuration
-            API_URL: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-                ? '/api/anny'
-                : '/.netlify/functions/anny-ai',
+        API_URL: (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+            ? '/api/anny/dashboard'
+            : '/.netlify/functions/anny-ai?action=dashboard',
 
-            init() {
-                this.loadChatHistory();
-                this.setupEventListeners();
-                this.refreshInsights();
-                lucide.createIcons();
-            },
-
-            setupEventListeners() {
-                document.getElementById('chat-form').addEventListener('submit', (e) => {
-                    e.preventDefault();
-                    const input = document.getElementById('chat-input');
-                    const message = input.value.trim();
-                    if (message && !this.isProcessing) {
-                        this.sendMessage(message);
-                        input.value = '';
-                    }
-                });
-            },
-
-            async sendMessage(message) {
-                this.isProcessing = true;
-                this.addMessage('user', message);
-                this.showTypingIndicator();
-
-                try {
-                    const response = await fetch(this.API_URL, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ 
-                            message,
-                            history: this.messages.slice(-10) // Last 10 messages for context
-                        })
-                    });
-
-                    const data = await response.json();
-                    this.hideTypingIndicator();
-
-                    if (data.error) {
-                        this.addMessage('anny', `Desculpe, ocorreu um erro: ${data.error}`);
-                    } else {
-                        this.addMessage('anny', data.response, data.results);
-                    }
-                } catch (error) {
-                    this.hideTypingIndicator();
-                    this.addMessage('anny', 'Desculpe, nao consegui processar sua solicitacao. Verifique a conexao.');
-                    console.error('Anny Error:', error);
-                }
-
-                this.isProcessing = false;
-            },
-
-            sendSuggestion(text) {
-                document.getElementById('chat-input').value = text;
-                this.sendMessage(text);
-            },
-
-            addMessage(sender, text, results = null) {
-                const messagesContainer = document.getElementById('chat-messages');
-                const timestamp = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-
-                this.messages.push({ sender, text, results, timestamp });
-                this.saveChatHistory();
-
-                const messageDiv = document.createElement('div');
-                messageDiv.className = `message message-${sender}`;
-
-                let content = `
-                    <div class="message-sender">${sender === 'user' ? 'Voce' : 'Anny'}</div>
-                    <div class="message-bubble">
-                        <p>${this.formatText(text)}</p>
-                        ${results ? this.renderResults(results) : ''}
-                    </div>
-                    <div class="message-time">${timestamp}</div>
-                `;
-
-                messageDiv.innerHTML = content;
-                messagesContainer.appendChild(messageDiv);
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
-                lucide.createIcons();
-            },
-
-            formatText(text) {
-                // Convert line breaks and basic formatting
-                return text
-                    .replace(/\n/g, '<br>')
-                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                    .replace(/\*(.*?)\*/g, '<em>$1</em>');
-            },
-
-            renderResults(results) {
-                if (!results || !results.data || results.data.length === 0) {
-                    return '';
-                }
-
-                const data = results.data;
-                const columns = results.columns || Object.keys(data[0]);
-
-                let html = `
-                    <div class="mt-4 overflow-x-auto">
-                        <table class="result-table">
-                            <thead>
-                                <tr>
-                                    <th><input type="checkbox" onchange="AnnyChat.toggleSelectAll(this)"></th>
-                                    ${columns.map(col => `<th>${this.formatColumnName(col)}</th>`).join('')}
-                                </tr>
-                            </thead>
-                            <tbody>
-                `;
-
-                data.forEach((row, index) => {
-                    html += `<tr>
-                        <td><input type="checkbox" data-index="${index}" data-client='${JSON.stringify(row)}' onchange="AnnyChat.toggleSelectClient(this)"></td>
-                        ${columns.map(col => `<td>${this.formatCellValue(row[col], col)}</td>`).join('')}
-                    </tr>`;
-                });
-
-                html += `
-                            </tbody>
-                        </table>
-                        <div class="mt-4 flex justify-between items-center">
-                            <span class="text-sm text-slate-500">${data.length} resultado(s) encontrado(s)</span>
-                            <button onclick="AnnyChat.openActionModal()" class="btn btn-anny text-sm">
-                                <i data-lucide="send" class="w-4 h-4"></i>
-                                Enviar Campanha (<span id="selected-count">0</span>)
-                            </button>
-                        </div>
-                    </div>
-                `;
-
-                return html;
-            },
-
-            formatColumnName(col) {
-                const names = {
-                    'id': 'ID',
-                    'name': 'Nome',
-                    'phone': 'Telefone',
-                    'email': 'Email',
-                    'total_spent': 'Total Gasto',
-                    'order_count': 'Pedidos',
-                    'last_purchase_date': 'Ultima Compra',
-                    'days_inactive': 'Dias Inativo',
-                    'birthday': 'Aniversario'
-                };
-                return names[col] || col.charAt(0).toUpperCase() + col.slice(1).replace(/_/g, ' ');
-            },
-
-            formatCellValue(value, col) {
-                if (value === null || value === undefined) return '-';
-                if (col === 'total_spent') return `R$ ${parseFloat(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-                if (col === 'last_purchase_date' || col === 'birthday') return value ? new Date(value).toLocaleDateString('pt-BR') : '-';
-                if (col === 'phone') return value || '-';
-                return value;
-            },
-
-            toggleSelectAll(checkbox) {
-                const checkboxes = document.querySelectorAll('.result-table tbody input[type="checkbox"]');
-                checkboxes.forEach(cb => {
-                    cb.checked = checkbox.checked;
-                    this.toggleSelectClient(cb, false);
-                });
-                this.updateSelectedCount();
-            },
-
-            toggleSelectClient(checkbox, updateCount = true) {
-                const clientData = JSON.parse(checkbox.dataset.client || '{}');
-                if (checkbox.checked) {
-                    if (!this.selectedClients.find(c => c.id === clientData.id)) {
-                        this.selectedClients.push(clientData);
-                    }
-                } else {
-                    this.selectedClients = this.selectedClients.filter(c => c.id !== clientData.id);
-                }
-                if (updateCount) this.updateSelectedCount();
-            },
-
-            updateSelectedCount() {
-                const countEl = document.getElementById('selected-count');
-                if (countEl) countEl.textContent = this.selectedClients.length;
-            },
-
-            openActionModal() {
-                if (this.selectedClients.length === 0) {
-                    alert('Selecione pelo menos um cliente para enviar a campanha.');
-                    return;
-                }
-                document.getElementById('action-modal-count').textContent = `${this.selectedClients.length} cliente(s) selecionado(s)`;
-                // Resetar estado do modal
-                document.getElementById('campaign-message').value = '';
-                document.getElementById('campaign-feedback').classList.add('hidden');
-                document.getElementById('btn-send-campaign').disabled = false;
-                document.getElementById('btn-send-campaign').innerHTML = '<i data-lucide="send" class="w-4 h-4"></i> Enviar via WhatsApp';
-                // Carregar cupons do localStorage/Supabase
-                this.loadCoupons();
-                document.getElementById('action-modal').classList.remove('hidden');
-                lucide.createIcons();
-            },
-
-            closeActionModal() {
-                document.getElementById('action-modal').classList.add('hidden');
-            },
-
-            // ============================================================
-            // CARREGAR CUPONS DO CRM (localStorage / Supabase)
-            // ============================================================
-            loadCoupons() {
-                const select = document.getElementById('campaign-coupon');
-                select.innerHTML = '<option value="">Sem cupom</option>';
-                try {
-                    const raw = localStorage.getItem('crm_coupons');
-                    const coupons = raw ? JSON.parse(raw) : [];
-                    coupons.filter(c => c.isActive).forEach(c => {
-                        const opt = document.createElement('option');
-                        opt.value = c.code;
-                        opt.textContent = `${c.code} (${c.discount}${c.type === 'percent' ? '%' : ' R$'} OFF)`;
-                        select.appendChild(opt);
-                    });
-                } catch (e) {
-                    console.error('[Anny] Erro ao carregar cupons:', e);
-                }
-            },
-
-            // ============================================================
-            // GERAR MENSAGEM COM IA (Groq)
-            // ============================================================
-            async generateWithAI() {
-                const btn = document.getElementById('btn-generate-ai');
-                const textarea = document.getElementById('campaign-message');
-                const tone = document.getElementById('campaign-tone').value;
-                const couponCode = document.getElementById('campaign-coupon').value;
-
-                // Calcular média de dias inativos dos clientes selecionados
-                let avgDays = 30;
-                const clientsWithDays = this.selectedClients.filter(c => c.days_inactive);
-                if (clientsWithDays.length > 0) {
-                    avgDays = Math.round(clientsWithDays.reduce((sum, c) => sum + c.days_inactive, 0) / clientsWithDays.length);
-                }
-
-                btn.disabled = true;
-                btn.innerHTML = '<i data-lucide="loader" class="w-3 h-3 animate-spin"></i> Gerando...';
-                lucide.createIcons();
-
-                try {
-                    const apiUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-                        ? '/api/anny/generate-campaign-message'
-                        : '/.netlify/functions/anny-ai?action=generate-campaign';
-
-                    const res = await fetch(apiUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            daysInactive: avgDays,
-                            tone,
-                            couponName: couponCode || null,
-                            clientCount: this.selectedClients.length,
-                            context: `${this.selectedClients.length} clientes selecionados, média de ${avgDays} dias inativos`
-                        })
-                    });
-
-                    const data = await res.json();
-                    if (data.success && data.message) {
-                        textarea.value = data.message;
-                        textarea.focus();
-                    } else {
-                        alert('Erro ao gerar: ' + (data.error || 'Tente novamente'));
-                    }
-                } catch (err) {
-                    console.error('[Anny] Erro IA:', err);
-                    alert('Erro de conexão com a IA. Verifique a GROQ_API_KEY.');
-                } finally {
-                    btn.disabled = false;
-                    btn.innerHTML = '<i data-lucide="sparkles" class="w-3 h-3"></i> Gerar com IA';
-                    lucide.createIcons();
-                }
-            },
-
-            // ============================================================
-            // ENVIAR CAMPANHA VIA EVOLUTION API (mesmo serviço do CRM)
-            // ============================================================
-            async sendCampaign() {
-                const message = document.getElementById('campaign-message').value.trim();
-                if (!message) {
-                    alert('Digite uma mensagem para a campanha.');
-                    return;
-                }
-
-                const couponCode = document.getElementById('campaign-coupon').value;
-                const batchSize = parseInt(document.getElementById('campaign-batch-size').value) || 10;
-                const batchInterval = parseInt(document.getElementById('campaign-batch-interval').value) || 20;
-                const feedbackEl = document.getElementById('campaign-feedback');
-                const sendBtn = document.getElementById('btn-send-campaign');
-
-                // Preparar contatos no formato da API de campanhas
-                const contacts = this.selectedClients.map(c => ({
-                    id: c.id || c.phone,
-                    name: c.name || 'Cliente',
-                    phone: c.phone || ''
-                })).filter(c => c.phone);
-
-                if (contacts.length === 0) {
-                    alert('Nenhum cliente selecionado possui telefone válido.');
-                    return;
-                }
-
-                // Desabilitar botão
-                sendBtn.disabled = true;
-                sendBtn.innerHTML = '<i data-lucide="loader" class="w-4 h-4 animate-spin"></i> Criando campanha...';
-                lucide.createIcons();
-
-                // Feedback: processando
-                feedbackEl.className = 'mb-4 rounded-xl p-4 text-sm bg-blue-50 border border-blue-200 text-blue-700';
-                feedbackEl.innerHTML = '<i data-lucide="loader" class="w-4 h-4 inline animate-spin mr-1"></i> Criando campanha e iniciando disparo...';
-                feedbackEl.classList.remove('hidden');
-                lucide.createIcons();
-
-                try {
-                    // 1. Criar a campanha no servidor (usa o mesmo sistema de campanhas do CRM)
-                    const createRes = await fetch('/api/campaigns/create', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            name: `Anny BI - ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'})}`,
-                            message: message,
-                            contacts: contacts,
-                            segment: 'anny-bi',
-                            batchSize: batchSize,
-                            batchInterval: batchInterval,
-                            couponCode: couponCode || null
-                        })
-                    });
-
-                    const createData = await createRes.json();
-                    if (!createData.success || !createData.campaign) {
-                        throw new Error(createData.error || 'Erro ao criar campanha');
-                    }
-
-                    const campaignId = createData.campaign.id;
-
-                    // 2. Iniciar disparo
-                    sendBtn.innerHTML = '<i data-lucide="loader" class="w-4 h-4 animate-spin"></i> Disparando...';
-                    lucide.createIcons();
-
-                    const startRes = await fetch(`/api/campaigns/${campaignId}/start`, { method: 'POST' });
-                    const startData = await startRes.json();
-
-                    if (!startData.success) {
-                        throw new Error(startData.error || 'Erro ao iniciar disparo');
-                    }
-
-                    // 3. Feedback de sucesso
-                    this.showFeedback('success', contacts.length, campaignId);
-
-                    // 4. Adicionar mensagem de feedback no chat da Anny
-                    this.addMessage('anny', `Pronto! Enviei a campanha para **${contacts.length}** clientes inativos com sucesso! 🎯\n\n` +
-                        `📊 **Detalhes:**\n` +
-                        `• Campanha: ${createData.campaign.name}\n` +
-                        `• Contatos: ${contacts.length}\n` +
-                        `• Lote: ${batchSize} msgs por vez\n` +
-                        `• Intervalo: ${batchInterval} min entre lotes\n` +
-                        `${couponCode ? `• Cupom: ${couponCode}\n` : ''}` +
-                        `\nO disparo está rodando em segundo plano no servidor. Pode acompanhar na Central de Atendimento > Campanhas.`);
-
-                    // Limpar seleção
-                    this.selectedClients = [];
-                    this.updateSelectedCount();
-
-                } catch (err) {
-                    console.error('[Anny] Erro campanha:', err);
-                    this.showFeedback('error', 0, null, err.message);
-                } finally {
-                    sendBtn.disabled = false;
-                    sendBtn.innerHTML = '<i data-lucide="send" class="w-4 h-4"></i> Enviar via WhatsApp';
-                    lucide.createIcons();
-                }
-            },
-
-            // ============================================================
-            // FEEDBACK DE ENVIO
-            // ============================================================
-            showFeedback(type, count, campaignId, errorMsg) {
-                const feedbackEl = document.getElementById('campaign-feedback');
-                feedbackEl.classList.remove('hidden');
-
-                if (type === 'success') {
-                    feedbackEl.className = 'mb-4 rounded-xl p-4 text-sm bg-emerald-50 border border-emerald-200 text-emerald-700';
-                    feedbackEl.innerHTML = `
-                        <div class="flex items-center gap-2 font-semibold mb-1">
-                            <i data-lucide="check-circle" class="w-4 h-4"></i>
-                            Campanha enviada com sucesso!
-                        </div>
-                        <p>${count} cliente(s) receberão a mensagem em lotes para evitar bloqueio.</p>
-                        <p class="mt-1 text-xs text-emerald-600">ID: ${campaignId} — Acompanhe em Campanhas</p>
-                    `;
-                } else {
-                    feedbackEl.className = 'mb-4 rounded-xl p-4 text-sm bg-red-50 border border-red-200 text-red-700';
-                    feedbackEl.innerHTML = `
-                        <div class="flex items-center gap-2 font-semibold mb-1">
-                            <i data-lucide="alert-circle" class="w-4 h-4"></i>
-                            Erro ao enviar campanha
-                        </div>
-                        <p>${errorMsg || 'Verifique a conexão com a Evolution API.'}</p>
-                    `;
-                }
-                lucide.createIcons();
-            },
-
-            showTypingIndicator() {
-                const messagesContainer = document.getElementById('chat-messages');
-                const typingDiv = document.createElement('div');
-                typingDiv.id = 'typing-indicator';
-                typingDiv.className = 'message message-anny';
-                typingDiv.innerHTML = `
-                    <div class="message-sender">Anny</div>
-                    <div class="message-bubble">
-                        <div class="typing-indicator">
-                            <div class="typing-dot"></div>
-                            <div class="typing-dot"></div>
-                            <div class="typing-dot"></div>
-                        </div>
-                    </div>
-                `;
-                messagesContainer.appendChild(typingDiv);
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
-            },
-
-            hideTypingIndicator() {
-                const indicator = document.getElementById('typing-indicator');
-                if (indicator) indicator.remove();
-            },
-
-            async refreshInsights() {
-                const container = document.getElementById('insights-container');
-                
-                try {
-                    const response = await fetch(this.API_URL + '?action=insights');
-                    const data = await response.json();
-                    
-                    if (data.insights && data.insights.length > 0) {
-                        container.innerHTML = data.insights.map(insight => `
-                            <div class="insight-card priority-${insight.priority}">
-                                <div class="flex items-start gap-3">
-                                    <div class="w-8 h-8 rounded-lg ${this.getInsightIconBg(insight.type)} flex items-center justify-center flex-shrink-0">
-                                        <i data-lucide="${this.getInsightIcon(insight.type)}" class="w-4 h-4 ${this.getInsightIconColor(insight.type)}"></i>
-                                    </div>
-                                    <div class="flex-1 min-w-0">
-                                        <p class="text-sm font-medium text-slate-800">${insight.title}</p>
-                                        <p class="text-xs text-slate-500 mt-0.5">${insight.description}</p>
-                                        ${insight.action ? `
-                                            <button onclick="AnnyChat.sendSuggestion('${insight.action}')" class="mt-2 text-xs text-purple-600 hover:text-purple-700 font-medium">
-                                                Investigar →
-                                            </button>
-                                        ` : ''}
-                                    </div>
-                                </div>
-                            </div>
-                        `).join('');
-                    } else {
-                        container.innerHTML = `
-                            <div class="text-center py-8 text-slate-400">
-                                <i data-lucide="check-circle" class="w-8 h-8 mx-auto mb-2"></i>
-                                <p class="text-sm">Nenhum alerta no momento</p>
-                            </div>
-                        `;
-                    }
-                    lucide.createIcons();
-                } catch (error) {
-                    container.innerHTML = `
-                        <div class="text-center py-8 text-slate-400">
-                            <i data-lucide="alert-triangle" class="w-8 h-8 mx-auto mb-2"></i>
-                            <p class="text-sm">Erro ao carregar insights</p>
-                        </div>
-                    `;
-                    lucide.createIcons();
-                }
-            },
-
-            getInsightIcon(type) {
-                const icons = {
-                    'birthday': 'cake',
-                    'inactive': 'user-x',
-                    'vip': 'crown',
-                    'churn': 'trending-down',
-                    'opportunity': 'target'
-                };
-                return icons[type] || 'info';
-            },
-
-            getInsightIconBg(type) {
-                const bgs = {
-                    'birthday': 'bg-pink-50',
-                    'inactive': 'bg-red-50',
-                    'vip': 'bg-amber-50',
-                    'churn': 'bg-orange-50',
-                    'opportunity': 'bg-emerald-50'
-                };
-                return bgs[type] || 'bg-slate-50';
-            },
-
-            getInsightIconColor(type) {
-                const colors = {
-                    'birthday': 'text-pink-500',
-                    'inactive': 'text-red-500',
-                    'vip': 'text-amber-500',
-                    'churn': 'text-orange-500',
-                    'opportunity': 'text-emerald-500'
-                };
-                return colors[type] || 'text-slate-500';
-            },
-
-            saveChatHistory() {
-                localStorage.setItem('anny_chat_history', JSON.stringify(this.messages.slice(-50)));
-            },
-
-            loadChatHistory() {
-                const saved = localStorage.getItem('anny_chat_history');
-                if (saved) {
-                    const history = JSON.parse(saved);
-                    const container = document.getElementById('chat-messages');
-                    
-                    history.forEach(msg => {
-                        const messageDiv = document.createElement('div');
-                        messageDiv.className = `message message-${msg.sender}`;
-                        messageDiv.innerHTML = `
-                            <div class="message-sender">${msg.sender === 'user' ? 'Voce' : 'Anny'}</div>
-                            <div class="message-bubble">
-                                <p>${this.formatText(msg.text)}</p>
-                                ${msg.results ? this.renderResults(msg.results) : ''}
-                            </div>
-                            <div class="message-time">${msg.timestamp}</div>
-                        `;
-                        container.appendChild(messageDiv);
-                    });
-
-                    this.messages = history;
-                }
-            },
-
-            clearHistory() {
-                if (confirm('Limpar todo o historico do chat?')) {
-                    this.messages = [];
-                    localStorage.removeItem('anny_chat_history');
-                    document.getElementById('chat-messages').innerHTML = `
-                        <div class="message message-anny">
-                            <div class="message-sender">Anny</div>
-                            <div class="message-bubble">
-                                <p class="font-medium mb-2">Ola! Sou a Anny, sua estrategista de vendas.</p>
-                                <p class="text-sm text-slate-600 mb-3">Estou aqui para ajudar a CJOTA Rasteirinhas a recuperar o faturamento de R$ 200k/mes. Posso analisar sua base de clientes, identificar oportunidades e sugerir acoes de venda.</p>
-                                <p class="text-sm text-slate-600">Como posso ajudar hoje?</p>
-                            </div>
-                            <div class="message-time">Agora</div>
-                        </div>
-                    `;
-                }
-            },
-            
-            // Verificar se veio da Vigilante com contexto pré-carregado
-            checkVigilanteContext() {
-                const urlParams = new URLSearchParams(window.location.search);
-                const prompt = urlParams.get('prompt');
-                
-                if (prompt) {
-                    // Preencher o input com o prompt da Vigilante
-                    const input = document.getElementById('chat-input');
-                    if (input) {
-                        input.value = decodeURIComponent(prompt);
-                        input.focus();
-                        
-                        // Mostrar notificação
-                        const container = document.getElementById('chat-messages');
-                        const notification = document.createElement('div');
-                        notification.className = 'bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 text-center';
-                        notification.innerHTML = `
-                            <p class="text-amber-700 font-medium text-sm">
-                                <i data-lucide="radar" class="w-4 h-4 inline-block mr-1"></i>
-                                Contexto carregado pela Vigilante
-                            </p>
-                            <p class="text-amber-600 text-xs mt-1">Pressione Enter ou clique em Enviar para processar</p>
-                        `;
-                        container.appendChild(notification);
-                        container.scrollTop = container.scrollHeight;
-                        lucide.createIcons();
-                    }
-                    
-                    // Limpar a URL para não recarregar o prompt
-                    window.history.replaceState({}, document.title, window.location.pathname);
-                }
+        async load() {
+            try {
+                const res = await fetch(this.API_URL);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                this.data = await res.json();
+                if (this.data.error) throw new Error(this.data.error);
+                this.render();
+                document.getElementById('dashboard-error').classList.add('hidden');
+                document.getElementById('last-update').textContent = 'Atualizado ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            } catch (err) {
+                console.error('[Dashboard]', err);
+                document.getElementById('dashboard-error').classList.remove('hidden');
+                document.getElementById('dashboard-error-msg').textContent = err.message;
             }
-        };
+        },
 
-        // ============================================================================
-        // RECONHECIMENTO DE VOZ - Fale com a Anny!
-        // ============================================================================
-        let recognition = null;
-        let isRecording = false;
+        render() {
+            const d = this.data;
+            if (!d) return;
 
-        function initVoiceRecognition() {
-            // Verificar suporte do navegador
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            
-            if (!SpeechRecognition) {
-                console.warn('Navegador não suporta reconhecimento de voz');
-                const voiceBtn = document.getElementById('voice-btn');
-                if (voiceBtn) {
-                    voiceBtn.style.display = 'none';
-                }
+            // KPIs
+            const fmtR = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            document.getElementById('kpi-ltv-value').textContent = fmtR(d.kpis.ltvAtRisk.value);
+            document.getElementById('kpi-ltv-badge').textContent = d.kpis.ltvAtRisk.count + ' clientes';
+            document.getElementById('kpi-ltv-badge').setAttribute('data-tip', d.kpis.ltvAtRisk.count + ' clientes VIP inativos >30d');
+
+            document.getElementById('kpi-opp-value').textContent = d.kpis.opportunities.value;
+            document.getElementById('kpi-opp-badge').textContent = d.kpis.opportunities.hotCount + ' quentes';
+            document.getElementById('kpi-opp-badge').setAttribute('data-tip', d.kpis.opportunities.hotCount + ' prontos para reativar (<45d)');
+
+            document.getElementById('kpi-rec-value').textContent = fmtR(d.kpis.recovered.value);
+            document.getElementById('kpi-rec-badge').textContent = d.kpis.recovered.count + ' clientes';
+
+            document.getElementById('kpi-c4-value').textContent = d.kpis.c4Potential.value + ' candidatas';
+            document.getElementById('kpi-c4-badge').textContent = fmtR(d.kpis.c4Potential.estimatedRevenue);
+            document.getElementById('kpi-c4-badge').setAttribute('data-tip', 'Faturamento recente: ' + fmtR(d.kpis.c4Potential.estimatedRevenue));
+
+            // UTI
+            this.renderClientList('uti', d.uti, (c, i) => {
+                const name = this.shortName(c.name);
+                const pri = i === 0 ? 1 : i < 3 ? 2 : i < 5 ? 3 : 4;
+                return `<div class="client-card priority-${pri}" onclick="Dashboard.openAnnyWith('Crie estratégia de recuperação para ${c.name}, que gastou R$${c.total_spent} e está inativa há ${c.days_inactive} dias')">
+                    <div class="flex items-center justify-between">
+                        <div class="min-w-0">
+                            <div class="client-name" title="${c.name}">${name}</div>
+                            <div class="client-meta">Inativa há ${c.days_inactive}d</div>
+                        </div>
+                        <div class="text-right flex-shrink-0 ml-3">
+                            <div class="client-value">-${fmtR(c.total_spent)}</div>
+                            <div class="client-meta tooltip" data-tip="${c.order_count} pedidos • Tier ${c.tier} • Ciclo ${c.cycle}d">${c.order_count} ped.</div>
+                        </div>
+                    </div>
+                </div>`;
+            });
+
+            // Oportunidades
+            this.renderClientList('opp', d.opportunities, (c, i) => {
+                const name = this.shortName(c.name);
+                const pri = i === 0 ? 1 : i < 3 ? 2 : i < 5 ? 3 : 4;
+                return `<div class="client-card priority-${pri}" onclick="Dashboard.openAnnyWith('Crie mensagem de reativação para ${c.name}, ticket médio R$${c.avg_ticket}, inativa há ${c.days_inactive} dias')">
+                    <div class="flex items-center justify-between">
+                        <div class="min-w-0">
+                            <div class="client-name" title="${c.name}">${name}</div>
+                            <div class="client-meta">Inativa há ${c.days_inactive}d</div>
+                        </div>
+                        <div class="text-right flex-shrink-0 ml-3">
+                            <div class="client-value" style="color:#D97706">R$ ${Number(c.avg_ticket).toLocaleString('pt-BR')}/ped</div>
+                            <div class="client-meta tooltip" data-tip="Ciclo médio: ${c.cycle}d • ${c.order_count} pedidos • Tier ${c.tier}">${c.order_count} ped.</div>
+                        </div>
+                    </div>
+                </div>`;
+            });
+
+            // C4
+            this.renderClientList('c4', d.c4Candidates, (c, i) => {
+                const name = this.shortName(c.name);
+                return `<div class="client-card priority-${i < 3 ? 2 : 3}" onclick="Dashboard.openAnnyWith('Analise o potencial C4 Franquias de ${c.name}, que fez ${c.recent_orders} pedidos recentes com ticket médio R$${c.recent_avg}')">
+                    <div class="flex items-center justify-between">
+                        <div class="min-w-0">
+                            <div class="client-name" title="${c.name}">${name}</div>
+                            <div class="client-meta">${c.recent_orders} pedidos (90d)</div>
+                        </div>
+                        <div class="text-right flex-shrink-0 ml-3">
+                            <div class="client-value" style="color:#7C3AED">R$ ${Number(c.recent_avg).toLocaleString('pt-BR')}/ped</div>
+                            <div class="client-meta tooltip" data-tip="Total recente: ${fmtR(c.recent_total)}">Total ${fmtR(c.recent_total)}</div>
+                        </div>
+                    </div>
+                </div>`;
+            });
+
+            lucide.createIcons();
+        },
+
+        renderClientList(key, items, renderFn) {
+            const list = document.getElementById(key + '-list');
+            const expandBtn = document.getElementById(key + '-expand');
+            if (!items || items.length === 0) {
+                list.innerHTML = '<p class="text-xs text-slate-400 py-4 text-center">Nenhum dado encontrado</p>';
+                expandBtn.classList.add('hidden');
                 return;
             }
-
-            recognition = new SpeechRecognition();
-            recognition.lang = 'pt-BR';
-            recognition.continuous = false;
-            recognition.interimResults = true;
-            recognition.maxAlternatives = 1;
-
-            recognition.onstart = () => {
-                isRecording = true;
-                updateVoiceUI(true);
-                console.log('[Voz] Gravação iniciada');
-            };
-
-            recognition.onresult = (event) => {
-                const input = document.getElementById('chat-input');
-                let finalTranscript = '';
-                let interimTranscript = '';
-
-                for (let i = event.resultIndex; i < event.results.length; i++) {
-                    const transcript = event.results[i][0].transcript;
-                    if (event.results[i].isFinal) {
-                        finalTranscript += transcript;
-                    } else {
-                        interimTranscript += transcript;
-                    }
-                }
-
-                // Mostrar texto enquanto fala
-                if (interimTranscript) {
-                    input.value = interimTranscript;
-                    input.style.fontStyle = 'italic';
-                    input.style.color = '#9ca3af';
-                }
-
-                // Texto final
-                if (finalTranscript) {
-                    input.value = finalTranscript;
-                    input.style.fontStyle = 'normal';
-                    input.style.color = '#1e293b';
-                }
-            };
-
-            recognition.onend = () => {
-                isRecording = false;
-                updateVoiceUI(false);
-                console.log('[Voz] Gravação finalizada');
-
-                // Se tiver texto, enviar automaticamente
-                const input = document.getElementById('chat-input');
-                if (input && input.value.trim()) {
-                    // Pequeno delay para o usuário ver o texto antes de enviar
-                    setTimeout(() => {
-                        document.getElementById('chat-form').dispatchEvent(new Event('submit'));
-                    }, 500);
-                }
-            };
-
-            recognition.onerror = (event) => {
-                console.error('[Voz] Erro:', event.error);
-                isRecording = false;
-                updateVoiceUI(false);
-
-                if (event.error === 'not-allowed') {
-                    alert('⚠️ Permissão de microfone negada!\n\nPara usar a voz, permita o acesso ao microfone nas configurações do navegador.');
-                } else if (event.error === 'network') {
-                    alert('🌐 Erro de conexão com o serviço de voz!\n\nSe estiver usando o Brave:\n• Clique no ícone do leão 🦁\n• Desative o "Shields" para este site\n\nOu use o Chrome/Edge para melhor compatibilidade.');
-                } else if (event.error === 'no-speech') {
-                    // Não mostrar erro se apenas não falou nada
-                    console.log('[Voz] Nenhuma fala detectada');
-                }
-            };
-        }
-
-        function toggleVoiceRecognition() {
-            if (!recognition) {
-                initVoiceRecognition();
-                if (!recognition) {
-                    alert('😕 Seu navegador não suporta reconhecimento de voz.\n\nTente usar o Chrome ou Edge.');
-                    return;
-                }
-            }
-
-            if (isRecording) {
-                recognition.stop();
+            const limit = this.expandedSections[key] ? items.length : this.SHOW_LIMIT;
+            list.innerHTML = items.slice(0, limit).map(renderFn).join('');
+            if (items.length > this.SHOW_LIMIT) {
+                expandBtn.classList.remove('hidden');
+                const extra = items.length - this.SHOW_LIMIT;
+                document.getElementById(key + '-extra-count').textContent = this.expandedSections[key]
+                    ? '(recolher)'
+                    : `(+${extra})`;
             } else {
-                // Limpar input antes de começar
+                expandBtn.classList.add('hidden');
+            }
+        },
+
+        toggleExpand(key) {
+            this.expandedSections[key] = !this.expandedSections[key];
+            this.render();
+        },
+
+        shortName(name) {
+            if (!name) return 'Desconhecido';
+            const parts = name.trim().split(/\s+/);
+            if (parts.length <= 2) return name;
+            return parts[0] + ' ' + parts[parts.length - 1];
+        },
+
+        openAnnyWith(prompt) {
+            ChatDrawer.open();
+            setTimeout(() => {
                 const input = document.getElementById('chat-input');
-                if (input) input.value = '';
-                
-                try {
-                    recognition.start();
-                } catch (e) {
-                    console.error('[Voz] Erro ao iniciar:', e);
-                    // Se já estiver rodando, para e inicia novamente
-                    recognition.stop();
-                    setTimeout(() => recognition.start(), 100);
-                }
-            }
+                input.value = prompt;
+                input.focus();
+            }, 350);
         }
+    };
 
-        function updateVoiceUI(recording) {
-            const voiceBtn = document.getElementById('voice-btn');
-            const voiceStatus = document.getElementById('voice-status');
-            const input = document.getElementById('chat-input');
+    // ============================================================================
+    // CHAT DRAWER
+    // ============================================================================
+    const ChatDrawer = {
+        isOpen: false,
 
-            if (recording) {
-                voiceBtn.classList.add('btn-recording');
-                voiceBtn.classList.remove('btn-secondary');
-                voiceBtn.innerHTML = '<i data-lucide="mic-off" class="w-4 h-4"></i>';
-                voiceStatus.classList.remove('hidden');
-                input.placeholder = 'Ouvindo... fale agora!';
-            } else {
-                voiceBtn.classList.remove('btn-recording');
-                voiceBtn.classList.add('btn-secondary');
-                voiceBtn.innerHTML = '<i data-lucide="mic" class="w-4 h-4"></i>';
-                voiceStatus.classList.add('hidden');
-                input.placeholder = 'Digite ou clique no microfone para falar...';
-                input.style.fontStyle = 'normal';
-                input.style.color = '#1e293b';
-            }
+        toggle() {
+            this.isOpen ? this.close() : this.open();
+        },
+
+        open() {
+            this.isOpen = true;
+            document.getElementById('chat-drawer').classList.add('open');
+            document.getElementById('chat-overlay').classList.add('open');
+            document.getElementById('chat-fab-icon').setAttribute('data-lucide', 'x');
+            lucide.createIcons();
+        },
+
+        close() {
+            this.isOpen = false;
+            document.getElementById('chat-drawer').classList.remove('open');
+            document.getElementById('chat-overlay').classList.remove('open');
+            document.getElementById('chat-fab-icon').setAttribute('data-lucide', 'message-circle');
             lucide.createIcons();
         }
+    };
 
-        // Initialize on page load
-        document.addEventListener('DOMContentLoaded', () => {
-            AnnyChat.init();
-            initVoiceRecognition();
-            // Verificar contexto da Vigilante após inicializar
-            setTimeout(() => AnnyChat.checkVigilanteContext(), 500);
-        });
+    // ============================================================================
+    // ANNY CHAT (preserved from original)
+    // ============================================================================
+    const AnnyChat = {
+        messages: [],
+        selectedClients: [],
+        isProcessing: false,
 
-        async function handleLogout(e) {
-            if (e) e.preventDefault();
-            try { await fetch('/api/auth/logout', { method: 'POST' }); } catch(e) {}
-            window.location.href = '/login.html';
+        API_URL: (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+            ? '/api/anny'
+            : '/.netlify/functions/anny-ai',
+
+        init() {
+            this.loadChatHistory();
+            this.setupEventListeners();
+            lucide.createIcons();
+        },
+
+        setupEventListeners() {
+            document.getElementById('chat-form').addEventListener('submit', (e) => {
+                e.preventDefault();
+                const input = document.getElementById('chat-input');
+                const message = input.value.trim();
+                if (message && !this.isProcessing) {
+                    this.sendMessage(message);
+                    input.value = '';
+                }
+            });
+        },
+
+        async sendMessage(message) {
+            this.isProcessing = true;
+            this.addMessage('user', message);
+            this.showTypingIndicator();
+
+            try {
+                const response = await fetch(this.API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message, history: this.messages.slice(-10) })
+                });
+                const data = await response.json();
+                this.hideTypingIndicator();
+                if (data.error) {
+                    this.addMessage('anny', 'Desculpe, ocorreu um erro: ' + data.error);
+                } else {
+                    this.addMessage('anny', data.response, data.results);
+                }
+            } catch (error) {
+                this.hideTypingIndicator();
+                this.addMessage('anny', 'Desculpe, nao consegui processar. Verifique a conexao.');
+                console.error('Anny Error:', error);
+            }
+            this.isProcessing = false;
+        },
+
+        sendSuggestion(text) {
+            document.getElementById('chat-input').value = text;
+            this.sendMessage(text);
+        },
+
+        addMessage(sender, text, results = null) {
+            const container = document.getElementById('chat-messages');
+            const timestamp = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            this.messages.push({ sender, text, results, timestamp });
+            this.saveChatHistory();
+
+            const div = document.createElement('div');
+            div.className = 'message message-' + sender;
+            div.innerHTML = `
+                <div class="message-sender">${sender === 'user' ? 'Voce' : 'Anny'}</div>
+                <div class="message-bubble">
+                    <p>${this.formatText(text)}</p>
+                    ${results ? this.renderResults(results) : ''}
+                </div>
+                <div class="message-time">${timestamp}</div>
+            `;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+            lucide.createIcons();
+        },
+
+        formatText(text) {
+            return text.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>');
+        },
+
+        renderResults(results) {
+            if (!results || !results.data || results.data.length === 0) return '';
+            const data = results.data;
+            const columns = results.columns || Object.keys(data[0]);
+            let html = `<div class="mt-3 overflow-x-auto"><table class="result-table"><thead><tr><th><input type="checkbox" onchange="AnnyChat.toggleSelectAll(this)"></th>${columns.map(c => `<th>${this.formatColumnName(c)}</th>`).join('')}</tr></thead><tbody>`;
+            data.forEach((row, i) => {
+                html += `<tr><td><input type="checkbox" data-index="${i}" data-client='${JSON.stringify(row)}' onchange="AnnyChat.toggleSelectClient(this)"></td>${columns.map(c => `<td>${this.formatCellValue(row[c], c)}</td>`).join('')}</tr>`;
+            });
+            html += `</tbody></table><div class="mt-3 flex justify-between items-center"><span class="text-xs text-slate-500">${data.length} resultado(s)</span><button onclick="AnnyChat.openActionModal()" class="btn btn-anny text-xs"><i data-lucide="send" class="w-3 h-3"></i> Campanha (<span id="selected-count">0</span>)</button></div></div>`;
+            return html;
+        },
+
+        formatColumnName(col) {
+            const n = { 'id':'ID','name':'Nome','phone':'Telefone','email':'Email','total_spent':'Total Gasto','order_count':'Pedidos','last_purchase_date':'Última Compra','days_inactive':'Dias Inativo','birthday':'Aniversário' };
+            return n[col] || col.charAt(0).toUpperCase() + col.slice(1).replace(/_/g, ' ');
+        },
+
+        formatCellValue(value, col) {
+            if (value === null || value === undefined) return '-';
+            if (col === 'total_spent') return 'R$ ' + parseFloat(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+            if (col === 'last_purchase_date' || col === 'birthday') return value ? new Date(value).toLocaleDateString('pt-BR') : '-';
+            return value;
+        },
+
+        toggleSelectAll(cb) {
+            document.querySelectorAll('.result-table tbody input[type="checkbox"]').forEach(c => { c.checked = cb.checked; this.toggleSelectClient(c, false); });
+            this.updateSelectedCount();
+        },
+
+        toggleSelectClient(cb, update = true) {
+            const d = JSON.parse(cb.dataset.client || '{}');
+            if (cb.checked) { if (!this.selectedClients.find(c => c.id === d.id)) this.selectedClients.push(d); }
+            else { this.selectedClients = this.selectedClients.filter(c => c.id !== d.id); }
+            if (update) this.updateSelectedCount();
+        },
+
+        updateSelectedCount() {
+            const el = document.getElementById('selected-count');
+            if (el) el.textContent = this.selectedClients.length;
+        },
+
+        openActionModal() {
+            if (this.selectedClients.length === 0) { alert('Selecione pelo menos um cliente.'); return; }
+            document.getElementById('action-modal-count').textContent = this.selectedClients.length + ' cliente(s)';
+            document.getElementById('campaign-message').value = '';
+            document.getElementById('campaign-feedback').classList.add('hidden');
+            document.getElementById('btn-send-campaign').disabled = false;
+            document.getElementById('btn-send-campaign').innerHTML = '<i data-lucide="send" class="w-4 h-4"></i> Enviar via WhatsApp';
+            this.loadCoupons();
+            document.getElementById('action-modal').classList.remove('hidden');
+            lucide.createIcons();
+        },
+
+        closeActionModal() { document.getElementById('action-modal').classList.add('hidden'); },
+
+        loadCoupons() {
+            const select = document.getElementById('campaign-coupon');
+            select.innerHTML = '<option value="">Sem cupom</option>';
+            try {
+                const raw = localStorage.getItem('crm_coupons');
+                const coupons = raw ? JSON.parse(raw) : [];
+                coupons.filter(c => c.isActive).forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.code;
+                    opt.textContent = c.code + ' (' + c.discount + (c.type === 'percent' ? '%' : ' R$') + ' OFF)';
+                    select.appendChild(opt);
+                });
+            } catch (e) { console.error('[Anny] Cupons:', e); }
+        },
+
+        async generateWithAI() {
+            const btn = document.getElementById('btn-generate-ai');
+            const textarea = document.getElementById('campaign-message');
+            const tone = document.getElementById('campaign-tone').value;
+            const coupon = document.getElementById('campaign-coupon').value;
+            let avgDays = 30;
+            const withDays = this.selectedClients.filter(c => c.days_inactive);
+            if (withDays.length) avgDays = Math.round(withDays.reduce((s,c) => s + c.days_inactive, 0) / withDays.length);
+            btn.disabled = true;
+            btn.innerHTML = '<i data-lucide="loader" class="w-3 h-3 animate-spin"></i> Gerando...';
+            lucide.createIcons();
+            try {
+                const url = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+                    ? '/api/anny/generate-campaign-message'
+                    : '/.netlify/functions/anny-ai?action=generate-campaign';
+                const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ daysInactive: avgDays, tone, couponName: coupon || null, clientCount: this.selectedClients.length, context: this.selectedClients.length + ' clientes, ' + avgDays + 'd inativos' })
+                });
+                const data = await res.json();
+                if (data.success && data.message) { textarea.value = data.message; textarea.focus(); }
+                else alert('Erro: ' + (data.error || 'Tente novamente'));
+            } catch (err) { console.error('[Anny] IA:', err); alert('Erro de conexão com a IA.'); }
+            finally { btn.disabled = false; btn.innerHTML = '<i data-lucide="sparkles" class="w-3 h-3"></i> Gerar com IA'; lucide.createIcons(); }
+        },
+
+        async sendCampaign() {
+            const message = document.getElementById('campaign-message').value.trim();
+            if (!message) { alert('Digite uma mensagem.'); return; }
+            const coupon = document.getElementById('campaign-coupon').value;
+            const batchSize = parseInt(document.getElementById('campaign-batch-size').value) || 10;
+            const batchInterval = parseInt(document.getElementById('campaign-batch-interval').value) || 20;
+            const feedbackEl = document.getElementById('campaign-feedback');
+            const sendBtn = document.getElementById('btn-send-campaign');
+            const contacts = this.selectedClients.map(c => ({ id: c.id || c.phone, name: c.name || 'Cliente', phone: c.phone || '' })).filter(c => c.phone);
+            if (!contacts.length) { alert('Nenhum cliente com telefone.'); return; }
+            sendBtn.disabled = true;
+            sendBtn.innerHTML = '<i data-lucide="loader" class="w-4 h-4 animate-spin"></i> Criando...';
+            feedbackEl.className = 'mb-4 rounded-xl p-4 text-sm bg-blue-50 border border-blue-200 text-blue-700';
+            feedbackEl.innerHTML = '<i data-lucide="loader" class="w-4 h-4 inline animate-spin mr-1"></i> Criando campanha...';
+            feedbackEl.classList.remove('hidden');
+            lucide.createIcons();
+            try {
+                const cr = await fetch('/api/campaigns/create', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: 'Anny BI - ' + new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'}), message, contacts, segment: 'anny-bi', batchSize, batchInterval, couponCode: coupon || null })
+                });
+                const cd = await cr.json();
+                if (!cd.success || !cd.campaign) throw new Error(cd.error || 'Erro ao criar campanha');
+                sendBtn.innerHTML = '<i data-lucide="loader" class="w-4 h-4 animate-spin"></i> Disparando...'; lucide.createIcons();
+                const sr = await fetch('/api/campaigns/' + cd.campaign.id + '/start', { method: 'POST' });
+                const sd = await sr.json();
+                if (!sd.success) throw new Error(sd.error || 'Erro ao disparar');
+                this.showFeedback('success', contacts.length, cd.campaign.id);
+                this.addMessage('anny', 'Campanha enviada para **' + contacts.length + '** clientes!\n\n' + '• Lote: ' + batchSize + ' • Intervalo: ' + batchInterval + 'min' + (coupon ? '\n• Cupom: ' + coupon : '') + '\n\nAcompanhe em Campanhas.');
+                this.selectedClients = [];
+                this.updateSelectedCount();
+            } catch (err) { console.error('[Anny] Campanha:', err); this.showFeedback('error', 0, null, err.message); }
+            finally { sendBtn.disabled = false; sendBtn.innerHTML = '<i data-lucide="send" class="w-4 h-4"></i> Enviar via WhatsApp'; lucide.createIcons(); }
+        },
+
+        showFeedback(type, count, id, errMsg) {
+            const el = document.getElementById('campaign-feedback');
+            el.classList.remove('hidden');
+            if (type === 'success') {
+                el.className = 'mb-4 rounded-xl p-4 text-sm bg-emerald-50 border border-emerald-200 text-emerald-700';
+                el.innerHTML = '<div class="flex items-center gap-2 font-semibold mb-1"><i data-lucide="check-circle" class="w-4 h-4"></i> Campanha enviada!</div><p>' + count + ' cliente(s) em lotes anti-ban.</p><p class="mt-1 text-xs text-emerald-600">ID: ' + id + '</p>';
+            } else {
+                el.className = 'mb-4 rounded-xl p-4 text-sm bg-red-50 border border-red-200 text-red-700';
+                el.innerHTML = '<div class="flex items-center gap-2 font-semibold mb-1"><i data-lucide="alert-circle" class="w-4 h-4"></i> Erro</div><p>' + (errMsg || 'Verifique a conexão.') + '</p>';
+            }
+            lucide.createIcons();
+        },
+
+        showTypingIndicator() {
+            const c = document.getElementById('chat-messages');
+            const d = document.createElement('div');
+            d.id = 'typing-indicator'; d.className = 'message message-anny';
+            d.innerHTML = '<div class="message-sender">Anny</div><div class="message-bubble"><div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div>';
+            c.appendChild(d); c.scrollTop = c.scrollHeight;
+        },
+
+        hideTypingIndicator() { const i = document.getElementById('typing-indicator'); if (i) i.remove(); },
+
+        saveChatHistory() { localStorage.setItem('anny_chat_history', JSON.stringify(this.messages.slice(-50))); },
+
+        loadChatHistory() {
+            const saved = localStorage.getItem('anny_chat_history');
+            if (saved) {
+                const history = JSON.parse(saved);
+                const container = document.getElementById('chat-messages');
+                history.forEach(msg => {
+                    const div = document.createElement('div');
+                    div.className = 'message message-' + msg.sender;
+                    div.innerHTML = '<div class="message-sender">' + (msg.sender === 'user' ? 'Voce' : 'Anny') + '</div><div class="message-bubble"><p>' + this.formatText(msg.text) + '</p>' + (msg.results ? this.renderResults(msg.results) : '') + '</div><div class="message-time">' + msg.timestamp + '</div>';
+                    container.appendChild(div);
+                });
+                this.messages = history;
+            }
+        },
+
+        clearHistory() {
+            if (confirm('Limpar historico do chat?')) {
+                this.messages = [];
+                localStorage.removeItem('anny_chat_history');
+                document.getElementById('chat-messages').innerHTML = '<div class="message message-anny"><div class="message-sender">Anny</div><div class="message-bubble"><p class="font-medium mb-1">Ola! Sou a Anny 3.0</p><p class="text-xs text-slate-500">Consultora Comercial Senior da CJOTA. Pergunte sobre clientes, vendas ou peca uma estrategia.</p></div></div>';
+            }
+        },
+
+        checkVigilanteContext() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const prompt = urlParams.get('prompt');
+            if (prompt) {
+                ChatDrawer.open();
+                setTimeout(() => {
+                    document.getElementById('chat-input').value = decodeURIComponent(prompt);
+                    document.getElementById('chat-input').focus();
+                }, 400);
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
         }
+    };
+
+    // ============================================================================
+    // VOICE RECOGNITION
+    // ============================================================================
+    let recognition = null;
+    let isRecording = false;
+
+    function initVoiceRecognition() {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) { document.getElementById('voice-btn').style.display = 'none'; return; }
+        recognition = new SpeechRecognition();
+        recognition.lang = 'pt-BR'; recognition.continuous = false; recognition.interimResults = true; recognition.maxAlternatives = 1;
+        recognition.onstart = () => { isRecording = true; updateVoiceUI(true); };
+        recognition.onresult = (event) => {
+            const input = document.getElementById('chat-input');
+            let final = '', interim = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                if (event.results[i].isFinal) final += event.results[i][0].transcript;
+                else interim += event.results[i][0].transcript;
+            }
+            if (interim) { input.value = interim; input.style.fontStyle = 'italic'; input.style.color = '#9ca3af'; }
+            if (final) { input.value = final; input.style.fontStyle = 'normal'; input.style.color = '#1e293b'; }
+        };
+        recognition.onend = () => {
+            isRecording = false; updateVoiceUI(false);
+            const input = document.getElementById('chat-input');
+            if (input && input.value.trim()) setTimeout(() => document.getElementById('chat-form').dispatchEvent(new Event('submit')), 500);
+        };
+        recognition.onerror = (event) => {
+            isRecording = false; updateVoiceUI(false);
+            if (event.error === 'not-allowed') alert('Permissão de microfone negada.');
+            else if (event.error === 'network') alert('Erro de rede com serviço de voz.');
+        };
+    }
+
+    function toggleVoiceRecognition() {
+        if (!recognition) { initVoiceRecognition(); if (!recognition) { alert('Navegador não suporta voz.'); return; } }
+        if (isRecording) { recognition.stop(); }
+        else { document.getElementById('chat-input').value = ''; try { recognition.start(); } catch(e) { recognition.stop(); setTimeout(() => recognition.start(), 100); } }
+    }
+
+    function updateVoiceUI(rec) {
+        const btn = document.getElementById('voice-btn');
+        const status = document.getElementById('voice-status');
+        const input = document.getElementById('chat-input');
+        if (rec) {
+            btn.classList.add('btn-recording'); btn.classList.remove('btn-secondary');
+            btn.innerHTML = '<i data-lucide="mic-off" class="w-4 h-4"></i>';
+            status.classList.remove('hidden'); input.placeholder = 'Ouvindo...';
+        } else {
+            btn.classList.remove('btn-recording'); btn.classList.add('btn-secondary');
+            btn.innerHTML = '<i data-lucide="mic" class="w-4 h-4"></i>';
+            status.classList.add('hidden'); input.placeholder = 'Pergunte algo...';
+            input.style.fontStyle = 'normal'; input.style.color = '#1e293b';
+        }
+        lucide.createIcons();
+    }
+
+    // ============================================================================
+    // INIT
+    // ============================================================================
+    document.addEventListener('DOMContentLoaded', () => {
+        AnnyChat.init();
+        Dashboard.load();
+        initVoiceRecognition();
+        setTimeout(() => AnnyChat.checkVigilanteContext(), 500);
+    });
+
+    async function handleLogout(e) {
+        if (e) e.preventDefault();
+        try { await fetch('/api/auth/logout', { method: 'POST' }); } catch(e) {}
+        window.location.href = '/login.html';
+    }
     </script>
 </body>
 </html>
