@@ -2002,6 +2002,240 @@ app.get('/api/evolution/chat-modes', (req, res) => {
     res.json({ modes: chatModes });
 });
 
+// ============================================================================
+// CÉREBRO DO CLIENTE - Lookup completo com histórico de pedidos
+// ============================================================================
+
+/**
+ * GET /api/client-brain/:phone
+ * Retorna perfil completo do cliente para o painel lateral
+ * Inclui: dados pessoais, histórico de pedidos, métricas, status
+ */
+app.get('/api/client-brain/:phone', async (req, res) => {
+    try {
+        const phone = req.params.phone;
+        
+        if (!phone) {
+            return res.status(400).json({ error: 'Phone é obrigatório' });
+        }
+        
+        // Normalizar telefone
+        const normalizedPhone = phone.replace(/\D/g, '').replace(/^55/, '');
+        
+        // Buscar cliente no cache do CRM (FacilZap)
+        let client = null;
+        let clientOrders = [];
+        
+        if (crmCache.clients && crmCache.clients.length > 0) {
+            client = crmCache.clients.find(c => {
+                const clientPhone = c.telefone?.replace(/\D/g, '').replace(/^55/, '') || 
+                                   c.celular?.replace(/\D/g, '').replace(/^55/, '') ||
+                                   c.phone?.replace(/\D/g, '').replace(/^55/, '');
+                return clientPhone === normalizedPhone;
+            });
+            
+            if (client && crmCache.orders) {
+                clientOrders = crmCache.orders.filter(o => 
+                    o.id_cliente === client.id || 
+                    o.cliente_id === client.id ||
+                    o.cliente?.telefone?.replace(/\D/g, '').replace(/^55/, '') === normalizedPhone
+                );
+            }
+        }
+        
+        // Se não encontrou cliente, retornar como Lead Novo
+        if (!client) {
+            return res.json({
+                found: false,
+                status: 'Lead Novo',
+                statusColor: 'blue',
+                statusEmoji: '🆕',
+                phone: normalizedPhone,
+                message: 'Primeira interação - cliente não encontrado no sistema',
+                metrics: null,
+                orders: [],
+                products: [],
+                insight: '👤 Novo contato! Aproveite para capturar os dados.',
+                recommendation: 'Pergunte o nome e interesse do cliente.'
+            });
+        }
+        
+        // Calcular métricas
+        const totalSpent = clientOrders.reduce((sum, o) => sum + (parseFloat(o.valor_total) || 0), 0);
+        const avgTicket = clientOrders.length > 0 ? totalSpent / clientOrders.length : 0;
+        
+        // Ordenar pedidos por data
+        const sortedOrders = clientOrders.sort((a, b) => new Date(b.data) - new Date(a.data));
+        const lastOrder = sortedOrders[0];
+        const lastPurchaseDate = lastOrder ? new Date(lastOrder.data) : null;
+        const daysSinceLastPurchase = lastPurchaseDate ? 
+            Math.floor((new Date() - lastPurchaseDate) / (1000 * 60 * 60 * 24)) : 999;
+        
+        // Determinar status
+        let status, statusColor, statusEmoji;
+        if (clientOrders.length >= 5) {
+            status = 'Cliente VIP';
+            statusColor = 'purple';
+            statusEmoji = '👑';
+        } else if (clientOrders.length >= 2) {
+            status = 'Cliente Recorrente';
+            statusColor = 'green';
+            statusEmoji = '⭐';
+        } else if (clientOrders.length === 1) {
+            status = 'Cliente';
+            statusColor = 'blue';
+            statusEmoji = '✅';
+        } else {
+            status = 'Lead Cadastrado';
+            statusColor = 'gray';
+            statusEmoji = '📝';
+        }
+        
+        // Produtos mais comprados (frequência)
+        const productCounts = {};
+        clientOrders.forEach(order => {
+            const items = order.itens || order.products || [];
+            items.forEach(item => {
+                const name = item.nome || item.name || item.produto || 'Produto';
+                productCounts[name] = (productCounts[name] || 0) + (item.quantidade || 1);
+            });
+        });
+        
+        const frequentProducts = Object.entries(productCounts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([name, qty]) => ({ name, qty }));
+        
+        // Últimos 3 pedidos resumidos
+        const recentOrders = sortedOrders.slice(0, 3).map(o => ({
+            id: o.id || o.codigo,
+            date: o.data,
+            total: parseFloat(o.valor_total) || 0,
+            status: o.status || 'Concluído',
+            items: (o.itens || o.products || []).length
+        }));
+        
+        // Gerar insight personalizado
+        let insight = '';
+        if (status === 'Cliente VIP') {
+            insight = `🎯 Cliente VIP com ${clientOrders.length} compras. Última há ${daysSinceLastPurchase} dias.`;
+        } else if (daysSinceLastPurchase > 60) {
+            insight = `⚠️ Cliente inativo há ${daysSinceLastPurchase} dias. Oportunidade de reativação!`;
+        } else if (daysSinceLastPurchase <= 7) {
+            insight = `🔥 Comprou recentemente (${daysSinceLastPurchase} dias). Cliente ativo!`;
+        } else {
+            insight = `📊 ${clientOrders.length} pedido(s). Ticket médio: R$ ${avgTicket.toFixed(2)}`;
+        }
+        
+        // Recomendação
+        let recommendation = '';
+        if (frequentProducts.length > 0) {
+            recommendation = `💡 Produtos favoritos: ${frequentProducts.slice(0, 3).map(p => p.name).join(', ')}`;
+        } else {
+            recommendation = '💡 Pergunte sobre preferências para personalizar o atendimento.';
+        }
+        
+        res.json({
+            found: true,
+            client: {
+                id: client.id,
+                name: client.nome || client.name || 'Sem nome',
+                email: client.email,
+                phone: normalizedPhone,
+                cpf: client.cpf,
+                city: client.cidade || client.city,
+                state: client.estado || client.state,
+                createdAt: client.data_criacao || client.created_at
+            },
+            status,
+            statusColor,
+            statusEmoji,
+            metrics: {
+                totalSpent: totalSpent.toFixed(2),
+                avgTicket: avgTicket.toFixed(2),
+                ordersCount: clientOrders.length,
+                lastPurchaseDate: lastPurchaseDate?.toISOString(),
+                daysSinceLastPurchase
+            },
+            orders: recentOrders,
+            products: frequentProducts,
+            insight,
+            recommendation
+        });
+        
+    } catch (error) {
+        console.error('[client-brain] Erro:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * GET /api/whatsapp/profile-picture/:jid
+ * Buscar foto de perfil de um contato via Evolution API
+ */
+app.get('/api/whatsapp/profile-picture/:jid', async (req, res) => {
+    try {
+        const jid = req.params.jid;
+        
+        if (!jid) {
+            return res.status(400).json({ error: 'JID é obrigatório' });
+        }
+        
+        // Garantir formato correto do JID
+        let formattedJid = jid;
+        if (!jid.includes('@')) {
+            formattedJid = `${jid}@s.whatsapp.net`;
+        }
+        
+        const url = `${EVOLUTION_URL}/chat/fetchProfilePictureUrl/${INSTANCE_NAME}`;
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': EVOLUTION_API_KEY
+            },
+            body: JSON.stringify({ number: formattedJid })
+        });
+        
+        if (!response.ok) {
+            // Sem foto de perfil ou privacidade ativada
+            return res.json({ profilePicUrl: null });
+        }
+        
+        const data = await response.json();
+        res.json({ profilePicUrl: data.profilePictureUrl || data.url || null });
+        
+    } catch (error) {
+        console.error('[profile-picture] Erro:', error);
+        res.json({ profilePicUrl: null }); // Retorna null em caso de erro
+    }
+});
+
+/**
+ * POST /api/contacts/save
+ * Salvar/atualizar contato no sistema
+ */
+app.post('/api/contacts/save', async (req, res) => {
+    try {
+        const { phone, name, pushName, profilePicUrl } = req.body;
+        
+        if (!phone) {
+            return res.status(400).json({ error: 'Phone é obrigatório' });
+        }
+        
+        const normalizedPhone = phone.replace(/\D/g, '').replace(/^55/, '');
+        
+        // Aqui você pode salvar no Supabase se configurado
+        // Por enquanto, apenas confirma recebimento
+        console.log(`[CONTACT SAVE] ${normalizedPhone}: ${name || pushName}`);
+        
+        res.json({ success: true, phone: normalizedPhone, name: name || pushName });
+        
+    } catch (error) {
+        console.error('[contacts/save] Erro:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
 
 app.listen(PORT, () => {
     console.log(`Servidor rodando em http://localhost:${PORT}`);

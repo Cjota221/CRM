@@ -1580,81 +1580,251 @@ function findAndRenderClientCRM(chatId) {
         phoneWithoutDDI = whatsappPhone.substring(2); // Remove "55"
     }
     
-    console.log('[CRM] Buscando cliente para phone:', {
-        original: chatId,
-        whatsappPhone,
-        phoneWithoutDDI,
-        clientCount: allClients.length
-    });
-    
-    // Estratégia de Match melhorada:
-    // 1. Tentar match exato (com ou sem DDI)
-    // 2. Tentar match pelo último 9 dígitos
-    // 3. Tentar match pelo último 8 dígitos
-    let client = null;
-    
-    client = allClients.find(c => {
-        const storedPhone = (c.telefone || c.celular || c.whatsapp || '').replace(/\D/g, '');
-        if (!storedPhone) return false;
-        
-        // Match 1: Exato
-        if (storedPhone === whatsappPhone) {
-            console.log('[CRM] Match EXATO encontrado:', { stored: storedPhone, whatsapp: whatsappPhone });
-            return true;
-        }
-        
-        // Match 2: Exato sem DDI
-        if (storedPhone === phoneWithoutDDI) {
-            console.log('[CRM] Match EXATO (sem DDI) encontrado:', { stored: storedPhone, whatsapp: phoneWithoutDDI });
-            return true;
-        }
-        
-        // Match 3: Últimos 9 dígitos
-        const last9stored = storedPhone.slice(-9);
-        const last9whatsapp = phoneWithoutDDI.slice(-9);
-        if (last9stored && last9whatsapp && last9stored === last9whatsapp) {
-            console.log('[CRM] Match ÚLTIMOS 9 DÍGITOS encontrado:', { stored: last9stored, whatsapp: last9whatsapp });
-            return true;
-        }
-        
-        // Match 4: Últimos 8 dígitos
-        const last8stored = storedPhone.slice(-8);
-        const last8whatsapp = phoneWithoutDDI.slice(-8);
-        if (last8stored && last8whatsapp && last8stored === last8whatsapp) {
-            console.log('[CRM] Match ÚLTIMOS 8 DÍGITOS encontrado:', { stored: last8stored, whatsapp: last8whatsapp });
-            return true;
-        }
-        
-        return false;
-    });
+    console.log('[CRM Brain] Buscando dados para:', phoneWithoutDDI);
     
     // Nome do perfil WhatsApp (pushname)
     const whatsappName = currentChatData?.pushName || currentChatData?.name || 'Contato';
     
+    // Mostrar loading
+    panel.innerHTML = `
+        <div class="flex items-center justify-center py-8">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500"></div>
+        </div>
+    `;
+    
+    // Chamar API do "Cérebro"
+    fetch(`${API_BASE}/client-brain/${phoneWithoutDDI}`)
+        .then(res => res.json())
+        .then(data => {
+            console.log('[CRM Brain] Resposta:', data);
+            
+            if (!data.found) {
+                // Lead novo - não encontrado no sistema
+                renderNewLeadPanelBrain(whatsappPhone, whatsappName, data);
+            } else {
+                // Cliente encontrado - mostrar painel completo
+                currentClient = data.client;
+                renderClientPanelBrain(data, whatsappPhone);
+            }
+        })
+        .catch(err => {
+            console.error('[CRM Brain] Erro:', err);
+            // Fallback: usar busca local
+            fallbackLocalClientSearch(chatId, whatsappPhone, phoneWithoutDDI, whatsappName);
+        });
+}
+
+// Fallback para busca local (quando API falha)
+function fallbackLocalClientSearch(chatId, whatsappPhone, phoneWithoutDDI, whatsappName) {
+    let client = allClients.find(c => {
+        const storedPhone = (c.telefone || c.celular || c.whatsapp || '').replace(/\D/g, '').replace(/^55/, '');
+        if (!storedPhone) return false;
+        return storedPhone === phoneWithoutDDI || storedPhone.slice(-9) === phoneWithoutDDI.slice(-9);
+    });
+    
     if (!client) {
-        console.log('[CRM] Cliente NÃO encontrado. Exibindo Lead Novo.');
-        // CENÁRIO B: Cliente não encontrado - Lead Novo
-        // Passar o número completo com DDI para renderização
         const displayPhone = whatsappPhone.startsWith('55') ? whatsappPhone : '55' + whatsappPhone;
         renderNewLeadPanel(displayPhone, whatsappName);
         currentClient = null;
-        
-        // Adicionar tag "Lead Novo" automaticamente
-        if (!chatTags[chatId]) chatTags[chatId] = [];
-        const leadTag = allTags.find(t => t.name.toLowerCase().includes('lead'));
-        if (leadTag && !chatTags[chatId].includes(leadTag.id)) {
-            chatTags[chatId].push(leadTag.id);
-            localStorage.setItem('crm_chat_tags', JSON.stringify(chatTags));
-            renderChatTags();
-        }
-        return;
+    } else {
+        currentClient = client;
+        renderClientPanel(client, whatsappPhone);
     }
+}
+
+// Painel de Lead Novo (versão Brain)
+function renderNewLeadPanelBrain(phone, whatsappName, brainData) {
+    const panel = document.getElementById('crmDataContainer');
     
-    console.log('[CRM] Cliente ENCONTRADO:', client.nome, client.telefone || client.celular || client.whatsapp);
+    panel.innerHTML = `
+        <div class="space-y-4">
+            <!-- Badge Lead Novo com insight -->
+            <div class="bg-gradient-to-r from-blue-50 to-blue-100 border border-blue-200 rounded-xl p-4">
+                <div class="flex items-center gap-3 mb-2">
+                    <div class="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center text-white text-xl">
+                        ${brainData.statusEmoji || '🆕'}
+                    </div>
+                    <div>
+                        <p class="font-bold text-blue-800 text-lg">${brainData.status || 'Lead Novo'}</p>
+                        <p class="text-xs text-blue-600">Primeira interação</p>
+                    </div>
+                </div>
+                <p class="text-sm text-blue-700 mt-2">${brainData.insight || 'Cliente não encontrado no sistema de pedidos.'}</p>
+            </div>
+            
+            <!-- Info do WhatsApp -->
+            <div class="bg-slate-50 rounded-xl p-4">
+                <p class="text-xs text-slate-500 mb-1">Nome no WhatsApp</p>
+                <p class="font-semibold text-slate-800">${escapeHtml(whatsappName)}</p>
+                <p class="text-xs text-slate-400 mt-2">Telefone: ${formatPhone(phone)}</p>
+            </div>
+            
+            <!-- Dica -->
+            <div class="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                <p class="text-sm text-amber-700">
+                    <strong>💡 Dica:</strong> ${brainData.recommendation || 'Pergunte o nome e interesse do cliente.'}
+                </p>
+            </div>
+            
+            <!-- Formulário de Cadastro Rápido -->
+            <div class="border border-slate-200 rounded-xl p-4 space-y-3">
+                <h4 class="font-semibold text-slate-800 flex items-center gap-2">
+                    <i data-lucide="user-plus" class="w-4 h-4"></i>
+                    Cadastrar Cliente
+                </h4>
+                
+                <div>
+                    <label class="block text-xs text-slate-500 mb-1">Nome *</label>
+                    <input type="text" id="newClientName" value="${escapeHtml(whatsappName)}" class="input text-sm">
+                </div>
+                
+                <div>
+                    <label class="block text-xs text-slate-500 mb-1">Email</label>
+                    <input type="email" id="newClientEmail" placeholder="email@exemplo.com" class="input text-sm">
+                </div>
+                
+                <input type="hidden" id="newClientPhone" value="${phone}">
+                
+                <button onclick="saveNewClient()" class="w-full btn btn-primary">
+                    <i data-lucide="save" class="w-4 h-4"></i>
+                    Salvar Cadastro
+                </button>
+            </div>
+        </div>
+    `;
+    lucide.createIcons();
+}
+
+// Painel de Cliente (versão Brain com histórico completo)
+function renderClientPanelBrain(brainData, phone) {
+    const panel = document.getElementById('crmDataContainer');
+    const client = brainData.client;
+    const metrics = brainData.metrics;
     
-    // CENÁRIO A: Cliente encontrado
-    currentClient = client;
-    renderClientPanel(client, whatsappPhone);
+    // Cor do status
+    const statusColors = {
+        'purple': 'from-purple-500 to-purple-600',
+        'green': 'from-emerald-500 to-emerald-600',
+        'blue': 'from-blue-500 to-blue-600',
+        'gray': 'from-slate-400 to-slate-500'
+    };
+    const gradientColor = statusColors[brainData.statusColor] || 'from-emerald-500 to-emerald-600';
+    
+    // Produtos frequentes HTML
+    const productsHtml = brainData.products && brainData.products.length > 0 
+        ? brainData.products.map(p => `
+            <div class="flex justify-between items-center py-1.5 border-b border-slate-100 last:border-0">
+                <span class="text-sm text-slate-700 truncate flex-1">${escapeHtml(p.name)}</span>
+                <span class="text-xs text-slate-400 ml-2">${p.qty}x</span>
+            </div>
+        `).join('')
+        : '<p class="text-xs text-slate-400 text-center py-2">Sem histórico de produtos</p>';
+    
+    // Últimos pedidos HTML
+    const ordersHtml = brainData.orders && brainData.orders.length > 0
+        ? brainData.orders.map(o => `
+            <div class="p-3 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
+                <div class="flex justify-between items-start mb-1">
+                    <span class="font-medium text-slate-800 text-sm">#${o.id}</span>
+                    <span class="font-bold text-emerald-600 text-sm">R$ ${parseFloat(o.total).toFixed(2)}</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-xs text-slate-500">${new Date(o.date).toLocaleDateString('pt-BR')}</span>
+                    <span class="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-600">${o.items} itens</span>
+                </div>
+            </div>
+        `).join('')
+        : '<p class="text-xs text-slate-400 text-center py-3">Nenhum pedido encontrado</p>';
+
+    panel.innerHTML = `
+        <div class="space-y-4">
+            <!-- Header do Cliente com Status -->
+            <div class="bg-gradient-to-br ${gradientColor} rounded-xl p-4 text-white">
+                <div class="flex items-center gap-3 mb-3">
+                    <div class="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center text-2xl font-bold backdrop-blur">
+                        ${client.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <h3 class="font-bold text-lg truncate">${escapeHtml(client.name)}</h3>
+                        <p class="text-sm opacity-90">${brainData.statusEmoji} ${brainData.status}</p>
+                    </div>
+                </div>
+                <p class="text-sm opacity-90">${brainData.insight}</p>
+            </div>
+            
+            <!-- KPIs -->
+            <div class="grid grid-cols-3 gap-2">
+                <div class="bg-slate-50 p-3 rounded-xl text-center">
+                    <p class="text-xs text-slate-500 mb-1">Pedidos</p>
+                    <p class="text-xl font-bold text-slate-800">${metrics.ordersCount}</p>
+                </div>
+                <div class="bg-slate-50 p-3 rounded-xl text-center">
+                    <p class="text-xs text-slate-500 mb-1">Ticket</p>
+                    <p class="text-lg font-bold text-emerald-600">R$ ${parseInt(metrics.avgTicket)}</p>
+                </div>
+                <div class="bg-slate-50 p-3 rounded-xl text-center">
+                    <p class="text-xs text-slate-500 mb-1">Total</p>
+                    <p class="text-lg font-bold text-blue-600">R$ ${parseInt(metrics.totalSpent)}</p>
+                </div>
+            </div>
+            
+            <!-- Última Compra -->
+            ${metrics.lastPurchaseDate ? `
+                <div class="bg-gradient-to-r from-slate-50 to-slate-100 p-3 rounded-xl flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm">
+                        <i data-lucide="calendar" class="w-5 h-5 text-slate-500"></i>
+                    </div>
+                    <div>
+                        <p class="text-xs text-slate-500">Última compra</p>
+                        <p class="font-semibold text-slate-800">${new Date(metrics.lastPurchaseDate).toLocaleDateString('pt-BR')} <span class="text-slate-400 font-normal">(${metrics.daysSinceLastPurchase}d)</span></p>
+                    </div>
+                </div>
+            ` : ''}
+            
+            <!-- Produtos Frequentes -->
+            <div class="border border-slate-200 rounded-xl p-3">
+                <h4 class="font-semibold text-slate-800 text-sm flex items-center gap-2 mb-2">
+                    <i data-lucide="star" class="w-4 h-4 text-amber-500"></i>
+                    Produtos Favoritos
+                </h4>
+                <div class="max-h-32 overflow-y-auto">
+                    ${productsHtml}
+                </div>
+            </div>
+            
+            <!-- Últimos Pedidos -->
+            <div>
+                <h4 class="font-semibold text-slate-800 text-sm flex items-center gap-2 mb-2">
+                    <i data-lucide="receipt" class="w-4 h-4"></i>
+                    Últimos Pedidos
+                </h4>
+                <div class="space-y-2">
+                    ${ordersHtml}
+                </div>
+            </div>
+            
+            <!-- Recomendação -->
+            <div class="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                <p class="text-sm text-amber-700">${brainData.recommendation}</p>
+            </div>
+            
+            <!-- Dados de Contato -->
+            <div class="bg-slate-50 rounded-xl p-3 text-sm">
+                <p class="text-slate-600"><strong>Email:</strong> ${client.email || 'Não informado'}</p>
+                <p class="text-slate-600"><strong>Telefone:</strong> ${formatPhone(phone)}</p>
+                ${client.city ? `<p class="text-slate-600"><strong>Cidade:</strong> ${client.city}${client.state ? ' - ' + client.state : ''}</p>` : ''}
+            </div>
+            
+            <!-- Ações -->
+            <div class="flex flex-col gap-2 pt-2 border-t border-slate-100">
+                <button onclick="generateCoupon('${client.id}')" class="w-full btn btn-secondary text-sm">
+                    <i data-lucide="ticket" class="w-4 h-4"></i>
+                    Gerar Cupom Exclusivo
+                </button>
+            </div>
+        </div>
+    `;
+    lucide.createIcons();
 }
 
 function renderNewLeadPanel(phone, whatsappName) {

@@ -196,14 +196,15 @@ class ChatLoadingSystem {
             }
         };
         
+        // Gerar avatar (foto ou inicial)
+        const avatarHTML = this.generateAvatarHTML(chat);
+        
         div.innerHTML = `
             <div class="flex gap-3">
                 <!-- Avatar -->
-                <div class="flex-shrink-0">
-                    ${chat.isGroup 
-                        ? '<div class="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-lg">👥</div>'
-                        : `<div class="w-12 h-12 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center text-white font-bold">${chat.displayName.charAt(0).toUpperCase()}</div>`
-                    }
+                <div class="flex-shrink-0 relative">
+                    ${avatarHTML}
+                    ${chat.isKnownClient ? '<div class="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white" title="Cliente cadastrado"></div>' : ''}
                 </div>
                 
                 <!-- Conteúdo -->
@@ -227,6 +228,46 @@ class ChatLoadingSystem {
         `;
         
         return div;
+    }
+    
+    /**
+     * Gerar HTML do avatar (foto ou inicial colorida)
+     */
+    generateAvatarHTML(chat) {
+        const initial = (chat.displayName || '?').charAt(0).toUpperCase();
+        
+        // Grupo: emoji de grupo
+        if (chat.isGroup) {
+            if (chat.profilePicUrl) {
+                return `<img src="${chat.profilePicUrl}" alt="${chat.displayName}" class="w-12 h-12 rounded-full object-cover" onerror="this.outerHTML='<div class=\\'w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-lg\\'>👥</div>'">`;
+            }
+            return '<div class="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-lg">👥</div>';
+        }
+        
+        // Contato: foto se disponível, senão inicial
+        if (chat.profilePicUrl) {
+            return `<img src="${chat.profilePicUrl}" alt="${chat.displayName}" class="w-12 h-12 rounded-full object-cover" onerror="this.outerHTML='<div class=\\'w-12 h-12 rounded-full ${this.getAvatarGradient(initial)} flex items-center justify-center text-white font-bold\\'>${initial}</div>'">`;
+        }
+        
+        return `<div class="w-12 h-12 rounded-full ${this.getAvatarGradient(initial)} flex items-center justify-center text-white font-bold">${initial}</div>`;
+    }
+    
+    /**
+     * Obter gradiente baseado na inicial (cores variadas)
+     */
+    getAvatarGradient(initial) {
+        const colors = [
+            'bg-gradient-to-br from-green-400 to-green-600',
+            'bg-gradient-to-br from-blue-400 to-blue-600',
+            'bg-gradient-to-br from-purple-400 to-purple-600',
+            'bg-gradient-to-br from-pink-400 to-pink-600',
+            'bg-gradient-to-br from-orange-400 to-orange-600',
+            'bg-gradient-to-br from-teal-400 to-teal-600',
+            'bg-gradient-to-br from-indigo-400 to-indigo-600',
+            'bg-gradient-to-br from-red-400 to-red-600'
+        ];
+        const index = initial.charCodeAt(0) % colors.length;
+        return colors[index];
     }
     
     /**
