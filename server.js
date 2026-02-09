@@ -165,8 +165,10 @@ async function ensureCrmCache() {
             fetchAllPages('https://api.facilzap.app.br/produtos', FACILZAP_TOKEN)
         ]);
         
-        crmCache = { clients, orders, products, lastUpdate: new Date() };
-        console.log(`[CACHE] ✅ Auto-carregado: ${clients.length} clientes, ${orders.length} pedidos`);
+        // Enriquecer produtos (mesma lógica do /api/facilzap-proxy)
+        const productsEnriched = enrichProducts(products);
+        crmCache = { clients, orders, products: productsEnriched, lastUpdate: new Date() };
+        console.log(`[CACHE] ✅ Auto-carregado: ${clients.length} clientes, ${orders.length} pedidos, ${productsEnriched.length} produtos`);
         return true;
     } catch (error) {
         console.error('[CACHE] Erro ao auto-carregar:', error.message);
@@ -174,6 +176,49 @@ async function ensureCrmCache() {
     } finally {
         crmCacheLoading = false;
     }
+}
+
+/**
+ * Enriquecer lista de produtos com link_oficial, preço normalizado, imagem e estoque
+ * Reutilizado em /api/facilzap-proxy e ensureCrmCache
+ */
+function enrichProducts(products) {
+    return products.map(p => {
+        const slug = p.slug || p.url_amigavel || p.nome?.toLowerCase()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .replace(/\s+/g, '-').replace(/[^\w-]/g, '') || p.id;
+
+        const preco = parseFloat(p.preco_promocional || p.preco_venda || p.preco || p.valor || 0) || 0;
+
+        let imagem = '';
+        if (Array.isArray(p.imagens) && p.imagens.length > 0) {
+            imagem = p.imagens[0].url || p.imagens[0].src || p.imagens[0];
+        } else if (p.imagem_principal) {
+            imagem = p.imagem_principal;
+        } else if (p.imagem) {
+            imagem = p.imagem;
+        } else if (p.thumbnail) {
+            imagem = p.thumbnail;
+        }
+
+        // Estoque: verificar múltiplos campos possíveis
+        const estoque = parseInt(
+            p.estoque ?? p.estoque_atual ?? p.quantidade_estoque ?? p.stock ?? p.qty ?? -1
+        );
+
+        // Referência / SKU
+        const referencia = p.referencia || p.codigo || p.sku || p.ref || '';
+
+        return {
+            ...p,
+            preco,
+            imagem: imagem || 'https://via.placeholder.com/300x300?text=Sem+Foto',
+            link_oficial: `${SITE_BASE_URL}/produto/${slug}`,
+            estoque,
+            referencia,
+            slug
+        };
+    });
 }
 
 // ============================================================================
@@ -256,32 +301,8 @@ app.get('/api/facilzap-proxy', async (req, res) => {
             fetchAllPages('https://api.facilzap.app.br/produtos', FACILZAP_TOKEN)
         ]);
 
-        // Enriquecer produtos com Link Oficial e campos normalizados
-        const productsEnriched = products.map(p => {
-             const slug = p.slug || p.url_amigavel || p.nome?.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]/g, '') || p.id;
-             
-             // Mapear preço (pode vir como 'preco', 'preco_venda', 'valor')
-             const preco = p.preco_promocional || p.preco_venda || p.preco || p.valor || 0;
-             
-             // Mapear imagem (pode vir como array 'imagens' ou campo único)
-             let imagem = '';
-             if (Array.isArray(p.imagens) && p.imagens.length > 0) {
-                 imagem = p.imagens[0].url || p.imagens[0].src || p.imagens[0];
-             } else if (p.imagem_principal) {
-                 imagem = p.imagem_principal;
-             } else if (p.imagem) {
-                 imagem = p.imagem;
-             } else if (p.thumbnail) {
-                 imagem = p.thumbnail;
-             }
-             
-             return {
-                 ...p,
-                 preco: parseFloat(preco) || 0,
-                 imagem: imagem || 'https://via.placeholder.com/300x300?text=Sem+Foto',
-                 link_oficial: `${SITE_BASE_URL}/produto/${slug}` 
-             };
-        });
+        // Enriquecer produtos com link, preço, imagem e estoque
+        const productsEnriched = enrichProducts(products);
 
         res.json({ clients, orders, products: productsEnriched });
         

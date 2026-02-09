@@ -3100,120 +3100,368 @@ async function sendAudioMessage(audioBlob) {
 // Atualizar a função filterChats existente para suportar novos filtros
 
 // ============================================================================
-// MODAL DE PRODUTOS
+// MODAL DE PRODUTOS (CATÁLOGO COM ESTOQUE + LINKS)
 // ============================================================================
+let productSearchTerm = '';
+let productStockFilter = 'all'; // 'all', 'inStock', 'outOfStock'
+let productViewMode = 'list'; // 'list', 'grid'
+
 function openProductModal() {
     document.getElementById('productModal').classList.remove('hidden');
-    renderProductList(allProducts); // Renderiza todos inicialmente
+    productSearchTerm = '';
+    productStockFilter = 'all';
+    const searchInput = document.getElementById('productSearch');
+    if (searchInput) searchInput.value = '';
+    updateProductCountLabel();
+    applyProductFilters();
 }
 
 function closeProductModal() {
     document.getElementById('productModal').classList.add('hidden');
 }
 
+function updateProductCountLabel() {
+    const label = document.getElementById('productCountLabel');
+    if (!label) return;
+    const total = allProducts.length;
+    const inStock = allProducts.filter(p => p.estoque === -1 || p.estoque > 0).length;
+    const outStock = allProducts.filter(p => p.estoque === 0).length;
+    label.textContent = `${total} produtos${outStock > 0 ? ` · ${outStock} sem estoque` : ''}`;
+}
+
 function searchProducts(query) {
-    const term = query.toLowerCase();
-    const filtered = allProducts.filter(p => 
-        (p.nome || '').toLowerCase().includes(term) || 
-        (p.codigo || '').toLowerCase().includes(term)
-    );
+    productSearchTerm = query;
+    applyProductFilters();
+}
+
+function filterProductStock(filter) {
+    productStockFilter = filter;
+    // Atualizar UI dos botões
+    ['All', 'InStock', 'OutOfStock'].forEach(f => {
+        const btn = document.getElementById(`stockFilter${f}`);
+        if (!btn) return;
+        if (f.toLowerCase().replace('of', 'Of') === filter || (f === 'All' && filter === 'all') ||
+            (f === 'InStock' && filter === 'inStock') || (f === 'OutOfStock' && filter === 'outOfStock')) {
+            btn.className = 'px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 border border-emerald-200 transition hover:bg-emerald-200';
+        } else {
+            btn.className = 'px-3 py-1.5 rounded-full text-xs font-medium bg-white text-slate-500 border border-slate-200 transition hover:bg-slate-100';
+        }
+    });
+    applyProductFilters();
+}
+
+function toggleProductView() {
+    productViewMode = productViewMode === 'list' ? 'grid' : 'list';
+    const btn = document.getElementById('productViewToggle');
+    if (btn) {
+        btn.innerHTML = productViewMode === 'list'
+            ? '<i data-lucide="layout-grid" class="w-3.5 h-3.5"></i> Grade'
+            : '<i data-lucide="list" class="w-3.5 h-3.5"></i> Lista';
+    }
+    applyProductFilters();
+}
+
+function applyProductFilters() {
+    let filtered = [...allProducts];
+    
+    // Filtro de busca
+    if (productSearchTerm) {
+        const term = productSearchTerm.toLowerCase();
+        filtered = filtered.filter(p =>
+            (p.nome || '').toLowerCase().includes(term) ||
+            (p.referencia || '').toLowerCase().includes(term) ||
+            (p.codigo || '').toLowerCase().includes(term) ||
+            (p.sku || '').toLowerCase().includes(term)
+        );
+    }
+    
+    // Filtro de estoque
+    if (productStockFilter === 'inStock') {
+        filtered = filtered.filter(p => p.estoque === -1 || p.estoque > 0);
+    } else if (productStockFilter === 'outOfStock') {
+        filtered = filtered.filter(p => p.estoque === 0);
+    }
+    
+    // Atualizar contador da busca
+    const countEl = document.getElementById('productSearchCount');
+    if (countEl) {
+        countEl.textContent = productSearchTerm ? `${filtered.length} encontrados` : '';
+    }
+    
     renderProductList(filtered);
 }
 
 function renderProductList(products) {
     const container = document.getElementById('productsListModal');
     if (products.length === 0) {
-        container.innerHTML = '<p class="text-center text-gray-400">Nenhum produto encontrado.</p>';
+        container.innerHTML = `
+            <div class="text-center py-12">
+                <div class="text-4xl mb-3">📦</div>
+                <p class="text-slate-500 font-medium">Nenhum produto encontrado</p>
+                <p class="text-sm text-slate-400 mt-1">Tente buscar com outros termos</p>
+            </div>`;
         return;
     }
     
-    container.innerHTML = products.slice(0, 50).map(p => {
+    if (productViewMode === 'grid') {
+        renderProductGrid(products, container);
+    } else {
+        renderProductListView(products, container);
+    }
+    
+    if (window.lucide) lucide.createIcons();
+}
+
+function renderProductListView(products, container) {
+    container.innerHTML = products.slice(0, 60).map((p, idx) => {
         const preco = parseFloat(p.preco || 0);
         const imagem = p.imagem || 'https://via.placeholder.com/60x60?text=Sem+Foto';
         const nome = p.nome || 'Produto sem nome';
         const link = p.link_oficial || '#';
+        const estoque = p.estoque ?? -1;
+        const ref = p.referencia || '';
+        const isOutOfStock = estoque === 0;
+        
+        // Badge de estoque
+        let stockBadge = '';
+        if (estoque === 0) {
+            stockBadge = '<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-600">Sem estoque</span>';
+        } else if (estoque > 0 && estoque <= 5) {
+            stockBadge = `<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">Últimas ${estoque} un.</span>`;
+        } else if (estoque > 5) {
+            stockBadge = `<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">${estoque} em estoque</span>`;
+        }
         
         return `
-        <div class="flex items-center gap-3 p-3 border rounded-lg hover:bg-slate-50 transition">
-            <img src="${imagem}" 
-                 onerror="this.src='https://via.placeholder.com/60x60?text=Sem+Foto'" 
-                 class="w-16 h-16 object-cover rounded-lg border border-slate-200 flex-shrink-0" 
-                 alt="${escapeHtml(nome)}">
-            <div class="flex-1 min-w-0">
-                <h5 class="font-semibold text-sm text-slate-800 truncate">${escapeHtml(nome)}</h5>
-                <p class="text-lg font-bold text-emerald-600 mt-1">R$ ${preco.toFixed(2)}</p>
+        <div class="flex items-center gap-3 p-3 border rounded-xl ${isOutOfStock ? 'bg-slate-50 opacity-60 border-slate-200' : 'hover:bg-slate-50 border-slate-200 hover:border-emerald-300'} transition group" data-product-idx="${idx}">
+            <div class="relative flex-shrink-0">
+                <img src="${imagem}"
+                     onerror="this.src='https://via.placeholder.com/60x60?text=Sem+Foto'"
+                     class="w-16 h-16 object-cover rounded-xl border border-slate-200"
+                     alt="${escapeHtml(nome)}">
+                ${isOutOfStock ? '<div class="absolute inset-0 bg-white/50 rounded-xl flex items-center justify-center"><span class="text-xs font-bold text-red-500">ESGOTADO</span></div>' : ''}
             </div>
-            <button onclick="sendProductMessage('${escapeHtml(nome)}', ${preco}, '${imagem}', '${link}')" 
-                    class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition flex items-center gap-2 flex-shrink-0">
-                <i data-lucide="send" class="w-4 h-4"></i>
-                Enviar
-            </button>
-        </div>
-    `}).join('');
-    
-    lucide.createIcons();
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 mb-0.5">
+                    <h5 class="font-semibold text-sm text-slate-800 truncate">${escapeHtml(nome)}</h5>
+                </div>
+                <div class="flex items-center gap-2 flex-wrap">
+                    <span class="text-base font-bold ${isOutOfStock ? 'text-slate-400 line-through' : 'text-emerald-600'}">R$ ${preco.toFixed(2)}</span>
+                    ${stockBadge}
+                    ${ref ? `<span class="text-xs text-slate-400">Ref: ${escapeHtml(ref)}</span>` : ''}
+                </div>
+            </div>
+            <div class="flex flex-col gap-1.5 flex-shrink-0">
+                ${!isOutOfStock ? `
+                    <button onclick="sendProductToChat(${idx})"
+                            class="bg-emerald-600 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-emerald-700 transition flex items-center gap-1.5"
+                            title="Enviar com foto + link">
+                        <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                        Enviar Link
+                    </button>
+                    <button onclick="copyProductLink(${idx})"
+                            class="bg-white text-slate-600 px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-200 hover:bg-slate-100 transition flex items-center gap-1.5"
+                            title="Copiar link">
+                        <i data-lucide="link" class="w-3 h-3"></i>
+                        Copiar
+                    </button>
+                ` : `
+                    <span class="text-xs text-red-400 font-medium text-center py-2">Indisponível</span>
+                `}
+            </div>
+        </div>`;
+    }).join('');
 }
 
-async function sendProductMessage(name, preco, imageUrl, link) {
+function renderProductGrid(products, container) {
+    container.innerHTML = '<div class="grid grid-cols-3 gap-3">' + products.slice(0, 60).map((p, idx) => {
+        const preco = parseFloat(p.preco || 0);
+        const imagem = p.imagem || 'https://via.placeholder.com/150x150?text=Sem+Foto';
+        const nome = p.nome || 'Produto sem nome';
+        const estoque = p.estoque ?? -1;
+        const isOutOfStock = estoque === 0;
+        
+        return `
+        <div class="border rounded-xl overflow-hidden ${isOutOfStock ? 'opacity-50' : 'hover:shadow-md hover:border-emerald-300'} transition group">
+            <div class="relative">
+                <img src="${imagem}"
+                     onerror="this.src='https://via.placeholder.com/150x150?text=Sem+Foto'"
+                     class="w-full h-36 object-cover"
+                     alt="${escapeHtml(nome)}">
+                ${isOutOfStock ? '<div class="absolute top-2 right-2 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">ESGOTADO</div>' : ''}
+                ${!isOutOfStock && estoque > 0 && estoque <= 5 ? `<div class="absolute top-2 right-2 bg-amber-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">Últimas ${estoque}</div>` : ''}
+            </div>
+            <div class="p-2.5">
+                <h5 class="font-medium text-xs text-slate-800 truncate mb-1">${escapeHtml(nome)}</h5>
+                <p class="text-sm font-bold ${isOutOfStock ? 'text-slate-400 line-through' : 'text-emerald-600'} mb-2">R$ ${preco.toFixed(2)}</p>
+                ${!isOutOfStock ? `
+                    <button onclick="sendProductToChat(${idx})"
+                            class="w-full bg-emerald-600 text-white py-1.5 rounded-lg text-xs font-medium hover:bg-emerald-700 transition flex items-center justify-center gap-1">
+                        <i data-lucide="send" class="w-3 h-3"></i>
+                        Enviar
+                    </button>
+                ` : '<p class="text-center text-xs text-red-400 py-1.5">Indisponível</p>'}
+            </div>
+        </div>`;
+    }).join('') + '</div>';
+}
+
+/**
+ * Enviar produto ao chat com imagem + mensagem formatada
+ * @param {number} idx - Índice do produto no array filtrado
+ */
+async function sendProductToChat(idx) {
+    // Pegar produto da lista atualmente filtrada
+    let filtered = [...allProducts];
+    if (productSearchTerm) {
+        const term = productSearchTerm.toLowerCase();
+        filtered = filtered.filter(p =>
+            (p.nome || '').toLowerCase().includes(term) ||
+            (p.referencia || '').toLowerCase().includes(term) ||
+            (p.codigo || '').toLowerCase().includes(term) ||
+            (p.sku || '').toLowerCase().includes(term)
+        );
+    }
+    if (productStockFilter === 'inStock') {
+        filtered = filtered.filter(p => p.estoque === -1 || p.estoque > 0);
+    } else if (productStockFilter === 'outOfStock') {
+        filtered = filtered.filter(p => p.estoque === 0);
+    }
+    
+    const product = filtered[idx];
+    if (!product) { alert('Produto não encontrado'); return; }
+    
     if (!currentChatId) {
-        alert('Nenhuma conversa selecionada');
+        alert('Selecione uma conversa primeiro');
         return;
     }
     
+    // Verificar estoque
+    if (product.estoque === 0) {
+        if (!confirm('Este produto está SEM ESTOQUE. Deseja enviar mesmo assim?')) return;
+    }
+    
     closeProductModal();
     
+    const nome = product.nome || 'Produto';
+    const preco = parseFloat(product.preco || 0);
+    const link = product.link_oficial || '#';
+    const imagem = product.imagem || '';
+    
+    // Nome do cliente para personalizar
+    const clientName = currentChatData?.pushName?.split(' ')[0] ||
+                       currentClient?.nome?.split(' ')[0] || '';
+    const greeting = clientName ? `Oi ${clientName}! ` : '';
+    
+    // Template profissional
+    const caption = `${greeting}Olha que linda essa opção! ✨\n\n*${nome}*\nPor apenas *R$ ${preco.toFixed(2)}*\n\nVeja mais detalhes e feche seu pedido aqui:\n${link}`;
+    
     try {
-        // Montar mensagem formatada
-        const caption = `*${name}*\n\n💰 Apenas *R$ ${preco.toFixed(2)}*\n\n👇 Compre aqui:\n${link}`;
+        const remoteJid = currentChatData?.remoteJid || currentChatId;
+        const phoneNumber = remoteJid.replace('@s.whatsapp.net', '').replace('@g.us', '');
         
-        // Enviar imagem com legenda
-        const phoneNumber = currentChatId.replace('@s.whatsapp.net', '').replace('@g.us', '');
-        
-        const response = await fetch(`${API_BASE}/whatsapp/send-media`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                phoneNumber,
-                media: imageUrl,
-                mediaType: 'image',
-                caption: caption
-            })
-        });
-        
-        const result = await response.json();
-        
-        if (result.error) {
-            throw new Error(result.error);
+        // Tentar enviar com imagem primeiro
+        if (imagem && !imagem.includes('placeholder')) {
+            const response = await fetch(`${API_BASE}/whatsapp/send-media`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    phoneNumber,
+                    media: imagem,
+                    mediaType: 'image',
+                    caption: caption
+                })
+            });
+            const result = await response.json();
+            if (result.error) throw new Error(result.error);
+        } else {
+            // Sem imagem: enviar como texto
+            const response = await fetch(`${API_BASE}/whatsapp/send-message`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    phoneNumber,
+                    message: caption
+                })
+            });
+            const result = await response.json();
+            if (result.error) throw new Error(result.error);
         }
         
-        // Recarregar mensagens
-        setTimeout(() => loadMessages(currentChatId), 1000);
+        showToast(`Produto "${nome}" enviado!`, 'success');
+        setTimeout(() => loadMessages(currentRemoteJid), 1500);
         
     } catch (error) {
         console.error('Erro ao enviar produto:', error);
-        alert('Erro ao enviar produto: ' + error.message);
+        showToast('Erro ao enviar: ' + error.message, 'error');
     }
 }
 
-// Manter função antiga por compatibilidade (se existir em outros lugares)
-async function sendProductLink(name, link) {
-    // Monta a mensagem
-    const message = `Olha esse produto: ${name} – ${link}`;
+/**
+ * Copiar link do produto para a área de transferência
+ */
+function copyProductLink(idx) {
+    let filtered = [...allProducts];
+    if (productSearchTerm) {
+        const term = productSearchTerm.toLowerCase();
+        filtered = filtered.filter(p =>
+            (p.nome || '').toLowerCase().includes(term) ||
+            (p.referencia || '').toLowerCase().includes(term) ||
+            (p.codigo || '').toLowerCase().includes(term) ||
+            (p.sku || '').toLowerCase().includes(term)
+        );
+    }
+    if (productStockFilter === 'inStock') {
+        filtered = filtered.filter(p => p.estoque === -1 || p.estoque > 0);
+    } else if (productStockFilter === 'outOfStock') {
+        filtered = filtered.filter(p => p.estoque === 0);
+    }
     
-    // Insere no input ou envia direto? O usuario pediu "Enviar"
-    // Vamos enviar direito
+    const product = filtered[idx];
+    if (!product) return;
     
-    // Fechar modal
+    const link = product.link_oficial || '#';
+    navigator.clipboard.writeText(link).then(() => {
+        showToast('Link copiado!', 'success');
+    }).catch(() => {
+        // Fallback
+        const input = document.getElementById('inputMessage');
+        if (input) {
+            input.value += (input.value ? ' ' : '') + link;
+            input.focus();
+        }
+    });
+}
+
+// Compatibilidade com chamadas antigas
+async function sendProductMessage(name, preco, imageUrl, link) {
+    if (!currentChatId) { alert('Nenhuma conversa selecionada'); return; }
     closeProductModal();
-    
-    // Usar função de envio
+    try {
+        const caption = `Olha que linda essa opção! ✨\n\n*${name}*\nPor apenas *R$ ${parseFloat(preco).toFixed(2)}*\n\nVeja mais detalhes e feche seu pedido aqui:\n${link}`;
+        const phoneNumber = (currentChatData?.remoteJid || currentChatId).replace('@s.whatsapp.net', '').replace('@g.us', '');
+        const response = await fetch(`${API_BASE}/whatsapp/send-media`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phoneNumber, media: imageUrl, mediaType: 'image', caption })
+        });
+        const result = await response.json();
+        if (result.error) throw new Error(result.error);
+        showToast(`Produto "${name}" enviado!`, 'success');
+        setTimeout(() => loadMessages(currentRemoteJid), 1500);
+    } catch (error) {
+        console.error('Erro ao enviar produto:', error);
+        showToast('Erro ao enviar: ' + error.message, 'error');
+    }
+}
+
+async function sendProductLink(name, link) {
+    closeProductModal();
     const input = document.getElementById('inputMessage');
     const originalText = input.value;
-    input.value = message;
+    input.value = `Olha esse produto: ${name} – ${link}`;
     await sendMessage();
-    
-    // Restaurar input se tivesse algo (ou não, comportamento de escolha)
-    if (originalText) input.value = originalText; 
+    if (originalText) input.value = originalText;
 }
 
 // Helpers
