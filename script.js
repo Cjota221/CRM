@@ -5170,70 +5170,180 @@ const AIVigilante = {
     renderUTIList() {
         const container = document.getElementById('uti-clients-list');
         if (!container) return;
-        const items = this.segments.uti.slice(0, 8);
+        const items = this.segments.uti.slice(0, 5);
+        const total = this.segments.uti.length;
         if (items.length === 0) { 
-            container.innerHTML = '<div class="text-center py-4 text-slate-400 text-sm"><i class="fas fa-check-circle text-2xl text-green-300 mb-2"></i><p>Nenhum cliente em UTI</p></div>'; 
+            container.innerHTML = '<div class="text-center py-4 text-slate-300 text-sm"><p>Nenhum cliente em UTI</p></div>'; 
             return; 
         }
-        container.innerHTML = items.map(c => `
-            <div class="bg-red-50 rounded-lg p-3 border border-red-100 hover:bg-red-100 transition-all">
-                <div class="flex justify-between items-start">
-                    <div class="flex-1 min-w-0">
-                        <p class="font-semibold text-slate-800 text-sm truncate">${escapeHtml(c.name)}</p>
-                        <p class="text-xs text-red-600 font-bold">💸 ${formatCurrency(c.stats.ltvPerdido)} perdido</p>
-                        <p class="text-xs text-slate-500">${c.stats.daysSinceLastPurchase} dias • ${c.stats.totalOrders} pedidos</p>
+        const shortName = (n) => { const p = (n||'').trim().split(/\s+/); return p.length <= 2 ? n : p[0] + ' ' + p[p.length-1]; };
+        container.innerHTML = items.map((c, i) => {
+            const pri = i === 0 ? 'border-l-red-500 bg-red-50/40' : i < 3 ? 'border-l-amber-400' : 'border-l-slate-200 opacity-80';
+            return `<div class="rounded-lg p-3 border border-slate-100 border-l-[3px] ${pri} hover:bg-slate-50 transition-all cursor-pointer" onclick="AIVigilante.askAnnyClient('${c.id}','uti')" title="${escapeHtml(c.name)} • ${c.stats.totalOrders} pedidos • Ciclo ${Math.round(c.stats.avgPurchaseInterval||0)}d">
+                <div class="flex justify-between items-center">
+                    <div class="min-w-0">
+                        <p class="font-semibold text-slate-700 text-sm truncate">${escapeHtml(shortName(c.name))}</p>
+                        <p class="text-xs text-slate-400">Inativa há ${c.stats.daysSinceLastPurchase}d</p>
                     </div>
-                    <button onclick="AIVigilante.sendCoupon('${c.id}')" class="bg-green-500 hover:bg-green-600 text-white text-xs px-2 py-1 rounded flex items-center gap-1">
-                        <i class="fab fa-whatsapp"></i>
-                    </button>
+                    <div class="text-right flex-shrink-0 ml-3">
+                        <p class="text-sm font-bold ${i === 0 ? 'text-red-600' : 'text-slate-600'}">-${formatCurrency(c.stats.ltvPerdido)}</p>
+                        <p class="text-xs text-slate-400">${c.stats.totalOrders} ped.</p>
+                    </div>
                 </div>
-            </div>
-        `).join('');
+            </div>`;
+        }).join('');
+        if (total > 5) {
+            container.innerHTML += `<div class="text-center pt-2"><button onclick="AIVigilante.toggleUtiExpand()" class="text-xs text-purple-600 hover:text-purple-700 font-medium" id="uti-expand-btn">Ver mais ${total - 5} →</button></div>`;
+        }
+    },
+    
+    utiExpanded: false,
+    toggleUtiExpand() {
+        this.utiExpanded = !this.utiExpanded;
+        const container = document.getElementById('uti-clients-list');
+        if (!container) return;
+        const items = this.utiExpanded ? this.segments.uti : this.segments.uti.slice(0, 5);
+        const total = this.segments.uti.length;
+        const shortName = (n) => { const p = (n||'').trim().split(/\s+/); return p.length <= 2 ? n : p[0] + ' ' + p[p.length-1]; };
+        container.innerHTML = items.map((c, i) => {
+            const pri = i === 0 ? 'border-l-red-500 bg-red-50/40' : i < 3 ? 'border-l-amber-400' : 'border-l-slate-200 opacity-80';
+            return `<div class="rounded-lg p-3 border border-slate-100 border-l-[3px] ${pri} hover:bg-slate-50 transition-all cursor-pointer" onclick="AIVigilante.askAnnyClient('${c.id}','uti')" title="${escapeHtml(c.name)} • ${c.stats.totalOrders} pedidos">
+                <div class="flex justify-between items-center">
+                    <div class="min-w-0">
+                        <p class="font-semibold text-slate-700 text-sm truncate">${escapeHtml(shortName(c.name))}</p>
+                        <p class="text-xs text-slate-400">Inativa há ${c.stats.daysSinceLastPurchase}d</p>
+                    </div>
+                    <div class="text-right flex-shrink-0 ml-3">
+                        <p class="text-sm font-bold ${i === 0 ? 'text-red-600' : 'text-slate-600'}">-${formatCurrency(c.stats.ltvPerdido)}</p>
+                        <p class="text-xs text-slate-400">${c.stats.totalOrders} ped.</p>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+        if (total > 5) {
+            container.innerHTML += `<div class="text-center pt-2"><button onclick="AIVigilante.toggleUtiExpand()" class="text-xs text-purple-600 hover:text-purple-700 font-medium">${this.utiExpanded ? 'Recolher' : 'Ver mais ' + (total - 5) + ' →'}</button></div>`;
+        }
     },
     
     renderHotList() {
         const container = document.getElementById('hot-clients-list');
         if (!container) return;
-        const items = this.segments.hot.slice(0, 8);
+        const items = this.segments.hot.slice(0, 5);
+        const total = this.segments.hot.length;
         if (items.length === 0) { 
-            container.innerHTML = '<div class="text-center py-4 text-slate-400 text-sm"><i class="fas fa-clock text-2xl text-amber-300 mb-2"></i><p>Nenhuma oportunidade agora</p></div>'; 
+            container.innerHTML = '<div class="text-center py-4 text-slate-300 text-sm"><p>Nenhuma oportunidade agora</p></div>'; 
             return; 
         }
-        container.innerHTML = items.map(c => `
-            <div class="bg-amber-50 rounded-lg p-3 border border-amber-100 hover:bg-amber-100 transition-all">
-                <div class="flex justify-between items-start">
-                    <div class="flex-1 min-w-0">
-                        <p class="font-semibold text-slate-800 text-sm truncate">${escapeHtml(c.name)}</p>
-                        <p class="text-xs text-amber-600 font-bold">🎯 Ticket médio: ${formatCurrency(c.stats.averageTicket)}</p>
-                        <p class="text-xs text-slate-500">Ciclo: ${Math.round(c.stats.avgPurchaseInterval)}d • Há ${c.stats.daysSinceLastPurchase}d</p>
+        const shortName = (n) => { const p = (n||'').trim().split(/\s+/); return p.length <= 2 ? n : p[0] + ' ' + p[p.length-1]; };
+        container.innerHTML = items.map((c, i) => {
+            const pri = i === 0 ? 'border-l-amber-500 bg-amber-50/40' : i < 3 ? 'border-l-amber-300' : 'border-l-slate-200 opacity-80';
+            return `<div class="rounded-lg p-3 border border-slate-100 border-l-[3px] ${pri} hover:bg-slate-50 transition-all cursor-pointer" onclick="AIVigilante.askAnnyClient('${c.id}','hot')" title="${escapeHtml(c.name)} • Ciclo ${Math.round(c.stats.avgPurchaseInterval)}d • ${c.stats.totalOrders} pedidos">
+                <div class="flex justify-between items-center">
+                    <div class="min-w-0">
+                        <p class="font-semibold text-slate-700 text-sm truncate">${escapeHtml(shortName(c.name))}</p>
+                        <p class="text-xs text-slate-400">Inativa há ${c.stats.daysSinceLastPurchase}d</p>
                     </div>
-                    <button onclick="AIVigilante.sendReminder('${c.id}')" class="bg-amber-500 hover:bg-amber-600 text-white text-xs px-2 py-1 rounded flex items-center gap-1">
-                        <i class="fab fa-whatsapp"></i>
-                    </button>
+                    <div class="text-right flex-shrink-0 ml-3">
+                        <p class="text-sm font-bold text-amber-600">${formatCurrency(c.stats.averageTicket)}/ped</p>
+                        <p class="text-xs text-slate-400">${c.stats.totalOrders} ped.</p>
+                    </div>
                 </div>
-            </div>
-        `).join('');
+            </div>`;
+        }).join('');
+        if (total > 5) {
+            container.innerHTML += `<div class="text-center pt-2"><button onclick="AIVigilante.toggleHotExpand()" class="text-xs text-purple-600 hover:text-purple-700 font-medium" id="hot-expand-btn">Ver mais ${total - 5} →</button></div>`;
+        }
+    },
+
+    hotExpanded: false,
+    toggleHotExpand() {
+        this.hotExpanded = !this.hotExpanded;
+        const container = document.getElementById('hot-clients-list');
+        if (!container) return;
+        const items = this.hotExpanded ? this.segments.hot : this.segments.hot.slice(0, 5);
+        const total = this.segments.hot.length;
+        const shortName = (n) => { const p = (n||'').trim().split(/\s+/); return p.length <= 2 ? n : p[0] + ' ' + p[p.length-1]; };
+        container.innerHTML = items.map((c, i) => {
+            const pri = i === 0 ? 'border-l-amber-500 bg-amber-50/40' : i < 3 ? 'border-l-amber-300' : 'border-l-slate-200 opacity-80';
+            return `<div class="rounded-lg p-3 border border-slate-100 border-l-[3px] ${pri} hover:bg-slate-50 transition-all cursor-pointer" onclick="AIVigilante.askAnnyClient('${c.id}','hot')" title="${escapeHtml(c.name)} • Ciclo ${Math.round(c.stats.avgPurchaseInterval)}d">
+                <div class="flex justify-between items-center">
+                    <div class="min-w-0">
+                        <p class="font-semibold text-slate-700 text-sm truncate">${escapeHtml(shortName(c.name))}</p>
+                        <p class="text-xs text-slate-400">Inativa há ${c.stats.daysSinceLastPurchase}d</p>
+                    </div>
+                    <div class="text-right flex-shrink-0 ml-3">
+                        <p class="text-sm font-bold text-amber-600">${formatCurrency(c.stats.averageTicket)}/ped</p>
+                        <p class="text-xs text-slate-400">${c.stats.totalOrders} ped.</p>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+        if (total > 5) {
+            container.innerHTML += `<div class="text-center pt-2"><button onclick="AIVigilante.toggleHotExpand()" class="text-xs text-purple-600 hover:text-purple-700 font-medium">${this.hotExpanded ? 'Recolher' : 'Ver mais ' + (total - 5) + ' →'}</button></div>`;
+        }
     },
     
     renderC4List() {
         const container = document.getElementById('c4-clients-list');
         if (!container) return;
-        const items = this.segments.c4.slice(0, 6);
+        const items = this.segments.c4.slice(0, 5);
+        const total = this.segments.c4.length;
         if (items.length === 0) { 
-            container.innerHTML = '<div class="text-center py-4 text-slate-400 text-sm"><i class="fas fa-rocket text-2xl text-violet-300 mb-2"></i><p>Analisando candidatas...</p></div>'; 
+            container.innerHTML = '<div class="text-center py-4 text-slate-300 text-sm"><p>Analisando candidatas...</p></div>'; 
             return; 
         }
-        container.innerHTML = items.map(c => `
-            <div class="bg-violet-50 rounded-lg p-3 border border-violet-100 hover:bg-violet-100 transition-all">
-                <div class="flex justify-between items-start">
-                    <div class="flex-1 min-w-0">
-                        <p class="font-semibold text-slate-800 text-sm truncate">${escapeHtml(c.name)}</p>
-                        <p class="text-xs text-violet-600">${c.stats.totalOrders} pedidos • a cada ${Math.round(c.stats.avgPurchaseInterval || 7)}d</p>
+        const shortName = (n) => { const p = (n||'').trim().split(/\s+/); return p.length <= 2 ? n : p[0] + ' ' + p[p.length-1]; };
+        container.innerHTML = items.map((c, i) => {
+            const pri = i < 3 ? 'border-l-purple-400' : 'border-l-slate-200 opacity-80';
+            return `<div class="rounded-lg p-3 border border-slate-100 border-l-[3px] ${pri} hover:bg-slate-50 transition-all cursor-pointer" onclick="AIVigilante.askAnnyClient('${c.id}','c4')" title="${escapeHtml(c.name)} • ${c.stats.totalOrders} pedidos  • Intervalo ${Math.round(c.stats.avgPurchaseInterval||7)}d">
+                <div class="flex justify-between items-center">
+                    <div class="min-w-0">
+                        <p class="font-semibold text-slate-700 text-sm truncate">${escapeHtml(shortName(c.name))}</p>
+                        <p class="text-xs text-slate-400">${c.stats.totalOrders} pedidos • a cada ${Math.round(c.stats.avgPurchaseInterval || 7)}d</p>
                     </div>
-                    <span class="bg-violet-500 text-white text-xs px-2 py-0.5 rounded">C4</span>
+                    <span class="text-xs font-semibold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full flex-shrink-0 ml-2">C4</span>
                 </div>
-            </div>
-        `).join('');
+            </div>`;
+        }).join('');
+        if (total > 5) {
+            container.innerHTML += `<div class="text-center pt-2"><button onclick="AIVigilante.toggleC4Expand()" class="text-xs text-purple-600 hover:text-purple-700 font-medium">Ver mais ${total - 5} →</button></div>`;
+        }
+    },
+
+    c4Expanded: false,
+    toggleC4Expand() {
+        this.c4Expanded = !this.c4Expanded;
+        const container = document.getElementById('c4-clients-list');
+        if (!container) return;
+        const items = this.c4Expanded ? this.segments.c4 : this.segments.c4.slice(0, 5);
+        const total = this.segments.c4.length;
+        const shortName = (n) => { const p = (n||'').trim().split(/\s+/); return p.length <= 2 ? n : p[0] + ' ' + p[p.length-1]; };
+        container.innerHTML = items.map((c, i) => {
+            const pri = i < 3 ? 'border-l-purple-400' : 'border-l-slate-200 opacity-80';
+            return `<div class="rounded-lg p-3 border border-slate-100 border-l-[3px] ${pri} hover:bg-slate-50 transition-all cursor-pointer" onclick="AIVigilante.askAnnyClient('${c.id}','c4')">
+                <div class="flex justify-between items-center">
+                    <div class="min-w-0">
+                        <p class="font-semibold text-slate-700 text-sm truncate">${escapeHtml(shortName(c.name))}</p>
+                        <p class="text-xs text-slate-400">${c.stats.totalOrders} pedidos • a cada ${Math.round(c.stats.avgPurchaseInterval || 7)}d</p>
+                    </div>
+                    <span class="text-xs font-semibold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full flex-shrink-0 ml-2">C4</span>
+                </div>
+            </div>`;
+        }).join('');
+        if (total > 5) {
+            container.innerHTML += `<div class="text-center pt-2"><button onclick="AIVigilante.toggleC4Expand()" class="text-xs text-purple-600 hover:text-purple-700 font-medium">${this.c4Expanded ? 'Recolher' : 'Ver mais ' + (total - 5) + ' →'}</button></div>`;
+        }
+    },
+
+    askAnnyClient(clientId, tipo) {
+        const all = [...this.segments.uti, ...this.segments.hot, ...this.segments.c4, ...this.segments.baleia, ...this.segments.ciclo, ...this.segments.problema];
+        const c = all.find(x => String(x.id) === String(clientId));
+        if (!c) return;
+        let prompt = '';
+        if (tipo === 'uti') prompt = `Crie estratégia de recuperação para ${c.name}, que gastou ${formatCurrency(c.stats.totalSpent)} mas está inativa há ${c.stats.daysSinceLastPurchase} dias. LTV perdido: ${formatCurrency(c.stats.ltvPerdido)}.`;
+        else if (tipo === 'hot') prompt = `Crie mensagem de reativação para ${c.name}, ticket médio ${formatCurrency(c.stats.averageTicket)}, ciclo de ${Math.round(c.stats.avgPurchaseInterval)}d, inativa há ${c.stats.daysSinceLastPurchase}d.`;
+        else if (tipo === 'c4') prompt = `Analise potencial C4 Franquias de ${c.name}, ${c.stats.totalOrders} pedidos, intervalo médio ${Math.round(c.stats.avgPurchaseInterval||7)}d.`;
+        window.location.href = 'anny.html?prompt=' + encodeURIComponent(prompt);
     },
     
     // ========== AÇÕES COM INTEGRAÇÃO ANNY ==========
