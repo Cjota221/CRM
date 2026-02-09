@@ -39,15 +39,17 @@ class ChatLoadingSystem {
             const rawChats = await this.fetchRawChats();
             console.log(`[ChatLoader] Recebidos ${rawChats.length} chats brutos`);
             
-            // 2. Separar grupos de contatos
-            const groups = rawChats.filter(c => dataLayer.isGroupJid(c.remoteJid || c.id));
-            const contacts = rawChats.filter(c => !dataLayer.isGroupJid(c.remoteJid || c.id));
+            // 2. Separar grupos de contatos (usando window.isGroupJid)
+            const isGroup = window.isGroupJid || ((jid) => jid && String(jid).includes('@g.us'));
+            const groups = rawChats.filter(c => isGroup(c.remoteJid || c.id));
+            const contacts = rawChats.filter(c => !isGroup(c.remoteJid || c.id));
             
             console.log(`[ChatLoader] ${contacts.length} contatos, ${groups.length} grupos`);
             
             // 3. Enriquecer em paralelo (dados + auto-match)
-            const enrichedContacts = await dataLayer.enrichChats(contacts);
-            const enrichedGroups = await dataLayer.enrichChats(groups);
+            const dl = window.dataLayer || dataLayer;
+            const enrichedContacts = await dl.enrichChats(contacts);
+            const enrichedGroups = await dl.enrichChats(groups);
             
             // 4. Mesclar e ordenar por última mensagem
             this.allChats = [
@@ -163,11 +165,35 @@ class ChatLoadingSystem {
         
         div.className = `chat-item p-3 border-b hover:bg-gray-50 cursor-pointer transition select-none`;
         div.setAttribute('data-chat-key', chatKey);
+        
+        // CRÍTICO: Garantir que remoteJid existe
+        if (!chat.remoteJid) {
+            chat.remoteJid = chat.id;
+        }
+        if (!chat.id) {
+            chat.id = chat.remoteJid;
+        }
+        
         div.onclick = () => {
-            // Notificar que este chat foi clicado
-            window.dispatchEvent(new CustomEvent('chatSelected', { 
-                detail: { chat, chatKey } 
-            }));
+            console.log('========== CLICK em lib-chat-loader ==========');
+            console.log('Chat clicado:', chat.displayName);
+            console.log('Chat ID:', chat.id);
+            console.log('Chat remoteJid:', chat.remoteJid);
+            
+            // Chamar openChat diretamente (função global do atendimentos.js)
+            if (typeof window.openChat === 'function') {
+                console.log('Chamando window.openChat...');
+                window.openChat(chat);
+            } else if (typeof openChat === 'function') {
+                console.log('Chamando openChat...');
+                openChat(chat);
+            } else {
+                console.error('❌ Função openChat não encontrada!');
+                // Fallback: disparar evento
+                window.dispatchEvent(new CustomEvent('chatSelected', { 
+                    detail: { chat, chatKey } 
+                }));
+            }
         };
         
         div.innerHTML = `

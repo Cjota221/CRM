@@ -138,9 +138,53 @@
             color: #334155 !important;
             box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
         }
+        
+        /* Esconder scrollbar horizontal nas abas */
+        .scrollbar-hide {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+        
+        /* Animação de pulse para conexão */
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .animate-pulse-slow {
+            animation: pulse-dot 2s ease-in-out infinite;
+        }
+        
+        /* Status de conexão colorido */
+        .connection-connected { background-color: #10b981; }
+        .connection-connecting { background-color: #f59e0b; animation: pulse-dot 1s ease-in-out infinite; }
+        .connection-disconnected { background-color: #ef4444; }
+        .connection-error { background-color: #ef4444; }
+        
+        /* Toolbar buttons hover */
+        .toolbar-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        /* Notes panel animation */
+        #notesPanel.open {
+            transform: translateX(0);
+        }
     </style>
 </head>
 <body class="bg-slate-50 h-screen flex flex-col">
+
+    <!-- Barra de Alerta de Conexão (aparece quando desconectado) -->
+    <div id="connectionAlert" class="hidden bg-red-500 text-white px-4 py-2 text-center text-sm font-medium">
+        <i data-lucide="alert-triangle" class="w-4 h-4 inline mr-2"></i>
+        <span id="connectionAlertText">WhatsApp desconectado</span>
+        <button onclick="forceReconnect()" class="ml-4 bg-white text-red-600 px-3 py-1 rounded text-xs font-semibold hover:bg-red-50">
+            Reconectar
+        </button>
+    </div>
 
     <!-- Header -->
     <header class="bg-white border-b border-slate-100 h-16 flex items-center justify-between px-6 z-10">
@@ -170,7 +214,6 @@
                     <i data-lucide="megaphone" class="w-4 h-4 inline mr-1"></i>Campanhas
                 </button>
             </div>
-            </a>
             <div class="w-px h-6 bg-slate-200"></div>
             <div class="flex items-center gap-3">
                 <div class="w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center">
@@ -182,18 +225,21 @@
                 </div>
             </div>
         </div>
-        <div class="flex items-center gap-4">
-            <div id="connectionStatus" class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100">
-                <span class="status-dot status-disconnected"></span>
-                <span class="text-sm text-slate-600">Desconectado</span>
+        <div class="flex items-center gap-3">
+            <!-- Status de Conexão Melhorado -->
+            <div id="connectionStatus" class="flex items-center gap-2 px-4 py-2 rounded-xl cursor-pointer hover:bg-slate-50 transition" onclick="showConnectionDetails()">
+                <div id="connectionDot" class="w-3 h-3 rounded-full bg-slate-400 animate-pulse"></div>
+                <div class="flex flex-col">
+                    <span id="connectionText" class="text-sm font-medium text-slate-600">Verificando...</span>
+                    <span id="connectionSubtext" class="text-[10px] text-slate-400 hidden">Última verificação: agora</span>
+                </div>
             </div>
             <button onclick="disconnectWhatsapp()" class="btn btn-secondary text-sm py-2 text-red-600 hover:bg-red-50" title="Desconectar WhatsApp atual">
                 <i data-lucide="log-out" class="w-4 h-4"></i>
-                Trocar
             </button>
-            <button onclick="connectWhatsapp()" class="btn btn-primary text-sm py-2">
-                <i data-lucide="plug" class="w-4 h-4"></i>
-                Conectar
+            <button onclick="connectWhatsapp()" id="btnConnect" class="btn btn-primary text-sm py-2">
+                <i data-lucide="plug" class="w-4 h-4" id="connectIcon"></i>
+                <span id="connectText">Conectar</span>
             </button>
         </div>
     </header>
@@ -203,38 +249,56 @@
         
         <!-- Coluna 1: Lista de Chats -->
         <aside class="w-80 bg-white border-r border-slate-100 flex flex-col">
-            <div class="p-4 border-b border-slate-100">
+            <div class="p-3 border-b border-slate-100">
                 <div class="flex gap-2 mb-3">
                     <div class="relative flex-1">
                         <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                        <input type="text" id="searchChats" placeholder="Buscar conversa..." class="input pl-10 text-sm">
+                        <input type="text" id="searchChats" placeholder="Buscar conversa..." class="input pl-10 text-sm" oninput="searchChatsFilter(this.value)">
                     </div>
                     <button onclick="loadChats()" class="btn btn-secondary px-3" title="Atualizar Conversas">
                         <i data-lucide="refresh-cw" class="w-4 h-4"></i>
                     </button>
                 </div>
-                <!-- Abas de Filtro -->
-                <div class="flex gap-1 bg-slate-100 p-1 rounded-lg mb-2">
-                    <button onclick="filterChats('all')" id="filterAll" class="flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors bg-white text-slate-700 shadow-sm">
-                        Todos
+                
+                <!-- ABAS INTELIGENTES - Estilo Extensão -->
+                <div class="flex overflow-x-auto gap-1 pb-1 -mx-1 px-1 scrollbar-hide">
+                    <button onclick="filterChats('all')" id="filterAll" class="filter-tab flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all bg-emerald-500 text-white">
+                        <span>Todos</span>
+                        <span id="countAll" class="bg-white/20 text-white px-1.5 py-0.5 rounded text-[10px]">0</span>
                     </button>
-                    <button onclick="filterChats('chats')" id="filterChats" class="flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 hover:text-slate-700">
-                        <i data-lucide="user" class="w-3 h-3 inline mr-1"></i>Conversas
+                    <button onclick="filterChats('unread')" id="filterUnread" class="filter-tab flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all bg-slate-100 text-slate-600 hover:bg-slate-200">
+                        <i data-lucide="mail" class="w-3 h-3"></i>
+                        <span>Não Lidos</span>
+                        <span id="countUnread" class="bg-red-500 text-white px-1.5 py-0.5 rounded text-[10px] hidden">0</span>
                     </button>
-                    <button onclick="filterChats('groups')" id="filterGroups" class="flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 hover:text-slate-700">
-                        <i data-lucide="users" class="w-3 h-3 inline mr-1"></i>Grupos
+                    <button onclick="filterChats('waiting')" id="filterWaiting" class="filter-tab flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all bg-slate-100 text-slate-600 hover:bg-slate-200">
+                        <i data-lucide="clock" class="w-3 h-3"></i>
+                        <span>Aguardando</span>
+                        <span id="countWaiting" class="bg-amber-500 text-white px-1.5 py-0.5 rounded text-[10px] hidden">0</span>
+                    </button>
+                    <button onclick="filterChats('groups')" id="filterGroups" class="filter-tab flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all bg-slate-100 text-slate-600 hover:bg-slate-200">
+                        <i data-lucide="users" class="w-3 h-3"></i>
+                        <span>Grupos</span>
+                        <span id="countGroups" class="bg-blue-500 text-white px-1.5 py-0.5 rounded text-[10px] hidden">0</span>
+                    </button>
+                    <button onclick="filterChats('sales')" id="filterSales" class="filter-tab flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all bg-slate-100 text-slate-600 hover:bg-slate-200">
+                        <i data-lucide="shopping-bag" class="w-3 h-3"></i>
+                        <span>Vendas</span>
+                        <span id="countSales" class="bg-emerald-500 text-white px-1.5 py-0.5 rounded text-[10px] hidden">0</span>
                     </button>
                 </div>
-                <!-- Filtros Inteligentes -->
-                <div class="flex gap-1 flex-wrap">
-                    <button onclick="filterChats('vacuum')" id="filterVacuum" class="px-2 py-1 rounded-md text-xs font-medium transition-colors text-red-500 hover:bg-red-50 border border-red-200" title="Sem resposta há mais de 4h">
-                        <i data-lucide="alert-circle" class="w-3 h-3 inline mr-1"></i>Vácuo
+                
+                <!-- Filtros Adicionais -->
+                <div class="flex gap-1 flex-wrap mt-2">
+                    <button onclick="filterChats('vacuum')" id="filterVacuum" class="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors text-red-600 hover:bg-red-50 border border-red-200" title="Sem resposta há mais de 4h">
+                        <i data-lucide="alert-circle" class="w-3 h-3"></i>Vácuo
+                        <span id="countVacuum" class="hidden bg-red-100 text-red-600 px-1 rounded">0</span>
                     </button>
-                    <button onclick="filterChats('snoozed')" id="filterSnoozed" class="px-2 py-1 rounded-md text-xs font-medium transition-colors text-amber-500 hover:bg-amber-50 border border-amber-200" title="Conversas adiadas">
-                        <i data-lucide="alarm-clock" class="w-3 h-3 inline mr-1"></i>Adiados
+                    <button onclick="filterChats('snoozed')" id="filterSnoozed" class="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors text-amber-600 hover:bg-amber-50 border border-amber-200" title="Conversas adiadas">
+                        <i data-lucide="alarm-clock" class="w-3 h-3"></i>Adiados
                     </button>
-                    <button onclick="openTagFilterModal()" id="filterByTag" class="px-2 py-1 rounded-md text-xs font-medium transition-colors text-blue-500 hover:bg-blue-50 border border-blue-200" title="Filtrar por etiqueta">
-                        <i data-lucide="tag" class="w-3 h-3 inline mr-1"></i>Tags
+                    <button onclick="openTagFilterModal()" id="filterByTag" class="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors text-blue-600 hover:bg-blue-50 border border-blue-200" title="Filtrar por etiqueta">
+                        <i data-lucide="tag" class="w-3 h-3"></i>Tags
                     </button>
                 </div>
             </div>
@@ -300,6 +364,38 @@
                         <p class="text-slate-500 font-medium">Selecione uma conversa</p>
                         <p class="text-sm text-slate-400 mt-1">As mensagens aparecerão aqui</p>
                     </div>
+                </div>
+            </div>
+
+            <!-- TOOLBAR DO CHAT - Nova barra de ferramentas -->
+            <div id="chatToolbar" class="bg-slate-50 border-t border-slate-200 px-4 py-2 hidden">
+                <div class="flex items-center gap-2 overflow-x-auto">
+                    <button onclick="openQuickReplies()" class="toolbar-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 hover:border-slate-300 transition whitespace-nowrap">
+                        <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-500"></i>
+                        <span>Respostas Rápidas</span>
+                    </button>
+                    <button onclick="openScheduleModal()" class="toolbar-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 hover:border-slate-300 transition whitespace-nowrap">
+                        <i data-lucide="calendar" class="w-3.5 h-3.5 text-blue-500"></i>
+                        <span>Agendar</span>
+                    </button>
+                    <button onclick="toggleNotesPanel()" class="toolbar-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 hover:border-slate-300 transition whitespace-nowrap">
+                        <i data-lucide="sticky-note" class="w-3.5 h-3.5 text-yellow-500"></i>
+                        <span>Notas</span>
+                        <span id="notesCount" class="hidden bg-yellow-100 text-yellow-700 px-1.5 rounded text-[10px]">0</span>
+                    </button>
+                    <button onclick="openTagsModal()" class="toolbar-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 hover:border-slate-300 transition whitespace-nowrap">
+                        <i data-lucide="tag" class="w-3.5 h-3.5 text-purple-500"></i>
+                        <span>Tags</span>
+                    </button>
+                    <div class="w-px h-6 bg-slate-200"></div>
+                    <button onclick="openProductModal()" class="toolbar-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 hover:border-slate-300 transition whitespace-nowrap">
+                        <i data-lucide="package" class="w-3.5 h-3.5 text-emerald-500"></i>
+                        <span>Produtos</span>
+                    </button>
+                    <button onclick="markAsResolved()" class="toolbar-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-50 border border-emerald-200 text-emerald-600 hover:bg-emerald-100 transition whitespace-nowrap">
+                        <i data-lucide="check-circle" class="w-3.5 h-3.5"></i>
+                        <span>Resolvido</span>
+                    </button>
                 </div>
             </div>
 
@@ -898,6 +994,142 @@
                         Criar Campanha
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Agendamento de Mensagem -->
+    <div id="scheduleModal" class="fixed inset-0 hidden z-50 flex items-center justify-center">
+        <div class="fixed inset-0 modal-overlay" onclick="closeScheduleModal()"></div>
+        <div class="relative bg-white w-[450px] rounded-2xl shadow-xl">
+            <div class="p-5 border-b border-slate-100 flex justify-between items-center">
+                <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-xl bg-blue-100 flex items-center justify-center">
+                        <i data-lucide="calendar" class="w-5 h-5 text-blue-600"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-slate-800">Agendar Mensagem</h3>
+                        <p class="text-xs text-slate-500">Será enviada automaticamente</p>
+                    </div>
+                </div>
+                <button onclick="closeScheduleModal()" class="text-slate-400 hover:text-slate-600">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-5 space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Data e Hora</label>
+                    <input type="datetime-local" id="scheduleDateTime" class="input w-full">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Mensagem</label>
+                    <textarea id="scheduleMessage" class="input w-full h-32 resize-none" placeholder="Digite a mensagem a ser enviada..."></textarea>
+                </div>
+                <div class="bg-blue-50 p-3 rounded-lg text-sm text-blue-700">
+                    <i data-lucide="info" class="w-4 h-4 inline mr-1"></i>
+                    A mensagem será enviada mesmo se você não estiver online.
+                </div>
+            </div>
+            <div class="p-5 border-t border-slate-100 flex justify-end gap-2">
+                <button onclick="closeScheduleModal()" class="btn btn-secondary">Cancelar</button>
+                <button onclick="saveScheduledMessage()" class="btn btn-primary">
+                    <i data-lucide="clock" class="w-4 h-4"></i>
+                    Agendar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Painel de Notas (Post-it lateral) -->
+    <div id="notesPanel" class="fixed right-0 top-16 bottom-0 w-80 bg-yellow-50 border-l border-yellow-200 shadow-lg z-40 transform translate-x-full transition-transform duration-300">
+        <div class="p-4 border-b border-yellow-200 flex justify-between items-center bg-yellow-100">
+            <div class="flex items-center gap-2">
+                <i data-lucide="sticky-note" class="w-5 h-5 text-yellow-600"></i>
+                <h3 class="font-semibold text-yellow-800">Notas do Cliente</h3>
+            </div>
+            <button onclick="toggleNotesPanel()" class="text-yellow-600 hover:text-yellow-800">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+        <div class="p-4">
+            <textarea id="clientNotes" class="w-full h-64 p-3 rounded-lg border-2 border-yellow-200 bg-white focus:border-yellow-400 focus:outline-none resize-none text-sm" placeholder="Adicione anotações sobre este cliente...
+
+Ex: 
+- Preferência por pagamento via PIX
+- Compra sempre aos sábados
+- Sensível a preço"></textarea>
+            <div class="mt-3 flex gap-2">
+                <button onclick="saveClientNotes()" class="btn btn-primary flex-1 bg-yellow-500 hover:bg-yellow-600 border-0">
+                    <i data-lucide="save" class="w-4 h-4"></i>
+                    Salvar Notas
+                </button>
+            </div>
+            <div class="mt-4 pt-4 border-t border-yellow-200">
+                <h4 class="text-xs font-semibold text-yellow-700 mb-2">HISTÓRICO DE NOTAS</h4>
+                <div id="notesHistory" class="space-y-2 max-h-48 overflow-y-auto text-xs text-yellow-800">
+                    <p class="text-slate-400 italic">Nenhuma nota anterior</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Detalhes de Conexão -->
+    <div id="connectionDetailsModal" class="fixed inset-0 hidden z-50 flex items-center justify-center">
+        <div class="fixed inset-0 modal-overlay" onclick="closeConnectionDetails()"></div>
+        <div class="relative bg-white w-[500px] rounded-2xl shadow-xl">
+            <div class="p-5 border-b border-slate-100 flex justify-between items-center">
+                <div class="flex items-center gap-3">
+                    <div id="connectionDetailIcon" class="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center">
+                        <i data-lucide="wifi" class="w-5 h-5 text-slate-600"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-slate-800">Status da Conexão</h3>
+                        <p id="connectionDetailStatus" class="text-xs text-slate-500">Verificando...</p>
+                    </div>
+                </div>
+                <button onclick="closeConnectionDetails()" class="text-slate-400 hover:text-slate-600">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-5 space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-slate-50 p-4 rounded-xl">
+                        <p class="text-xs text-slate-500 mb-1">Última Verificação</p>
+                        <p id="connectionLastCheck" class="text-sm font-semibold text-slate-700">-</p>
+                    </div>
+                    <div class="bg-slate-50 p-4 rounded-xl">
+                        <p class="text-xs text-slate-500 mb-1">Última Conexão</p>
+                        <p id="connectionLastConnected" class="text-sm font-semibold text-slate-700">-</p>
+                    </div>
+                    <div class="bg-slate-50 p-4 rounded-xl">
+                        <p class="text-xs text-slate-500 mb-1">Tentativas de Reconexão</p>
+                        <p id="connectionAttempts" class="text-sm font-semibold text-slate-700">0</p>
+                    </div>
+                    <div class="bg-slate-50 p-4 rounded-xl">
+                        <p class="text-xs text-slate-500 mb-1">Auto-Reconectar</p>
+                        <p id="connectionAutoReconnect" class="text-sm font-semibold text-emerald-600">Ativo</p>
+                    </div>
+                </div>
+                
+                <div class="border-t border-slate-100 pt-4">
+                    <h4 class="text-xs font-semibold text-slate-600 mb-3 flex items-center gap-2">
+                        <i data-lucide="alert-circle" class="w-4 h-4"></i>
+                        ERROS RECENTES
+                    </h4>
+                    <div id="connectionErrors" class="space-y-2 max-h-40 overflow-y-auto">
+                        <p class="text-xs text-slate-400 italic">Nenhum erro recente</p>
+                    </div>
+                </div>
+            </div>
+            <div class="p-5 border-t border-slate-100 flex gap-2">
+                <button onclick="resetReconnectCounter()" class="btn btn-secondary flex-1">
+                    <i data-lucide="refresh-ccw" class="w-4 h-4"></i>
+                    Resetar Contador
+                </button>
+                <button onclick="forceReconnect()" class="btn btn-primary flex-1">
+                    <i data-lucide="power" class="w-4 h-4"></i>
+                    Forçar Reconexão
+                </button>
             </div>
         </div>
     </div>

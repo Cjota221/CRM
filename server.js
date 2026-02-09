@@ -10,6 +10,63 @@ const app = express();
 const PORT = 3000;
 
 // ============================================================================
+// SISTEMA DE MONITORAMENTO DE CONEXÃO (HEALTH CHECK)
+// ============================================================================
+const ConnectionMonitor = {
+    status: 'unknown',
+    lastCheck: null,
+    lastConnected: null,
+    reconnectAttempts: 0,
+    maxReconnectAttempts: 5,
+    checkInterval: 5 * 60 * 1000, // 5 minutos
+    reconnectDelay: 30 * 1000, // 30 segundos entre tentativas
+    errorLog: [],
+    isReconnecting: false,
+    
+    // Log de erro com timestamp
+    logError(type, message, details = {}) {
+        const entry = {
+            timestamp: new Date().toISOString(),
+            type,
+            message,
+            details
+        };
+        this.errorLog.unshift(entry);
+        // Manter apenas últimos 50 erros
+        if (this.errorLog.length > 50) this.errorLog.pop();
+        console.error(`[CONNECTION ERROR] ${type}: ${message}`, details);
+        return entry;
+    },
+    
+    // Atualizar status
+    updateStatus(newStatus, reason = '') {
+        const oldStatus = this.status;
+        this.status = newStatus;
+        this.lastCheck = new Date().toISOString();
+        
+        if (newStatus === 'connected') {
+            this.lastConnected = new Date().toISOString();
+            this.reconnectAttempts = 0;
+        }
+        
+        console.log(`[CONNECTION] Status: ${oldStatus} → ${newStatus} ${reason ? `(${reason})` : ''}`);
+        return { oldStatus, newStatus, reason };
+    },
+    
+    // Obter resumo do status
+    getStatusSummary() {
+        return {
+            status: this.status,
+            lastCheck: this.lastCheck,
+            lastConnected: this.lastConnected,
+            reconnectAttempts: this.reconnectAttempts,
+            isReconnecting: this.isReconnecting,
+            recentErrors: this.errorLog.slice(0, 5)
+        };
+    }
+};
+
+// ============================================================================
 // CACHE EM MEMÓRIA PARA CRM
 // ============================================================================
 let crmCache = {
@@ -25,11 +82,10 @@ let crmCache = {
 // Token da FacilZap
 const FACILZAP_TOKEN = process.env.FACILZAP_TOKEN;
 
-// Configuração Evolution API (WhatsApp)
-// Preencha com os dados da sua instância Evolution
-const EVOLUTION_URL = process.env.EVOLUTION_URL || 'http://localhost:8080'; 
-const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'SUA_API_KEY_GLOBAL_EVOLUTION';
-const INSTANCE_NAME = 'crm_atendimento';
+// Configuração Evolution API (WhatsApp) - VPS Hostinger/Easypanel
+const EVOLUTION_URL = process.env.EVOLUTION_URL || 'https://evolution-api.cjota.site'; 
+const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'EB6B5AB56A35-43C4-B590-1188166D4E7A';
+const INSTANCE_NAME = process.env.INSTANCE_NAME || 'Cjota';
 const SITE_BASE_URL = process.env.SITE_BASE_URL || 'https://seusite.com.br'; // Para gerar links de produtos
 
 // Middleware
@@ -289,12 +345,165 @@ app.delete('/api/webhook/carts/:id', (req, res) => {
 
 
 // ============================================================================
-// ROTAS WHATSAPP (EVOLUTION API)
+// ROTAS WHATSAPP (EVOLUTION API) + SISTEMA DE MONITORAMENTO
 // ============================================================================
 const evolutionHeaders = {
     'apikey': EVOLUTION_API_KEY,
     'Content-Type': 'application/json'
 };
+
+// Função auxiliar para verificar conexão
+async function checkWhatsAppConnection() {
+    try {
+        const url = `${EVOLUTION_URL}/instance/connectionState/${INSTANCE_NAME}`;
+        const response = await fetch(url, { headers: evolutionHeaders, timeout: 10000 });
+        
+        if (response.status === 404) {
+            ConnectionMonitor.updateStatus('not_created', 'Instância não existe');
+            return { connected: false, state: 'NOT_CREATED', reason: 'Instância não criada' };
+        }
+        
+        const data = await response.json();
+        const state = data.instance?.state || data.state || 'unknown';
+        
+        if (state === 'open') {
+            ConnectionMonitor.updateStatus('connected');
+            return { connected: true, state: 'open', data };
+        } else if (state === 'close' || state === 'closed') {
+            ConnectionMonitor.updateStatus('disconnected', 'Sessão fechada');
+            return { connected: false, state, reason: 'Sessão do WhatsApp fechada' };
+        } else if (state === 'connecting') {
+            ConnectionMonitor.updateStatus('connecting');
+            return { connected: false, state, reason: 'Conectando...' };
+        } else {
+            ConnectionMonitor.updateStatus('disconnected', state);
+            return { connected: false, state, reason: `Estado: ${state}` };
+        }
+    } catch (error) {
+        const errorType = error.code === 'ECONNREFUSED' ? 'api_offline' : 
+                         error.code === 'ETIMEDOUT' ? 'timeout' : 'network_error';
+        
+        ConnectionMonitor.logError(errorType, error.message, { code: error.code });
+        ConnectionMonitor.updateStatus('error', error.message);
+        
+        return { 
+            connected: false, 
+            state: 'ERROR', 
+            reason: errorType === 'api_offline' ? 'Evolution API está offline' :
+                    errorType === 'timeout' ? 'Timeout na conexão' :
+                    `Erro de rede: ${error.message}`
+        };
+    }
+}
+
+// Função de auto-reconnect
+async function attemptAutoReconnect() {
+    if (ConnectionMonitor.isReconnecting) {
+        console.log('[AUTO-RECONNECT] Já está tentando reconectar...');
+        return false;
+    }
+    
+    if (ConnectionMonitor.reconnectAttempts >= ConnectionMonitor.maxReconnectAttempts) {
+        console.log('[AUTO-RECONNECT] Limite de tentativas atingido. Aguardando intervenção manual.');
+        ConnectionMonitor.logError('max_attempts', 'Máximo de tentativas de reconexão atingido');
+        return false;
+    }
+    
+    ConnectionMonitor.isReconnecting = true;
+    ConnectionMonitor.reconnectAttempts++;
+    
+    console.log(`[AUTO-RECONNECT] Tentativa ${ConnectionMonitor.reconnectAttempts}/${ConnectionMonitor.maxReconnectAttempts}...`);
+    
+    try {
+        // 1. Tentar restart da instância
+        console.log('[AUTO-RECONNECT] Fazendo restart da instância...');
+        await fetch(`${EVOLUTION_URL}/instance/restart/${INSTANCE_NAME}`, {
+            method: 'PUT',
+            headers: evolutionHeaders
+        });
+        
+        // Aguardar um pouco
+        await new Promise(r => setTimeout(r, 5000));
+        
+        // 2. Verificar se reconectou
+        const status = await checkWhatsAppConnection();
+        
+        if (status.connected) {
+            console.log('[AUTO-RECONNECT] ✅ Reconectado com sucesso!');
+            ConnectionMonitor.isReconnecting = false;
+            return true;
+        }
+        
+        // 3. Se ainda não conectou, tentar connect
+        console.log('[AUTO-RECONNECT] Tentando /connect...');
+        const connectRes = await fetch(`${EVOLUTION_URL}/instance/connect/${INSTANCE_NAME}`, {
+            headers: evolutionHeaders
+        });
+        
+        await new Promise(r => setTimeout(r, 3000));
+        const finalStatus = await checkWhatsAppConnection();
+        
+        ConnectionMonitor.isReconnecting = false;
+        return finalStatus.connected;
+        
+    } catch (error) {
+        ConnectionMonitor.logError('reconnect_failed', error.message);
+        ConnectionMonitor.isReconnecting = false;
+        return false;
+    }
+}
+
+// Health Check periódico (a cada 5 minutos)
+let healthCheckInterval = null;
+
+function startHealthCheck() {
+    if (healthCheckInterval) clearInterval(healthCheckInterval);
+    
+    console.log('[HEALTH CHECK] Iniciando monitoramento de conexão (intervalo: 5min)');
+    
+    // Verificar imediatamente
+    checkWhatsAppConnection().then(status => {
+        console.log(`[HEALTH CHECK] Status inicial: ${status.state}`);
+    });
+    
+    healthCheckInterval = setInterval(async () => {
+        console.log('[HEALTH CHECK] Verificando conexão...');
+        const status = await checkWhatsAppConnection();
+        
+        if (!status.connected && status.state !== 'connecting' && status.state !== 'NOT_CREATED') {
+            console.log('[HEALTH CHECK] ⚠️ Desconectado! Tentando reconexão automática...');
+            attemptAutoReconnect();
+        }
+    }, ConnectionMonitor.checkInterval);
+}
+
+// Endpoint para status detalhado da conexão
+app.get('/api/whatsapp/connection-status', async (req, res) => {
+    const liveStatus = await checkWhatsAppConnection();
+    res.json({
+        ...ConnectionMonitor.getStatusSummary(),
+        liveCheck: liveStatus
+    });
+});
+
+// Endpoint para resetar contador de tentativas
+app.post('/api/whatsapp/reset-reconnect', (req, res) => {
+    ConnectionMonitor.reconnectAttempts = 0;
+    ConnectionMonitor.isReconnecting = false;
+    res.json({ success: true, message: 'Contador de reconexão resetado' });
+});
+
+// Endpoint para forçar reconexão
+app.post('/api/whatsapp/force-reconnect', async (req, res) => {
+    ConnectionMonitor.reconnectAttempts = 0; // Resetar contador
+    const success = await attemptAutoReconnect();
+    res.json({ 
+        success, 
+        message: success ? 'Reconectado com sucesso' : 'Falha na reconexão',
+        status: ConnectionMonitor.getStatusSummary()
+    });
+});
+
 // 0. DESCONECTAR / LOGOUT - Para trocar de WhatsApp
 app.post('/api/whatsapp/logout', async (req, res) => {
     try {
@@ -818,6 +1027,24 @@ app.post('/api/whatsapp/messages/fetch', async (req, res) => {
         
         console.log(`[API] Buscando mensagens para remoteJid: ${remoteJid}`);
         
+        // Função auxiliar para normalizar telefone (mesmo do frontend)
+        const normalizePhone = (raw) => {
+            if (!raw) return '';
+            let str = String(raw)
+                .replace(/@s\.whatsapp\.net/gi, '')
+                .replace(/@c\.us/gi, '')
+                .replace(/@g\.us/gi, '')
+                .replace(/@lid/gi, '');
+            let cleaned = str.replace(/\D/g, '');
+            if (cleaned.startsWith('55') && cleaned.length >= 12) {
+                cleaned = cleaned.substring(2);
+            }
+            if (cleaned.length > 11) {
+                cleaned = cleaned.slice(-11);
+            }
+            return cleaned;
+        };
+        
         // Tentar primeira forma (estrutura padrão)
         let response = await fetch(url, {
             method: 'POST',
@@ -859,12 +1086,26 @@ app.post('/api/whatsapp/messages/fetch', async (req, res) => {
             });
             data = await response.json();
             
-            // Filtrar manualmente se tiver retornado
+            // Filtrar manualmente com normalização de telefone
+            const requestPhoneNormalized = normalizePhone(remoteJid);
+            const isGroupRequest = String(remoteJid).includes('@g.us');
+            
             if (data?.messages && Array.isArray(data.messages)) {
-                data.messages = data.messages.filter(msg => 
-                    msg.key?.remoteJid === remoteJid || 
-                    msg.remoteJid === remoteJid
-                );
+                data.messages = data.messages.filter(msg => {
+                    const msgRemoteJid = msg.key?.remoteJid || msg.remoteJid || '';
+                    
+                    // Se for grupo, comparar JID completo
+                    if (isGroupRequest) {
+                        return msgRemoteJid === remoteJid || 
+                               msgRemoteJid.replace(/@g\.us$/, '') === remoteJid.replace(/@g\.us$/, '');
+                    }
+                    
+                    // Para contatos, usar normalização
+                    const msgPhoneNormalized = normalizePhone(msgRemoteJid);
+                    return msgPhoneNormalized === requestPhoneNormalized ||
+                           (msgPhoneNormalized.length >= 9 && requestPhoneNormalized.length >= 9 &&
+                            msgPhoneNormalized.slice(-9) === requestPhoneNormalized.slice(-9));
+                });
             }
             console.log(`[API] Tentativa 3 (todas + filtro): mensagens encontradas = ${data?.messages?.length || 0}`);
         }
@@ -1608,8 +1849,167 @@ app.post('/api/sync-client-name', async (req, res) => {
     }
 });
 
+// ============================================================================
+// WEBHOOK EVOLUTION API / N8N - RECEBER MENSAGENS EM TEMPO REAL
+// ============================================================================
+
+// Armazenamento de mensagens em tempo real (em memória)
+let realtimeMessages = [];
+let chatModes = {}; // { 'jid': 'ia' | 'humano' } - controle de quem atende
+
+// Endpoint principal: recebe webhooks da Evolution API (via N8N ou direto)
+app.post('/api/evolution/webhook', (req, res) => {
+    try {
+        const payload = req.body || {};
+        const event = payload.event || payload.action || 'unknown';
+        
+        console.log(`[EVOLUTION WEBHOOK] Evento: ${event}`);
+        
+        switch (event) {
+            case 'messages.upsert':
+            case 'MESSAGES_UPSERT': {
+                const data = payload.data || payload;
+                const messages = Array.isArray(data) ? data : [data];
+                
+                messages.forEach(msg => {
+                    const key = msg.key || {};
+                    const jid = key.remoteJid || msg.remoteJid || '';
+                    const fromMe = key.fromMe || false;
+                    const pushName = msg.pushName || '';
+                    
+                    // Extrair texto da mensagem
+                    let text = '';
+                    const message = msg.message || {};
+                    if (message.conversation) text = message.conversation;
+                    else if (message.extendedTextMessage?.text) text = message.extendedTextMessage.text;
+                    else if (message.imageMessage?.caption) text = message.imageMessage.caption;
+                    else if (message.videoMessage?.caption) text = message.videoMessage.caption;
+                    else if (message.documentMessage) text = '[Documento]';
+                    else if (message.audioMessage) text = '[Áudio]';
+                    else if (message.stickerMessage) text = '[Figurinha]';
+                    else if (message.contactMessage) text = '[Contato]';
+                    else if (message.locationMessage) text = '[Localização]';
+                    
+                    const realtimeMsg = {
+                        id: key.id || `rt_${Date.now()}`,
+                        jid,
+                        fromMe,
+                        pushName,
+                        text,
+                        timestamp: msg.messageTimestamp || Math.floor(Date.now() / 1000),
+                        receivedAt: new Date().toISOString(),
+                        isGroup: jid.includes('@g.us'),
+                        raw: msg
+                    };
+                    
+                    // Salvar na fila
+                    realtimeMessages.unshift(realtimeMsg);
+                    if (realtimeMessages.length > 500) realtimeMessages = realtimeMessages.slice(0, 500);
+                    
+                    console.log(`[MSG ${fromMe ? 'ENVIADA' : 'RECEBIDA'}] ${pushName || jid}: ${text.substring(0, 80)}`);
+                });
+                break;
+            }
+            
+            case 'messages.update':
+            case 'MESSAGES_UPDATE': {
+                console.log('[EVOLUTION WEBHOOK] Status de mensagem atualizado');
+                break;
+            }
+            
+            case 'connection.update':
+            case 'CONNECTION_UPDATE': {
+                const state = payload.data?.state || payload.state;
+                console.log(`[EVOLUTION WEBHOOK] Conexão: ${state}`);
+                if (state === 'open') {
+                    ConnectionMonitor.updateStatus('connected', 'Webhook confirmou conexão');
+                } else if (state === 'close') {
+                    ConnectionMonitor.updateStatus('disconnected', 'Webhook reportou desconexão');
+                }
+                break;
+            }
+            
+            // N8N pode enviar evento customizado de transferência IA → Humano
+            case 'transfer.to.human':
+            case 'TRANSFER_TO_HUMAN': {
+                const jid = payload.data?.jid || payload.jid;
+                if (jid) {
+                    chatModes[jid] = 'humano';
+                    console.log(`[TRANSFER] Chat ${jid} transferido da IA para atendente humano`);
+                }
+                break;
+            }
+            
+            // N8N pode devolver atendimento para a IA
+            case 'transfer.to.ai':
+            case 'TRANSFER_TO_AI': {
+                const jid = payload.data?.jid || payload.jid;
+                if (jid) {
+                    chatModes[jid] = 'ia';
+                    console.log(`[TRANSFER] Chat ${jid} devolvido para IA`);
+                }
+                break;
+            }
+            
+            default:
+                console.log(`[EVOLUTION WEBHOOK] Evento não tratado: ${event}`);
+        }
+        
+        res.json({ success: true, event });
+    } catch (error) {
+        console.error('[EVOLUTION WEBHOOK] Erro:', error.message);
+        res.status(200).json({ success: false, error: error.message });
+    }
+});
+
+// API: Buscar mensagens em tempo real (polling do frontend)
+app.get('/api/evolution/messages', (req, res) => {
+    const since = req.query.since ? new Date(req.query.since) : null;
+    const jid = req.query.jid || null;
+    
+    let filtered = realtimeMessages;
+    
+    if (since) {
+        filtered = filtered.filter(m => new Date(m.receivedAt) > since);
+    }
+    if (jid) {
+        filtered = filtered.filter(m => m.jid === jid);
+    }
+    
+    res.json({ messages: filtered, total: filtered.length });
+});
+
+// API: Verificar/alterar modo do chat (IA ou Humano)
+app.get('/api/evolution/chat-mode/:jid', (req, res) => {
+    const jid = req.params.jid;
+    const mode = chatModes[jid] || 'ia'; // padrão: IA atende
+    res.json({ jid, mode });
+});
+
+app.post('/api/evolution/chat-mode/:jid', (req, res) => {
+    const jid = req.params.jid;
+    const mode = req.body.mode; // 'ia' ou 'humano'
+    if (mode !== 'ia' && mode !== 'humano') {
+        return res.status(400).json({ error: 'Mode deve ser "ia" ou "humano"' });
+    }
+    chatModes[jid] = mode;
+    console.log(`[CHAT MODE] ${jid} → ${mode}`);
+    res.json({ success: true, jid, mode });
+});
+
+// API: Listar todos os modos de chat
+app.get('/api/evolution/chat-modes', (req, res) => {
+    res.json({ modes: chatModes });
+});
+
+
 app.listen(PORT, () => {
     console.log(`Servidor rodando em http://localhost:${PORT}`);
     console.log('Central de Atendimento pronta.');
     console.log('Anny AI disponível em /api/anny');
+    console.log(`Evolution API: ${EVOLUTION_URL} (instância: ${INSTANCE_NAME})`);
+    console.log(`Webhook Evolution: http://localhost:${PORT}/api/evolution/webhook`);
+    
+    // Iniciar monitoramento de conexão WhatsApp
+    startHealthCheck();
 });

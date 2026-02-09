@@ -12,27 +12,30 @@
 function normalizePhone(raw) {
     if (!raw) return '';
     
-    // 1. Converter para string e remover tudo que não é dígito
-    let cleaned = String(raw)
-        .replace(/\D/g, ''); // Remove +, -, parênteses, espaços, @, etc
+    // 1. Converter para string
+    let str = String(raw);
     
-    // 2. Se começar com 55 (DDI do Brasil) e tiver 12+ dígitos, remover DDI
-    if (cleaned.startsWith('55') && cleaned.length > 11) {
+    // 2. Remover sufixos de JID do WhatsApp primeiro
+    str = str
+        .replace(/@s\.whatsapp\.net/gi, '')
+        .replace(/@c\.us/gi, '')
+        .replace(/@g\.us/gi, '')
+        .replace(/@lid/gi, '');
+    
+    // 3. Remover tudo que não é dígito
+    let cleaned = str.replace(/\D/g, '');
+    
+    // 4. Se começar com 55 (DDI do Brasil) e tiver 12+ dígitos, remover DDI
+    if (cleaned.startsWith('55') && cleaned.length >= 12) {
         cleaned = cleaned.substring(2);
     }
     
-    // 3. Se ficou com mais de 11 dígitos, algo está errado - pegar últimos 11
+    // 5. Se ficou com mais de 11 dígitos, pegar últimos 11 (número principal)
     if (cleaned.length > 11) {
-        console.warn(`[normalizePhone] Número muito longo (${cleaned.length} dígitos): ${raw}`);
         cleaned = cleaned.slice(-11);
     }
     
-    // 4. Validação: deve ter 10 ou 11 dígitos
-    if (cleaned.length < 10 || cleaned.length > 11) {
-        console.error(`[normalizePhone] Número inválido após limpeza: ${cleaned} (${cleaned.length} dígitos)`);
-        return '';
-    }
-    
+    // 6. Retornar número limpo - sempre retornar, mesmo se curto
     return cleaned;
 }
 
@@ -43,7 +46,8 @@ function normalizePhone(raw) {
  */
 function extractPhoneFromJid(jid) {
     if (!jid) return '';
-    // Remover qualquer sufixo (@s.whatsapp.net, @c.us, @g.us, etc)
+    
+    // Usar normalizePhone que já lida com todos os sufixos
     return normalizePhone(jid);
 }
 
@@ -182,15 +186,40 @@ class DataLayer {
     }
     
     /**
-     * Enriquecer múltiplos chats (paralelo para performance)
+     * Enriquecer múltiplos chats com controle de concorrência
+     * Processa em lotes para não sobrecarregar o navegador
      */
     async enrichChats(rawChats) {
         console.log(`[DataLayer] Enriquecendo ${rawChats.length} chats...`);
         const start = performance.now();
         
-        const enrichedChats = await Promise.all(
-            rawChats.map(chat => this.enrichChat(chat))
-        );
+        // Configuração de batching - limite de requisições simultâneas
+        const BATCH_SIZE = 20; // Máximo de requisições paralelas por vez
+        const BATCH_DELAY = 50; // Delay entre lotes (ms)
+        
+        const enrichedChats = [];
+        
+        // Processar em lotes
+        for (let i = 0; i < rawChats.length; i += BATCH_SIZE) {
+            const batch = rawChats.slice(i, i + BATCH_SIZE);
+            
+            // Processar lote atual em paralelo
+            const batchResults = await Promise.all(
+                batch.map(chat => this.enrichChat(chat))
+            );
+            
+            enrichedChats.push(...batchResults);
+            
+            // Log de progresso a cada 10 lotes
+            if ((i / BATCH_SIZE) % 10 === 0 && i > 0) {
+                console.log(`[DataLayer] Progresso: ${Math.min(i + BATCH_SIZE, rawChats.length)}/${rawChats.length} chats`);
+            }
+            
+            // Pequeno delay entre lotes para não sobrecarregar
+            if (i + BATCH_SIZE < rawChats.length) {
+                await new Promise(resolve => setTimeout(resolve, BATCH_DELAY));
+            }
+        }
         
         const elapsed = performance.now() - start;
         console.log(`[DataLayer] ✅ Enriquecimento completo em ${elapsed.toFixed(0)}ms`);
@@ -237,21 +266,35 @@ const dataLayer = new DataLayer();
 
 /**
  * Formatar telefone para exibição
- * @param {string} phone - "62999998888"
+ * @param {string} phone - "62999998888" ou JID completo
  * @returns {string} "+55 (62) 99999-8888"
  */
 function formatPhoneForDisplay(phone) {
-    if (!phone || phone.length < 10) return phone;
+    if (!phone) return '';
     
     const normalized = normalizePhone(phone);
+    
+    if (!normalized || normalized.length < 8) {
+        // Se for muito curto, retornar como está
+        return phone;
+    }
+    
     if (normalized.length === 11) {
         // Celular: (XX) 9XXXX-XXXX
         return `+55 (${normalized.substring(0, 2)}) ${normalized.substring(2, 7)}-${normalized.substring(7)}`;
     } else if (normalized.length === 10) {
         // Fixo: (XX) XXXX-XXXX
         return `+55 (${normalized.substring(0, 2)}) ${normalized.substring(2, 6)}-${normalized.substring(6)}`;
+    } else if (normalized.length === 9) {
+        // Celular sem DDD: 9XXXX-XXXX
+        return `${normalized.substring(0, 5)}-${normalized.substring(5)}`;
+    } else if (normalized.length === 8) {
+        // Fixo sem DDD: XXXX-XXXX
+        return `${normalized.substring(0, 4)}-${normalized.substring(4)}`;
     }
-    return phone;
+    
+    // Formato desconhecido, retornar com prefixo
+    return `+55 ${normalized}`;
 }
 
 /**

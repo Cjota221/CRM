@@ -61,9 +61,10 @@ let allClients = [];
 let allProducts = [];
 let allOrders = [];
 let allChats = []; // Armazena todos os chats para filtro
-let currentFilter = 'all'; // 'all', 'chats', 'groups', 'vacuum', 'snoozed'
+let currentFilter = 'all'; // 'all', 'unread', 'waiting', 'groups', 'sales', 'vacuum', 'snoozed'
 let currentTagFilter = null;
 let chatRefreshInterval = null;
+let connectionCheckInterval = null;
 
 // Sistema de Tags
 let allTags = JSON.parse(localStorage.getItem('crm_tags') || '[]');
@@ -75,6 +76,19 @@ let editingQuickReplyId = null;
 
 // Sistema de Snooze
 let snoozedChats = JSON.parse(localStorage.getItem('crm_snoozed') || '{}'); // { chatId: timestamp }
+
+// Sistema de Notas dos Clientes
+let clientNotes = JSON.parse(localStorage.getItem('crm_client_notes') || '{}'); // { chatId: { text, history: [] } }
+
+// Sistema de Agendamento
+let scheduledMessages = JSON.parse(localStorage.getItem('crm_scheduled') || '[]');
+
+// Estado da conexão
+let connectionState = {
+    status: 'unknown',
+    lastCheck: null,
+    isConnecting: false
+};
 
 // Gravação de Áudio - NOVA VERSÃO
 let mediaRecorder = null;
@@ -88,31 +102,32 @@ let audioElement = null;
 const API_BASE = 'http://localhost:3000/api';
 
 // ============================================================================
-// FUNÇÕES DE EXTRAÇÃO ROBUSTA DE DADOS DO REMOTEJID
+// FUNÇÕES DE TELEFONE - Usar lib-data-layer.js (centralizado)
 // ============================================================================
-// Extrai o número puro do remoteJid (p.ex., "556282237075@s.whatsapp.net" → "6282237075")
-function extractPhoneFromJid(jid) {
-    if (!jid) return '';
-    
-    // Remover sufixo @s.whatsapp.net, @c.us, @g.us, :, etc
-    let phone = String(jid)
-        .replace(/@s\.whatsapp\.net/g, '')
-        .replace(/@c\.us/g, '')
-        .replace(/@g\.us/g, '')
-        .replace(/:/g, '')
-        .replace(/\D/g, ''); // Remover tudo que não é dígito
-    
-    // Se começar com 55 e tiver 12+ dígitos, é DDI + número
-    if (phone.startsWith('55') && phone.length >= 12) {
-        phone = phone.substring(2);
+// NOTA: As funções principais (normalizePhone, extractPhoneFromJid) estão em lib-data-layer.js
+// Aqui criamos apenas aliases para compatibilidade com código legado
+
+// Alias para compatibilidade com código antigo
+function cleanPhoneNumber(rawNumber) {
+    // Usa normalizePhone do lib-data-layer.js
+    if (typeof window.normalizePhone === 'function') {
+        return window.normalizePhone(rawNumber);
     }
-    
-    // Se ficou com mais de 11 dígitos, pegar só os últimos 11
-    if (phone.length > 11) {
-        phone = phone.slice(-11);
+    // Fallback se lib não carregou
+    if (!rawNumber) return '';
+    return String(rawNumber).replace(/\D/g, '').slice(-11);
+}
+
+// Alias local para extractPhoneFromJid (usa a do lib-data-layer.js)
+// NOTA: NÃO redefinir esta função aqui - usar window.extractPhoneFromJid diretamente
+// ou a função do lib-data-layer.js que já está exportada
+function localExtractPhone(jid) {
+    // Usa a função do data-layer se disponível
+    if (window.normalizePhone) {
+        return window.normalizePhone(jid);
     }
-    
-    return phone;
+    // Fallback simples
+    return cleanPhoneNumber(jid);
 }
 
 // Normaliza o remoteJid para comparação (sempre com DDI 55 no início)
@@ -125,7 +140,7 @@ function normalizeJid(jid) {
     }
     
     // Se for um número limpo, adicionar DDI e sufixo
-    const phone = extractPhoneFromJid(jid);
+    const phone = window.extractPhoneFromJid ? window.extractPhoneFromJid(jid) : jid;
     if (phone && !phone.startsWith('55')) {
         return '55' + phone + '@s.whatsapp.net';
     }
@@ -133,30 +148,19 @@ function normalizeJid(jid) {
     return phone + '@s.whatsapp.net';
 }
 
-// Função para extrair apenas números do telefone (para busca no banco)
-function cleanPhoneNumber(rawNumber) {
-    if (!rawNumber) return '';
-    
-    // Remover TUDO que não é dígito: @s.whatsapp.net, @c.us, @g.us, :, etc
-    let cleaned = String(rawNumber).replace(/\D/g, '');
-    
-    // Remover DDI 55 (Brasil) se tiver
-    if (cleaned.startsWith('55') && cleaned.length >= 12) {
-        cleaned = cleaned.substring(2);
-    }
-    
-    // Se tiver mais de 11 dígitos, pegar apenas os últimos 11 (número principal)
-    // Isso trata casos onde há dígitos extras ou múltiplos números concatenados
-    if (cleaned.length > 11) {
-        cleaned = cleaned.slice(-11);
-    }
-    
-    return cleaned;
-}
-
+// Formatar número de telefone para exibição
 function formatPhone(rawNumber) {
     if (!rawNumber) return 'Sem número';
     
+    // Usar formatPhoneForDisplay do lib-data-layer.js se disponível
+    if (window.formatPhoneForDisplay) {
+        const formatted = window.formatPhoneForDisplay(rawNumber);
+        if (formatted && formatted !== rawNumber) {
+            return formatted;
+        }
+    }
+    
+    // Fallback: formatação própria
     const cleaned = cleanPhoneNumber(rawNumber);
     
     if (!cleaned || cleaned.length < 8) return rawNumber;
@@ -164,9 +168,8 @@ function formatPhone(rawNumber) {
     // Garantir que temos exatamente 10 ou 11 dígitos
     let normalized = cleaned;
     if (normalized.length > 11) {
-        normalized = normalized.slice(-11); // Pegar últimos 11
+        normalized = normalized.slice(-11);
     } else if (normalized.length < 10) {
-        // Número muito pequeno, retornar como está
         return `+55 ${normalized}`;
     }
     
@@ -178,14 +181,13 @@ function formatPhone(rawNumber) {
         // Fixo: +55 (XX) XXXX-XXXX
         return `+55 (${normalized.substring(0, 2)}) ${normalized.substring(2, 6)}-${normalized.substring(6)}`;
     } else if (normalized.length > 8) {
-        // Formato básico com hífen (para números com 8-9 dígitos)
         return `+55 ${normalized.substring(0, normalized.length - 4)}-${normalized.substring(normalized.length - 4)}`;
     }
     
     return `+55 ${normalized}`;
 }
 
-// Função para extrair apenas números do telefone (para busca no banco)
+// Alias para compatibilidade
 function cleanPhoneForSearch(rawNumber) {
     return cleanPhoneNumber(rawNumber);
 }
@@ -237,17 +239,28 @@ function getContactDisplayName(chatData) {
         return chatData.name || chatData.subject || 'Grupo';
     }
     
+    // Se for lead de anúncio (@lid), usar nome alternativo
+    if (jid.includes('@lid')) {
+        if (chatData.name && chatData.name !== 'undefined' && !chatData.name.includes('@lid')) {
+            return chatData.name;
+        }
+        if (chatData.pushName && chatData.pushName !== 'undefined') {
+            return chatData.pushName;
+        }
+        return 'Lead (Anúncio)';
+    }
+    
     // Extrair número limpo do JID
     const cleanPhone = cleanPhoneNumber(jid);
     
     // 1. PRIORIDADE 1: Nome do CRM
-    if (cleanPhone && allClients && allClients.length > 0) {
+    if (cleanPhone && cleanPhone.length >= 8 && allClients && allClients.length > 0) {
         const lastDigits = cleanPhone.slice(-9);
         const lastDigits8 = cleanPhone.slice(-8);
         
         const client = allClients.find(c => {
             const p = cleanPhoneNumber(c.telefone || c.celular || c.whatsapp || '');
-            if (!p) return false;
+            if (!p || p.length < 8) return false;
             return p.includes(lastDigits) || p.includes(lastDigits8) || 
                    lastDigits.includes(p.slice(-8)) || lastDigits8.includes(p.slice(-8));
         });
@@ -260,13 +273,15 @@ function getContactDisplayName(chatData) {
     // 2. PRIORIDADE 2: PushName do WhatsApp (mas NUNCA "Você" ou "Desconhecido")
     if (chatData.pushName && chatData.pushName.trim() && 
         chatData.pushName !== 'undefined' && chatData.pushName !== 'Você' &&
-        chatData.pushName !== 'Desconhecido' && chatData.pushName !== cleanPhone) {
+        chatData.pushName !== 'Desconhecido' && chatData.pushName !== cleanPhone &&
+        !chatData.pushName.match(/^\d+$/)) { // Não usar se for só números
         return chatData.pushName.trim();
     }
     
     if (chatData.name && chatData.name.trim() && 
         chatData.name !== 'undefined' && chatData.name !== 'Você' &&
-        chatData.name !== 'Desconhecido' && chatData.name !== cleanPhone) {
+        chatData.name !== 'Desconhecido' && chatData.name !== cleanPhone &&
+        !chatData.name.match(/^\d+$/)) { // Não usar se for só números
         return chatData.name.trim();
     }
     
@@ -435,50 +450,153 @@ async function disconnectWhatsapp() {
 
 async function connectWhatsapp() {
     const statusEl = document.getElementById('connectionStatus');
-    statusEl.innerHTML = '<span class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span> Buscando QR...';
+    const connectBtn = document.querySelector('[onclick="connectWhatsapp()"]');
+    const originalBtnContent = connectBtn ? connectBtn.innerHTML : '';
+    
+    // Estado de loading no botão
+    if (connectBtn) {
+        connectBtn.disabled = true;
+        connectBtn.innerHTML = `
+            <svg class="animate-spin h-4 w-4 mr-2 inline" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Conectando...
+        `;
+    }
+    
+    statusEl.innerHTML = '<span class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span> Buscando QR Code...';
     
     try {
-        const res = await fetch(`${API_BASE}/whatsapp/connect`);
+        const res = await fetch(`${API_BASE}/whatsapp/connect`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            throw new Error(errorData.error || `Servidor retornou erro ${res.status}`);
+        }
+        
         const data = await res.json();
         
         if (data.base64) {
             // Mostrar QR Code
             const qrContainer = document.getElementById('qrContainer');
-            // Garantir prefixo
             let b64 = data.base64;
             if (!b64.startsWith('data:image')) {
                 b64 = 'data:image/png;base64,' + b64;
             }
-            qrContainer.innerHTML = `<img src="${b64}" class="w-full h-full object-contain" alt="QR Code WhatsApp">`;
+            qrContainer.innerHTML = `
+                <img src="${b64}" class="w-full h-full object-contain" alt="QR Code WhatsApp">
+                <p class="text-sm text-gray-500 mt-2 text-center">Aponte a câmera do WhatsApp para o QR Code</p>
+            `;
             document.getElementById('qrModal').classList.remove('hidden');
-            statusEl.innerHTML = '<span class="w-2 h-2 rounded-full bg-yellow-500"></span> Escaneie o QR';
+            statusEl.innerHTML = '<span class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span> Escaneie o QR';
+            
+            // Restaurar botão
+            if (connectBtn) {
+                connectBtn.disabled = false;
+                connectBtn.innerHTML = originalBtnContent;
+            }
 
-            // Polling de conexão
+            // Polling de conexão com timeout
+            let attempts = 0;
+            const maxAttempts = 60; // 2 minutos máximo
+            
             const poolInterval = setInterval(async () => {
+                attempts++;
+                
+                if (attempts >= maxAttempts) {
+                    clearInterval(poolInterval);
+                    document.getElementById('qrModal').classList.add('hidden');
+                    statusEl.innerHTML = '<span class="w-2 h-2 rounded-full bg-red-500"></span> QR Expirado';
+                    showToast('⏰ QR Code expirou. Tente conectar novamente.', 'warning');
+                    hideConnectionAlert(); // Limpar alerta
+                    return;
+                }
+                
                 try {
                     const s = await fetch(`${API_BASE}/whatsapp/status`);
                     const d = await s.json();
-                    if (d.instance?.state === 'open') {
+                    
+                    if (d.instance?.state === 'open' || d.state === 'open') {
                         clearInterval(poolInterval);
                         document.getElementById('qrModal').classList.add('hidden');
                         statusEl.innerHTML = '<span class="w-2 h-2 rounded-full bg-green-500"></span> Conectado';
+                        showToast('✅ WhatsApp conectado com sucesso!', 'success');
+                        hideConnectionAlert();
                         loadChats();
                     }
-                } catch(e) {}
+                } catch(e) {
+                    console.warn('Polling error:', e);
+                }
             }, 2000);
 
         } else if (data.instance?.state === 'open' || data.state === 'open') {
-             statusEl.innerHTML = '<span class="w-2 h-2 rounded-full bg-green-500"></span> Conectado';
-             loadChats(); // Recarregar chats se já estiver conectado
-             // alert('Já está conectado!'); // Remover alert intrusivo
+            statusEl.innerHTML = '<span class="w-2 h-2 rounded-full bg-green-500"></span> Conectado';
+            showToast('✅ Já está conectado ao WhatsApp!', 'success');
+            hideConnectionAlert();
+            loadChats();
+            
+        } else if (data.error) {
+            throw new Error(data.error);
+            
         } else {
-            alert('Status da conexão: ' + JSON.stringify(data));
-            checkConnection(); // Reverte p/ status real
+            // Estado desconhecido - mostra detalhes
+            console.warn('Estado de conexão desconhecido:', data);
+            statusEl.innerHTML = '<span class="w-2 h-2 rounded-full bg-yellow-500"></span> Verificando...';
+            showToast('⚠️ Estado de conexão incerto. Verificando...', 'warning');
+            checkConnection();
         }
     } catch (e) {
-        console.error(e);
+        console.error('Erro ao conectar WhatsApp:', e);
         statusEl.innerHTML = '<span class="w-2 h-2 rounded-full bg-red-500"></span> Erro';
-        alert('Erro ao tentar conectar WhatsApp');
+        
+        // Mensagens de erro mais amigáveis
+        let errorMsg = 'Erro ao conectar WhatsApp';
+        if (e.message.includes('Failed to fetch') || e.message.includes('NetworkError')) {
+            errorMsg = '🔌 Sem conexão com o servidor. Verifique se o servidor está rodando.';
+        } else if (e.message.includes('timeout')) {
+            errorMsg = '⏱️ Tempo limite excedido. Tente novamente.';
+        } else if (e.message.includes('401') || e.message.includes('403')) {
+            errorMsg = '🔐 Erro de autenticação com a API Evolution.';
+        } else if (e.message.includes('404')) {
+            errorMsg = '❓ Instância não encontrada na API Evolution.';
+        } else if (e.message.includes('500')) {
+            errorMsg = '💥 Erro interno no servidor. Verifique os logs.';
+        } else if (e.message) {
+            errorMsg = `❌ ${e.message}`;
+        }
+        
+        showToast(errorMsg, 'error');
+        showConnectionAlert(`Falha na conexão: ${e.message || 'Erro desconhecido'}`);
+    } finally {
+        // Sempre restaurar o botão
+        if (connectBtn) {
+            connectBtn.disabled = false;
+            connectBtn.innerHTML = originalBtnContent;
+        }
+    }
+}
+
+// Função para esconder o alerta de conexão
+function hideConnectionAlert() {
+    const alertBar = document.getElementById('connectionAlert');
+    if (alertBar) {
+        alertBar.classList.add('hidden');
+    }
+}
+
+// Função para mostrar o alerta de conexão
+function showConnectionAlert(message) {
+    const alertBar = document.getElementById('connectionAlert');
+    const alertText = document.getElementById('connectionAlertText');
+    if (alertBar) {
+        if (alertText) {
+            alertText.textContent = message || 'Conexão perdida com WhatsApp. Tentando reconectar...';
+        }
+        alertBar.classList.remove('hidden');
     }
 }
 
@@ -510,26 +628,33 @@ function filterChats(filter) {
     currentFilter = filter;
     
     // Limpar filtro de tag se mudar de filtro principal
-    if (['all', 'chats', 'groups'].includes(filter)) {
+    if (['all', 'unread', 'waiting', 'groups', 'sales'].includes(filter)) {
         currentTagFilter = null;
     }
     
-    // Atualizar visual das abas principais
-    const tabs = ['filterAll', 'filterChats', 'filterGroups'];
-    tabs.forEach(tabId => {
-        const tab = document.getElementById(tabId);
-        if (tab) {
-            if ((filter === 'all' && tabId === 'filterAll') ||
-                (filter === 'chats' && tabId === 'filterChats') ||
-                (filter === 'groups' && tabId === 'filterGroups')) {
-                tab.classList.add('filter-tab-active');
-                tab.classList.remove('text-slate-500');
-            } else {
-                tab.classList.remove('filter-tab-active');
-                tab.classList.add('text-slate-500');
-            }
-        }
+    // Atualizar visual das abas inteligentes
+    document.querySelectorAll('.filter-tab').forEach(btn => {
+        btn.classList.remove('bg-emerald-500', 'text-white');
+        btn.classList.add('bg-slate-100', 'text-slate-600', 'hover:bg-slate-200');
     });
+    
+    // Mapear filtro para ID do botão
+    const filterIdMap = {
+        'all': 'filterAll',
+        'unread': 'filterUnread',
+        'waiting': 'filterWaiting',
+        'groups': 'filterGroups',
+        'sales': 'filterSales'
+    };
+    
+    const activeTabId = filterIdMap[filter];
+    if (activeTabId) {
+        const activeTab = document.getElementById(activeTabId);
+        if (activeTab) {
+            activeTab.classList.remove('bg-slate-100', 'text-slate-600', 'hover:bg-slate-200');
+            activeTab.classList.add('bg-emerald-500', 'text-white');
+        }
+    }
     
     // Atualizar visual dos filtros especiais
     const specialFilters = ['filterVacuum', 'filterSnoozed'];
@@ -547,6 +672,10 @@ function filterChats(filter) {
     
     // Re-renderizar lista filtrada
     renderChatsList(allChats);
+    
+    // Atualizar contadores
+    updateFilterCounts();
+    
     lucide.createIcons();
 }
 
@@ -561,6 +690,7 @@ async function loadChats() {
         allChats = Array.isArray(chats) ? chats : [];
         
         renderChatsList(allChats);
+        updateFilterCounts(); // Atualizar contadores das abas
         lucide.createIcons();
 
     } catch (e) {
@@ -581,11 +711,39 @@ function renderChatsList(chats) {
     // Aplicar filtros
     let filteredChats = chats;
     
-    // Filtro de tipo (all, chats, groups)
+    // Filtro de tipo (all, unread, waiting, groups, sales, vacuum, snoozed)
     if (currentFilter === 'chats') {
         filteredChats = filteredChats.filter(c => !c.isGroup);
+    } else if (currentFilter === 'unread') {
+        // Não Lidos: unreadCount > 0
+        filteredChats = filteredChats.filter(c => c.unreadCount > 0);
+    } else if (currentFilter === 'waiting') {
+        // Aguardando Resposta: última msg do cliente há > 4h
+        const fourHoursAgo = Date.now() - (4 * 60 * 60 * 1000);
+        filteredChats = filteredChats.filter(c => {
+            const lastMsg = c.lastMessage;
+            if (!lastMsg) return false;
+            const msgTime = (lastMsg.messageTimestamp || 0) * 1000;
+            const isFromClient = !lastMsg.key?.fromMe;
+            return isFromClient && msgTime < fourHoursAgo;
+        });
     } else if (currentFilter === 'groups') {
         filteredChats = filteredChats.filter(c => c.isGroup);
+    } else if (currentFilter === 'sales') {
+        // Vendas: chats com tag relacionada a venda
+        filteredChats = filteredChats.filter(c => {
+            const chatId = c.id || c.remoteJid;
+            const tags = chatTags[chatId] || [];
+            return tags.some(tagId => {
+                const tag = allTags.find(t => t.id === tagId);
+                return tag && (
+                    tag.name.toLowerCase().includes('venda') || 
+                    tag.name.toLowerCase().includes('pago') ||
+                    tag.name.toLowerCase().includes('cliente') ||
+                    tag.name.toLowerCase().includes('comprou')
+                );
+            });
+        });
     } else if (currentFilter === 'vacuum') {
         // Filtro Vácuo: última mensagem é do cliente e sem resposta há > 4h
         const fourHoursAgo = Date.now() - (4 * 60 * 60 * 1000);
@@ -623,7 +781,10 @@ function renderChatsList(chats) {
     
     if (filteredChats.length === 0) {
         let msg = 'Nenhuma conversa encontrada.';
+        if (currentFilter === 'unread') msg = 'Nenhuma mensagem não lida. 🎉';
+        if (currentFilter === 'waiting') msg = 'Nenhuma conversa aguardando. 🎉';
         if (currentFilter === 'groups') msg = 'Nenhum grupo encontrado.';
+        if (currentFilter === 'sales') msg = 'Nenhuma venda identificada.';
         if (currentFilter === 'vacuum') msg = 'Nenhuma conversa no vácuo. Parabéns!';
         if (currentFilter === 'snoozed') msg = 'Nenhuma conversa adiada.';
         if (currentTagFilter) msg = 'Nenhuma conversa com esta etiqueta.';
@@ -709,8 +870,34 @@ function renderChatsList(chats) {
         const div = document.createElement('div');
         const hasUnread = chat.unreadCount > 0;
         div.className = `flex items-center gap-3 p-3 border-b hover:bg-slate-50 cursor-pointer transition-colors ${hasUnread ? 'bg-green-50/30' : ''}`;
+        
+        // CRÍTICO: Garantir que remoteJid e id estejam sempre definidos
+        if (!chat.remoteJid) {
+            chat.remoteJid = chatId;
+        }
         chat.id = chatId;
-        div.onclick = () => openChat(chat);
+        
+        // DEBUG: Adicionar data attribute para identificar
+        div.setAttribute('data-chat-id', chatId);
+        div.setAttribute('data-debug', 'chat-item');
+        
+        div.onclick = function(event) {
+            console.log('\n========== DEBUG CLICK ==========');
+            console.log('🖱️ CLIQUE DETECTADO!');
+            console.log('Event:', event);
+            console.log('Event target:', event.target);
+            console.log('Chat ID:', chatId);
+            console.log('Chat remoteJid:', chat.remoteJid);
+            console.log('Chat name:', chat.name || chat.pushName);
+            console.log('Chat object:', chat);
+            console.log('=================================\n');
+            
+            try {
+                openChat(chat);
+            } catch (err) {
+                console.error('❌ ERRO ao chamar openChat:', err);
+            }
+        };
         
         // Indicador de mensagem não lida com bolinha verde
         const unreadBadge = hasUnread
@@ -760,8 +947,14 @@ function renderChatsList(chats) {
 // CHAT ATIVO
 // ============================================================================
 async function openChat(chat) {
+    console.log('\n🚀🚀🚀 FUNÇÃO openChat CHAMADA! 🚀🚀🚀');
+    console.log('Argumento recebido:', chat);
+    console.log('Tipo:', typeof chat);
+    
     if (!chat || !chat.id) {
         console.error('[ERRO] Chat inválido:', chat);
+        console.error('chat:', chat);
+        console.error('chat?.id:', chat?.id);
         return;
     }
     
@@ -923,6 +1116,10 @@ function renderGroupInfo(group) {
 }
 
 async function loadMessages(remoteJid, isUpdate = false) {
+    console.log('\n🔥🔥🔥 FUNÇÃO loadMessages CHAMADA! 🔥🔥🔥');
+    console.log('remoteJid:', remoteJid);
+    console.log('isUpdate:', isUpdate);
+    
     if (!remoteJid) {
         console.error('[❌ ERRO] RemoteJid inválido:', remoteJid);
         return;
@@ -942,11 +1139,23 @@ async function loadMessages(remoteJid, isUpdate = false) {
     }
     
     try {
+        console.log('📡 Fazendo fetch para:', `${API_BASE}/whatsapp/messages/fetch`);
         const res = await fetch(`${API_BASE}/whatsapp/messages/fetch`, {
             method: 'POST',
             body: JSON.stringify({ remoteJid }),
             headers: {'Content-Type': 'application/json'}
         });
+        
+        console.log('📡 Response status:', res.status);
+        console.log('📡 Response ok:', res.ok);
+        
+        if (!res.ok) {
+            console.error('❌ ERRO HTTP:', res.status, res.statusText);
+            const errorText = await res.text();
+            console.error('Corpo do erro:', errorText);
+            return;
+        }
+        
         const data = await res.json();
         
         console.log('📦 Resposta da API recebida');
@@ -978,24 +1187,32 @@ async function loadMessages(remoteJid, isUpdate = false) {
         // Isso garante que NÃO haja mistura de conversas
         const beforeFilterCount = messages.length;
         
+        // Extrair número do remoteJid solicitado para comparação
+        const requestPhoneNormalized = extractPhoneFromJid(remoteJid);
+        const isGroupRequest = String(remoteJid).includes('@g.us');
+        
         messages = messages.filter(msg => {
             const msgRemoteJid = msg.key?.remoteJid || msg.remoteJid || '';
             
-            // Comparar remoteJid (com e sem sufixo)
-            const msgJidNormalized = String(msgRemoteJid)
-                .replace(/@s\.whatsapp\.net/g, '')
-                .replace(/@c\.us/g, '')
-                .replace(/:/g, '');
+            // Se for grupo, comparar JID completo
+            if (isGroupRequest) {
+                return msgRemoteJid === remoteJid || 
+                       msgRemoteJid.replace(/@g\.us$/, '') === remoteJid.replace(/@g\.us$/, '');
+            }
             
-            const requestJidNormalized = String(remoteJid)
-                .replace(/@s\.whatsapp\.net/g, '')
-                .replace(/@c\.us/g, '')
-                .replace(/:/g, '');
+            // Para contatos, usar normalização de telefone
+            const msgPhoneNormalized = extractPhoneFromJid(msgRemoteJid);
             
-            const matches = msgJidNormalized === requestJidNormalized;
+            // Comparar números normalizados
+            const matches = msgPhoneNormalized === requestPhoneNormalized ||
+                           // Fallback: comparar últimos 9 dígitos (sem DDD variável)
+                           (msgPhoneNormalized.length >= 9 && requestPhoneNormalized.length >= 9 &&
+                            msgPhoneNormalized.slice(-9) === requestPhoneNormalized.slice(-9));
             
-            if (!matches) {
-                console.warn(`[⚠️ REJEITADO] Mensagem não pertence a este chat:`, msgRemoteJid);
+            if (!matches && msgRemoteJid) {
+                console.warn(`[⚠️ REJEITADO] Mensagem não pertence a este chat:`, 
+                    `msg=${msgRemoteJid} (${msgPhoneNormalized})`, 
+                    `expected=${remoteJid} (${requestPhoneNormalized})`);
             }
             
             return matches;
@@ -1333,8 +1550,7 @@ function fileToBase64(file) {
 // LÓGICA CRM (LADO DIREITO) - VERSÃO MELHORADA
 // ============================================================================
 
-// Mapa de notas dos clientes
-let clientNotes = JSON.parse(localStorage.getItem('crm_client_notes') || '{}');
+// clientNotes já foi declarada no início do arquivo (linha ~81)
 
 // Função para abrir sidebar ao clicar no header
 function openClientSidebar() {
@@ -3292,3 +3508,565 @@ function saveCampaigns() {
 function openImportFromGroup() {
     alert('Funcionalidade em desenvolvimento: Importar contatos de grupos do WhatsApp');
 }
+
+// ============================================================================
+// SISTEMA DE MONITORAMENTO DE CONEXÃO (FRONTEND)
+// ============================================================================
+
+// Verificar conexão periódicamente
+async function checkConnectionStatus() {
+    try {
+        const res = await fetch(`${API_BASE}/whatsapp/connection-status`);
+        const data = await res.json();
+        
+        connectionState = {
+            status: data.status || data.liveCheck?.state || 'unknown',
+            lastCheck: data.lastCheck,
+            lastConnected: data.lastConnected,
+            reconnectAttempts: data.reconnectAttempts || 0,
+            isReconnecting: data.isReconnecting || false,
+            errors: data.recentErrors || []
+        };
+        
+        updateConnectionUI(connectionState);
+        return data;
+    } catch (error) {
+        console.error('[Connection Check] Erro:', error);
+        connectionState.status = 'error';
+        updateConnectionUI(connectionState);
+        return null;
+    }
+}
+
+// Atualizar interface de conexão
+function updateConnectionUI(state) {
+    const dot = document.getElementById('connectionDot');
+    const text = document.getElementById('connectionText');
+    const subtext = document.getElementById('connectionSubtext');
+    const alert = document.getElementById('connectionAlert');
+    const alertText = document.getElementById('connectionAlertText');
+    const btnConnect = document.getElementById('btnConnect');
+    const connectIcon = document.getElementById('connectIcon');
+    const connectText = document.getElementById('connectText');
+    
+    // Verificar se elementos existem antes de manipular
+    if (!dot || !text) {
+        console.warn('[updateConnectionUI] Elementos de conexão não encontrados no DOM');
+        return;
+    }
+    
+    // Resetar classes
+    dot.className = 'w-3 h-3 rounded-full';
+    
+    switch(state.status) {
+        case 'connected':
+        case 'open':
+            dot.classList.add('connection-connected');
+            text.textContent = 'Conectado';
+            text.className = 'text-sm font-medium text-emerald-600';
+            if (alert) alert.classList.add('hidden');
+            if (btnConnect) btnConnect.classList.add('hidden');
+            break;
+            
+        case 'connecting':
+            dot.classList.add('connection-connecting');
+            text.textContent = 'Conectando...';
+            text.className = 'text-sm font-medium text-amber-600';
+            if (alert) alert.classList.add('hidden');
+            break;
+            
+        case 'disconnected':
+        case 'close':
+        case 'closed':
+            dot.classList.add('connection-disconnected');
+            text.textContent = 'Desconectado';
+            text.className = 'text-sm font-medium text-red-600';
+            if (alert) alert.classList.remove('hidden');
+            if (alertText) alertText.textContent = state.isReconnecting 
+                ? `Reconectando... (tentativa ${state.reconnectAttempts})` 
+                : 'WhatsApp desconectado - Sessão encerrada';
+            if (btnConnect) btnConnect.classList.remove('hidden');
+            break;
+            
+        case 'error':
+            dot.classList.add('connection-error');
+            text.textContent = 'Erro';
+            text.className = 'text-sm font-medium text-red-600';
+            if (alert) alert.classList.remove('hidden');
+            if (alertText) alertText.textContent = 'Erro de conexão - Evolution API pode estar offline';
+            if (btnConnect) btnConnect.classList.remove('hidden');
+            break;
+            
+        case 'not_created':
+        case 'NOT_CREATED':
+            dot.classList.add('connection-disconnected');
+            text.textContent = 'Não Configurado';
+            text.className = 'text-sm font-medium text-slate-600';
+            if (alert) alert.classList.add('hidden');
+            if (btnConnect) btnConnect.classList.remove('hidden');
+            break;
+            
+        default:
+            dot.classList.add('bg-slate-400');
+            text.textContent = 'Verificando...';
+            text.className = 'text-sm font-medium text-slate-600';
+    }
+    
+    // Mostrar última verificação
+    if (state.lastCheck && subtext) {
+        const lastCheck = new Date(state.lastCheck);
+        subtext.textContent = `Última verificação: ${lastCheck.toLocaleTimeString('pt-BR')}`;
+        subtext.classList.remove('hidden');
+    }
+    
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+// Iniciar monitoramento de conexão
+function startConnectionMonitoring() {
+    // Verificar imediatamente
+    checkConnectionStatus();
+    
+    // Verificar a cada 30 segundos
+    if (connectionCheckInterval) clearInterval(connectionCheckInterval);
+    connectionCheckInterval = setInterval(checkConnectionStatus, 30000);
+}
+
+// Mostrar modal de detalhes de conexão
+async function showConnectionDetails() {
+    const modal = document.getElementById('connectionDetailsModal');
+    modal.classList.remove('hidden');
+    
+    // Buscar dados atualizados
+    const data = await checkConnectionStatus();
+    
+    if (data) {
+        // Atualizar ícone e status
+        const icon = document.getElementById('connectionDetailIcon');
+        const status = document.getElementById('connectionDetailStatus');
+        
+        if (data.status === 'connected' || data.liveCheck?.connected) {
+            icon.className = 'w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center';
+            icon.innerHTML = '<i data-lucide="wifi" class="w-5 h-5 text-emerald-600"></i>';
+            status.textContent = 'Conectado e funcionando';
+            status.className = 'text-xs text-emerald-600';
+        } else {
+            icon.className = 'w-9 h-9 rounded-xl bg-red-100 flex items-center justify-center';
+            icon.innerHTML = '<i data-lucide="wifi-off" class="w-5 h-5 text-red-600"></i>';
+            status.textContent = data.liveCheck?.reason || 'Desconectado';
+            status.className = 'text-xs text-red-600';
+        }
+        
+        // Preencher dados
+        document.getElementById('connectionLastCheck').textContent = 
+            data.lastCheck ? new Date(data.lastCheck).toLocaleString('pt-BR') : '-';
+        document.getElementById('connectionLastConnected').textContent = 
+            data.lastConnected ? new Date(data.lastConnected).toLocaleString('pt-BR') : '-';
+        document.getElementById('connectionAttempts').textContent = data.reconnectAttempts || '0';
+        document.getElementById('connectionAutoReconnect').textContent = 
+            data.isReconnecting ? 'Reconectando...' : 'Ativo';
+        
+        // Mostrar erros recentes
+        const errorsDiv = document.getElementById('connectionErrors');
+        if (data.recentErrors && data.recentErrors.length > 0) {
+            errorsDiv.innerHTML = data.recentErrors.map(err => `
+                <div class="bg-red-50 p-2 rounded text-xs">
+                    <span class="font-semibold text-red-700">${err.type}</span>
+                    <span class="text-red-600 ml-2">${err.message}</span>
+                    <span class="text-red-400 block mt-1">${new Date(err.timestamp).toLocaleString('pt-BR')}</span>
+                </div>
+            `).join('');
+        } else {
+            errorsDiv.innerHTML = '<p class="text-xs text-slate-400 italic">Nenhum erro recente</p>';
+        }
+    }
+    
+    lucide.createIcons();
+}
+
+function closeConnectionDetails() {
+    document.getElementById('connectionDetailsModal').classList.add('hidden');
+}
+
+// Forçar reconexão
+async function forceReconnect() {
+    const btn = document.querySelector('[onclick="forceReconnect()"]');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i data-lucide="loader" class="w-4 h-4 animate-spin"></i> Reconectando...';
+    }
+    
+    try {
+        const res = await fetch(`${API_BASE}/whatsapp/force-reconnect`, { method: 'POST' });
+        const data = await res.json();
+        
+        if (data.success) {
+            showToast('Reconectado com sucesso!', 'success');
+        } else {
+            showToast('Falha na reconexão. Tente conectar manualmente.', 'error');
+        }
+        
+        await checkConnectionStatus();
+    } catch (error) {
+        showToast('Erro ao reconectar: ' + error.message, 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i data-lucide="power" class="w-4 h-4"></i> Forçar Reconexão';
+            lucide.createIcons();
+        }
+    }
+}
+
+// Resetar contador de reconexão
+async function resetReconnectCounter() {
+    try {
+        await fetch(`${API_BASE}/whatsapp/reset-reconnect`, { method: 'POST' });
+        showToast('Contador resetado', 'success');
+        showConnectionDetails(); // Atualizar modal
+    } catch (error) {
+        showToast('Erro: ' + error.message, 'error');
+    }
+}
+
+// Toast notification simples
+function showToast(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.className = `fixed bottom-4 right-4 px-4 py-3 rounded-lg shadow-lg z-50 flex items-center gap-2 text-sm font-medium transition-all transform translate-y-0 ${
+        type === 'success' ? 'bg-emerald-500 text-white' :
+        type === 'error' ? 'bg-red-500 text-white' :
+        type === 'warning' ? 'bg-amber-500 text-white' :
+        'bg-slate-700 text-white'
+    }`;
+    toast.innerHTML = `
+        <i data-lucide="${type === 'success' ? 'check-circle' : type === 'error' ? 'alert-circle' : type === 'warning' ? 'alert-triangle' : 'info'}" class="w-4 h-4"></i>
+        ${message}
+    `;
+    document.body.appendChild(toast);
+    lucide.createIcons();
+    
+    setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+// ============================================================================
+// SISTEMA DE NOTAS DO CLIENTE
+// ============================================================================
+
+function toggleNotesPanel() {
+    const panel = document.getElementById('notesPanel');
+    panel.classList.toggle('open');
+    
+    if (panel.classList.contains('open') && currentChatId) {
+        loadClientNotes();
+    }
+}
+
+function loadClientNotes() {
+    const chatId = currentChatId;
+    if (!chatId) return;
+    
+    const notesData = clientNotes[chatId] || { text: '', history: [] };
+    document.getElementById('clientNotes').value = notesData.text || '';
+    
+    // Atualizar histórico
+    const historyDiv = document.getElementById('notesHistory');
+    if (notesData.history && notesData.history.length > 0) {
+        historyDiv.innerHTML = notesData.history.slice(0, 10).map(h => `
+            <div class="bg-yellow-100 p-2 rounded text-xs">
+                <span class="text-yellow-600">${new Date(h.date).toLocaleString('pt-BR')}</span>
+                <p class="mt-1">${h.text.substring(0, 100)}${h.text.length > 100 ? '...' : ''}</p>
+            </div>
+        `).join('');
+    } else {
+        historyDiv.innerHTML = '<p class="text-slate-400 italic">Nenhuma nota anterior</p>';
+    }
+    
+    // Atualizar contador na toolbar
+    const countEl = document.getElementById('notesCount');
+    if (notesData.text) {
+        countEl.textContent = '1';
+        countEl.classList.remove('hidden');
+    } else {
+        countEl.classList.add('hidden');
+    }
+}
+
+function saveClientNotes() {
+    const chatId = currentChatId;
+    if (!chatId) return;
+    
+    const text = document.getElementById('clientNotes').value.trim();
+    const existingData = clientNotes[chatId] || { text: '', history: [] };
+    
+    // Adicionar ao histórico se o texto mudou
+    if (existingData.text && existingData.text !== text) {
+        existingData.history.unshift({
+            date: new Date().toISOString(),
+            text: existingData.text
+        });
+        // Manter apenas últimas 20 notas
+        existingData.history = existingData.history.slice(0, 20);
+    }
+    
+    existingData.text = text;
+    clientNotes[chatId] = existingData;
+    
+    localStorage.setItem('crm_client_notes', JSON.stringify(clientNotes));
+    showToast('Notas salvas!', 'success');
+    loadClientNotes();
+}
+
+// ============================================================================
+// SISTEMA DE AGENDAMENTO
+// ============================================================================
+
+function openScheduleModal() {
+    if (!currentChatId) {
+        showToast('Selecione uma conversa primeiro', 'error');
+        return;
+    }
+    
+    document.getElementById('scheduleModal').classList.remove('hidden');
+    
+    // Definir data/hora mínima como agora + 5 minutos
+    const now = new Date();
+    now.setMinutes(now.getMinutes() + 5);
+    const minDateTime = now.toISOString().slice(0, 16);
+    document.getElementById('scheduleDateTime').min = minDateTime;
+    document.getElementById('scheduleDateTime').value = minDateTime;
+}
+
+function closeScheduleModal() {
+    document.getElementById('scheduleModal').classList.add('hidden');
+    document.getElementById('scheduleMessage').value = '';
+}
+
+function saveScheduledMessage() {
+    const dateTime = document.getElementById('scheduleDateTime').value;
+    const message = document.getElementById('scheduleMessage').value.trim();
+    
+    if (!dateTime || !message) {
+        showToast('Preencha a data/hora e a mensagem', 'error');
+        return;
+    }
+    
+    const scheduled = {
+        id: Date.now(),
+        chatId: currentChatId,
+        remoteJid: currentRemoteJid,
+        chatName: document.getElementById('headerName')?.textContent || 'Desconhecido',
+        message,
+        scheduledFor: new Date(dateTime).toISOString(),
+        createdAt: new Date().toISOString(),
+        status: 'pending'
+    };
+    
+    scheduledMessages.push(scheduled);
+    localStorage.setItem('crm_scheduled', JSON.stringify(scheduledMessages));
+    
+    showToast(`Mensagem agendada para ${new Date(dateTime).toLocaleString('pt-BR')}`, 'success');
+    closeScheduleModal();
+    
+    // Configurar timer para envio
+    scheduleMessageTimer(scheduled);
+}
+
+function scheduleMessageTimer(scheduled) {
+    const now = Date.now();
+    const sendTime = new Date(scheduled.scheduledFor).getTime();
+    const delay = sendTime - now;
+    
+    if (delay > 0) {
+        setTimeout(async () => {
+            await sendScheduledMessage(scheduled.id);
+        }, delay);
+    }
+}
+
+async function sendScheduledMessage(id) {
+    const scheduled = scheduledMessages.find(s => s.id === id);
+    if (!scheduled || scheduled.status !== 'pending') return;
+    
+    try {
+        const res = await fetch(`${API_BASE}/whatsapp/send-text`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                remoteJid: scheduled.remoteJid,
+                message: scheduled.message
+            })
+        });
+        
+        if (res.ok) {
+            scheduled.status = 'sent';
+            scheduled.sentAt = new Date().toISOString();
+            showToast(`Mensagem agendada enviada para ${scheduled.chatName}`, 'success');
+        } else {
+            scheduled.status = 'failed';
+            scheduled.error = 'Falha no envio';
+        }
+    } catch (error) {
+        scheduled.status = 'failed';
+        scheduled.error = error.message;
+    }
+    
+    localStorage.setItem('crm_scheduled', JSON.stringify(scheduledMessages));
+}
+
+// Inicializar timers de mensagens agendadas
+function initScheduledMessages() {
+    scheduledMessages.filter(s => s.status === 'pending').forEach(scheduleMessageTimer);
+}
+
+// ============================================================================
+// FILTROS INTELIGENTES (ABAS)
+// ============================================================================
+
+function updateFilterCounts() {
+    const counts = {
+        all: allChats.length,
+        unread: allChats.filter(c => c.unreadCount > 0).length,
+        waiting: allChats.filter(c => {
+            const lastMsg = c.lastMessage;
+            if (!lastMsg) return false;
+            const fourHoursAgo = Date.now() - (4 * 60 * 60 * 1000);
+            const msgTime = (lastMsg.messageTimestamp || 0) * 1000;
+            return !lastMsg.key?.fromMe && msgTime < fourHoursAgo;
+        }).length,
+        groups: allChats.filter(c => c.isGroup).length,
+        sales: allChats.filter(c => {
+            const chatId = c.id || c.remoteJid;
+            const tags = chatTags[chatId] || [];
+            return tags.some(tagId => {
+                const tag = allTags.find(t => t.id === tagId);
+                return tag && (tag.name.toLowerCase().includes('venda') || tag.name.toLowerCase().includes('pago'));
+            });
+        }).length,
+        vacuum: allChats.filter(c => {
+            const lastMsg = c.lastMessage;
+            if (!lastMsg) return false;
+            const fourHoursAgo = Date.now() - (4 * 60 * 60 * 1000);
+            const msgTime = (lastMsg.messageTimestamp || 0) * 1000;
+            return !lastMsg.key?.fromMe && msgTime < fourHoursAgo;
+        }).length
+    };
+    
+    // Atualizar badges
+    document.getElementById('countAll').textContent = counts.all;
+    
+    const countUnread = document.getElementById('countUnread');
+    countUnread.textContent = counts.unread;
+    counts.unread > 0 ? countUnread.classList.remove('hidden') : countUnread.classList.add('hidden');
+    
+    const countWaiting = document.getElementById('countWaiting');
+    countWaiting.textContent = counts.waiting;
+    counts.waiting > 0 ? countWaiting.classList.remove('hidden') : countWaiting.classList.add('hidden');
+    
+    const countGroups = document.getElementById('countGroups');
+    countGroups.textContent = counts.groups;
+    counts.groups > 0 ? countGroups.classList.remove('hidden') : countGroups.classList.add('hidden');
+    
+    const countSales = document.getElementById('countSales');
+    countSales.textContent = counts.sales;
+    counts.sales > 0 ? countSales.classList.remove('hidden') : countSales.classList.add('hidden');
+    
+    const countVacuum = document.getElementById('countVacuum');
+    if (countVacuum) {
+        countVacuum.textContent = counts.vacuum;
+        counts.vacuum > 0 ? countVacuum.classList.remove('hidden') : countVacuum.classList.add('hidden');
+    }
+}
+
+// Atualizar função filterChats para suportar novos filtros
+function filterChatsExtended(type) {
+    currentFilter = type;
+    currentTagFilter = null;
+    
+    // Atualizar UI das abas
+    document.querySelectorAll('.filter-tab').forEach(btn => {
+        btn.classList.remove('bg-emerald-500', 'text-white');
+        btn.classList.add('bg-slate-100', 'text-slate-600');
+    });
+    
+    const activeTab = document.getElementById(`filter${type.charAt(0).toUpperCase() + type.slice(1)}`);
+    if (activeTab) {
+        activeTab.classList.remove('bg-slate-100', 'text-slate-600');
+        activeTab.classList.add('bg-emerald-500', 'text-white');
+    }
+    
+    renderChatsList(allChats);
+}
+
+// Busca de chats
+function searchChatsFilter(query) {
+    if (!query.trim()) {
+        renderChatsList(allChats);
+        return;
+    }
+    
+    const q = query.toLowerCase();
+    const filtered = allChats.filter(chat => {
+        const name = getContactDisplayName(chat).toLowerCase();
+        const phone = cleanPhoneNumber(chat.id || chat.remoteJid);
+        return name.includes(q) || phone.includes(q);
+    });
+    
+    renderChatsList(filtered);
+}
+
+// Marcar como resolvido
+function markAsResolved() {
+    if (!currentChatId) return;
+    
+    // Adicionar tag "Resolvido" se não existir
+    let resolvedTag = allTags.find(t => t.name === 'Resolvido');
+    if (!resolvedTag) {
+        resolvedTag = { id: Date.now(), name: 'Resolvido', color: '#10b981' };
+        allTags.push(resolvedTag);
+        localStorage.setItem('crm_tags', JSON.stringify(allTags));
+    }
+    
+    const currentTags = chatTags[currentChatId] || [];
+    if (!currentTags.includes(resolvedTag.id)) {
+        currentTags.push(resolvedTag.id);
+        chatTags[currentChatId] = currentTags;
+        localStorage.setItem('crm_chat_tags', JSON.stringify(chatTags));
+    }
+    
+    showToast('Conversa marcada como resolvida!', 'success');
+    renderChatTags();
+    loadChats();
+}
+
+// ============================================================================
+// INICIALIZAÇÃO ADICIONAL
+// ============================================================================
+
+// Chamar no DOMContentLoaded
+document.addEventListener('DOMContentLoaded', function() {
+    // Iniciar monitoramento de conexão
+    startConnectionMonitoring();
+    
+    // Inicializar mensagens agendadas
+    initScheduledMessages();
+    
+    // Escutar quando um chat é aberto para mostrar toolbar
+    window.addEventListener('chatSelected', function(e) {
+        document.getElementById('chatToolbar').classList.remove('hidden');
+        loadClientNotes();
+        
+        // Se o evento tiver chat, chamar openChat
+        if (e.detail && e.detail.chat) {
+            console.log('[chatSelected event] Chamando openChat via evento');
+            openChat(e.detail.chat);
+        }
+    });
+    
+    // Expor funções globalmente para o lib-chat-loader.js
+    window.openChat = openChat;
+    window.loadChats = loadChats;
+    console.log('✅ Funções expostas globalmente: openChat, loadChats');
+});
