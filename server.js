@@ -382,13 +382,13 @@ app.use((req, res, next) => {
 
     // Permitir raiz redirecionar
     if (reqPath === '/' || reqPath === '') {
-        if (!isAuthenticated(req)) return res.redirect('/login.html');
+        if (!isAuthenticated(req)) return res.redirect('/login.html?redirect=' + encodeURIComponent(req.originalUrl));
         return next();
     }
 
     // Proteger páginas HTML
     if (reqPath.endsWith('.html') && reqPath !== '/login.html') {
-        if (!isAuthenticated(req)) return res.redirect('/login.html');
+        if (!isAuthenticated(req)) return res.redirect('/login.html?redirect=' + encodeURIComponent(req.originalUrl));
         return next();
     }
 

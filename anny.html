@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Anny - Assistente de BI | CRM CJOTA</title>
-    <link rel="icon" type="image/png" href="/logo.png">
-    <script>fetch('/api/auth/check').then(r=>r.json()).then(d=>{if(!d.authenticated)window.location.href='/login.html'}).catch(()=>{});</script>
+    <link rel="icon" type="image/png" href="/V.png">
+    <script>fetch('/api/auth/check').then(r=>r.json()).then(d=>{if(!d.authenticated)window.location.href='/login.html?redirect='+encodeURIComponent(window.location.pathname)}).catch(()=>{});</script>
     <script>
         window.onerror = function(msg, url, line, col, error) {
             console.error('Erro JS:', msg, 'Linha:', line);
