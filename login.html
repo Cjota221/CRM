@@ -269,10 +269,7 @@
     <div class="login-container">
         <div class="login-card">
             <div class="logo-area">
-                <div class="logo-icon" style="background:transparent;box-shadow:none;">
-                    <img src="/logo.png" alt="VEXX CRM" style="width:72px;height:72px;border-radius:18px;object-fit:contain;">
-                </div>
-                <h1>VEXX CRM</h1>
+                <img src="/logo.png" alt="VEXX CRM" style="width:120px;height:auto;margin:0 auto 12px;display:block;">
                 <p>Acesse o painel de gestão</p>
             </div>
 
@@ -280,12 +277,12 @@
 
             <form id="loginForm" onsubmit="handleLogin(event)">
                 <div class="form-group">
-                    <label for="username">Usuário</label>
+                    <label for="username">E-mail</label>
                     <div class="input-wrapper">
-                        <input type="text" id="username" name="username" placeholder="Digite seu usuário" autocomplete="username" required autofocus>
+                        <input type="email" id="username" name="username" placeholder="Digite seu e-mail" autocomplete="email" required autofocus>
                         <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                            <circle cx="12" cy="7" r="4"/>
+                            <rect x="2" y="4" width="20" height="16" rx="2"/>
+                            <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
                         </svg>
                     </div>
                 </div>

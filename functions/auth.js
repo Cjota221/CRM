@@ -1,9 +1,10 @@
 const crypto = require('crypto');
+const { createClient } = require('@supabase/supabase-js');
 
-const CRM_USER = process.env.CRM_USER || 'admin';
-const CRM_PASS = process.env.CRM_PASS || 'admin';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'cjota-crm-default-secret-change-me';
 const SESSION_MAX_AGE = 24 * 60 * 60; // 24h em segundos
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://qmyeyiujmcdjzvcqkyoc.supabase.co';
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
 function signToken(payload) {
     const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
@@ -41,24 +42,53 @@ exports.handler = async (event) => {
     if (method === 'POST' && path === '/login') {
         try {
             const body = JSON.parse(event.body || '{}');
-            if (body.username === CRM_USER && body.password === CRM_PASS) {
-                const token = signToken({ user: body.username, iat: Math.floor(Date.now() / 1000) });
-                return {
-                    statusCode: 200,
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Set-Cookie': `crm_session=${token}; HttpOnly; Path=/; Max-Age=${SESSION_MAX_AGE}; SameSite=Lax`
-                    },
-                    body: JSON.stringify({ success: true, message: 'Login realizado com sucesso' })
-                };
+            const { username, password } = body;
+            if (!username || !password) {
+                return { statusCode: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: false, message: 'E-mail e senha são obrigatórios' }) };
             }
+
+            if (!SUPABASE_SERVICE_KEY) {
+                // Fallback: env vars
+                const envUser = process.env.CRM_USER || 'admin';
+                const envPass = process.env.CRM_PASS || 'admin';
+                if (username === envUser && password === envPass) {
+                    const token = signToken({ user: username, iat: Math.floor(Date.now() / 1000) });
+                    return {
+                        statusCode: 200,
+                        headers: { 'Content-Type': 'application/json', 'Set-Cookie': `crm_session=${token}; HttpOnly; Path=/; Max-Age=${SESSION_MAX_AGE}; SameSite=Lax` },
+                        body: JSON.stringify({ success: true, message: 'Login realizado com sucesso' })
+                    };
+                }
+                return { statusCode: 401, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: false, message: 'E-mail ou senha inválidos' }) };
+            }
+
+            // Supabase auth
+            const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+            const { data: users, error } = await supabase
+                .from('crm_users')
+                .select('*')
+                .eq('email', username.toLowerCase().trim())
+                .eq('active', true)
+                .limit(1);
+
+            if (error || !users || users.length === 0) {
+                return { statusCode: 401, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: false, message: 'E-mail ou senha inválidos' }) };
+            }
+
+            const user = users[0];
+            const inputHash = crypto.createHash('sha256').update(password + (user.salt || '')).digest('hex');
+            if (user.password_hash !== inputHash) {
+                return { statusCode: 401, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: false, message: 'E-mail ou senha inválidos' }) };
+            }
+
+            const token = signToken({ user: user.email, name: user.name, iat: Math.floor(Date.now() / 1000) });
             return {
-                statusCode: 401,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ success: false, message: 'Usuário ou senha inválidos' })
+                statusCode: 200,
+                headers: { 'Content-Type': 'application/json', 'Set-Cookie': `crm_session=${token}; HttpOnly; Path=/; Max-Age=${SESSION_MAX_AGE}; SameSite=Lax` },
+                body: JSON.stringify({ success: true, message: 'Login realizado com sucesso', user: { name: user.name, email: user.email } })
             };
-        } catch {
-            return { statusCode: 400, body: JSON.stringify({ success: false, message: 'Requisição inválida' }) };
+        } catch (err) {
+            return { statusCode: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ success: false, message: 'Erro interno' }) };
         }
     }
 

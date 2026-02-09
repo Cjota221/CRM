@@ -13,8 +13,6 @@ const PORT = 3000;
 // ============================================================================
 // SISTEMA DE AUTENTICAÇÃO
 // ============================================================================
-const AUTH_USER = process.env.CRM_USER || 'admin';
-const AUTH_PASS = process.env.CRM_PASS || 'admin';
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 const SESSION_MAX_AGE = 24 * 60 * 60 * 1000; // 24 horas
 
@@ -307,15 +305,52 @@ app.use(bodyParser.json({ limit: '1000mb' })); // Aumenta limite de JSON para si
 // ============================================================================
 // ROTAS DE AUTENTICAÇÃO (ANTES do static middleware)
 // ============================================================================
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
     const { username, password } = req.body || {};
-    if (username === AUTH_USER && password === AUTH_PASS) {
-        const token = generateSessionToken();
-        activeSessions.set(token, { user: username, createdAt: Date.now() });
-        res.setHeader('Set-Cookie', `crm_session=${token}; HttpOnly; Path=/; Max-Age=${SESSION_MAX_AGE / 1000}; SameSite=Lax`);
-        return res.json({ success: true, message: 'Login realizado com sucesso' });
+    if (!username || !password) {
+        return res.status(400).json({ success: false, message: 'E-mail e senha são obrigatórios' });
     }
-    return res.status(401).json({ success: false, message: 'Usuário ou senha inválidos' });
+    try {
+        // Buscar usuário no Supabase
+        const SUPA_URL = process.env.SUPABASE_URL || 'https://qmyeyiujmcdjzvcqkyoc.supabase.co';
+        const SUPA_KEY = process.env.SUPABASE_SERVICE_KEY;
+        if (!SUPA_KEY) {
+            // Fallback: env vars
+            const envUser = process.env.CRM_USER || 'admin';
+            const envPass = process.env.CRM_PASS || 'admin';
+            if (username === envUser && password === envPass) {
+                const token = generateSessionToken();
+                activeSessions.set(token, { user: username, createdAt: Date.now() });
+                res.setHeader('Set-Cookie', `crm_session=${token}; HttpOnly; Path=/; Max-Age=${SESSION_MAX_AGE / 1000}; SameSite=Lax`);
+                return res.json({ success: true, message: 'Login realizado com sucesso' });
+            }
+            return res.status(401).json({ success: false, message: 'E-mail ou senha inválidos' });
+        }
+        const { createClient } = require('@supabase/supabase-js');
+        const supabase = createClient(SUPA_URL, SUPA_KEY);
+        const { data: users, error } = await supabase
+            .from('crm_users')
+            .select('*')
+            .eq('email', username.toLowerCase().trim())
+            .eq('active', true)
+            .limit(1);
+        if (error || !users || users.length === 0) {
+            return res.status(401).json({ success: false, message: 'E-mail ou senha inválidos' });
+        }
+        const user = users[0];
+        // Comparar senha com hash
+        const inputHash = crypto.createHash('sha256').update(password + (user.salt || '')).digest('hex');
+        if (user.password_hash !== inputHash) {
+            return res.status(401).json({ success: false, message: 'E-mail ou senha inválidos' });
+        }
+        const token = generateSessionToken();
+        activeSessions.set(token, { user: user.email, name: user.name, createdAt: Date.now() });
+        res.setHeader('Set-Cookie', `crm_session=${token}; HttpOnly; Path=/; Max-Age=${SESSION_MAX_AGE / 1000}; SameSite=Lax`);
+        return res.json({ success: true, message: 'Login realizado com sucesso', user: { name: user.name, email: user.email } });
+    } catch (err) {
+        console.error('[Auth] Erro no login:', err.message);
+        return res.status(500).json({ success: false, message: 'Erro interno no servidor' });
+    }
 });
 
 app.post('/api/auth/logout', (req, res) => {
