@@ -279,6 +279,8 @@ async function handleWebhook(req, res) {
                         quantidade: p.quantidade,
                         preco: p.preco
                     })),
+                    // NOVO: Capturar link do carrinho (deep link)
+                    link_carrinho: dados.url || dados.link_carrinho || dados.link || dados.checkout_url || null,
                     iniciado_em: dados.iniciado_em,
                     ultima_atualizacao: dados.ultima_atualizacao
                 };
@@ -2233,6 +2235,695 @@ app.post('/api/contacts/save', async (req, res) => {
         
     } catch (error) {
         console.error('[contacts/save] Erro:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ============================================================================
+// MÓDULO DE CAMPANHAS - Motor de Segmentação RFM + Disparo em Massa
+// ============================================================================
+
+// Armazenamento de campanhas em memória (persistido no Supabase quando disponível)
+let campaigns = [];
+let campaignHistory = {}; // { campaignId: [{ phone, sentAt, status }] }
+
+/**
+ * POST /api/campaigns/segment
+ * Motor de segmentação RFM (Recência, Frequência, Monetário)
+ * Retorna lista de clientes filtrados
+ */
+app.post('/api/campaigns/segment', async (req, res) => {
+    try {
+        const { segment, minOrders, maxOrders, minSpent, maxSpent, inactiveDays, state, city } = req.body;
+        
+        if (!crmCache.clients || crmCache.clients.length === 0) {
+            return res.status(400).json({ error: 'Nenhum cliente carregado. Sincronize primeiro.' });
+        }
+        
+        let clients = [...crmCache.clients];
+        const orders = crmCache.orders || [];
+        const now = new Date();
+        
+        // Enriquecer clientes com métricas RFM
+        clients = clients.map(client => {
+            const clientOrders = orders.filter(o => 
+                o.id_cliente === client.id || o.cliente_id === client.id
+            );
+            
+            const totalSpent = clientOrders.reduce((sum, o) => sum + (parseFloat(o.valor_total) || 0), 0);
+            const orderCount = clientOrders.length;
+            
+            // Última compra
+            const sortedOrders = clientOrders.sort((a, b) => new Date(b.data) - new Date(a.data));
+            const lastOrderDate = sortedOrders[0] ? new Date(sortedOrders[0].data) : null;
+            const daysSinceLastPurchase = lastOrderDate ? Math.floor((now - lastOrderDate) / (1000 * 60 * 60 * 24)) : 999;
+            
+            // Categorias compradas
+            const categories = [...new Set(clientOrders.flatMap(o => {
+                const items = o.itens || o.products || [];
+                return items.map(i => i.categoria || i.category || 'Sem categoria');
+            }))];
+            
+            // Telefone normalizado
+            const phone = (client.telefone || client.celular || client.whatsapp || '').replace(/\D/g, '');
+            
+            return {
+                ...client,
+                phone,
+                totalSpent,
+                orderCount,
+                daysSinceLastPurchase,
+                lastOrderDate: lastOrderDate?.toISOString(),
+                categories,
+                displayName: client.nome || client.name || 'Sem nome'
+            };
+        });
+        
+        // Filtrar por telefone válido
+        clients = clients.filter(c => c.phone && c.phone.length >= 10);
+        
+        // Aplicar filtros de segmentação
+        if (segment) {
+            switch (segment) {
+                case 'vip':
+                    clients = clients.filter(c => c.orderCount >= 5 || c.totalSpent >= 500);
+                    break;
+                case 'recorrente':
+                    clients = clients.filter(c => c.orderCount >= 2 && c.orderCount < 5);
+                    break;
+                case 'inativos':
+                    clients = clients.filter(c => c.daysSinceLastPurchase >= (inactiveDays || 90) && c.orderCount > 0);
+                    break;
+                case 'novos':
+                    clients = clients.filter(c => c.orderCount <= 1 && c.daysSinceLastPurchase <= 30);
+                    break;
+                case 'risco':
+                    clients = clients.filter(c => c.daysSinceLastPurchase >= 60 && c.daysSinceLastPurchase < 120 && c.orderCount > 0);
+                    break;
+                case 'todos':
+                default:
+                    break;
+            }
+        }
+        
+        // Filtros adicionais
+        if (minOrders) clients = clients.filter(c => c.orderCount >= minOrders);
+        if (maxOrders) clients = clients.filter(c => c.orderCount <= maxOrders);
+        if (minSpent) clients = clients.filter(c => c.totalSpent >= minSpent);
+        if (maxSpent) clients = clients.filter(c => c.totalSpent <= maxSpent);
+        if (state) clients = clients.filter(c => (c.estado || c.state || '').toUpperCase() === state.toUpperCase());
+        if (city) clients = clients.filter(c => (c.cidade || c.city || '').toLowerCase().includes(city.toLowerCase()));
+        
+        // Ordenar por valor gasto (maiores primeiro)
+        clients.sort((a, b) => b.totalSpent - a.totalSpent);
+        
+        console.log(`[SEGMENT] Filtro "${segment || 'todos'}": ${clients.length} clientes`);
+        
+        res.json({
+            total: clients.length,
+            segment: segment || 'todos',
+            clients: clients.map(c => ({
+                id: c.id,
+                name: c.displayName,
+                phone: c.phone,
+                email: c.email,
+                totalSpent: c.totalSpent.toFixed(2),
+                orderCount: c.orderCount,
+                daysSinceLastPurchase: c.daysSinceLastPurchase,
+                lastOrderDate: c.lastOrderDate,
+                state: c.estado || c.state,
+                city: c.cidade || c.city
+            }))
+        });
+        
+    } catch (error) {
+        console.error('[SEGMENT] Erro:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * POST /api/campaigns/create
+ * Criar uma campanha de disparo em massa
+ */
+app.post('/api/campaigns/create', async (req, res) => {
+    try {
+        const { name, message, imageUrl, contacts, segment, batchSize, batchInterval, scheduledAt, couponCode } = req.body;
+        
+        if (!name || !message || !contacts || contacts.length === 0) {
+            return res.status(400).json({ error: 'Nome, mensagem e contatos são obrigatórios' });
+        }
+        
+        const campaign = {
+            id: `camp_${Date.now()}`,
+            name,
+            message,
+            imageUrl: imageUrl || null,
+            segment: segment || 'custom',
+            contacts: contacts, // [{ id, name, phone }]
+            totalContacts: contacts.length,
+            sentCount: 0,
+            failedCount: 0,
+            status: scheduledAt ? 'scheduled' : 'ready',
+            batchSize: batchSize || 10,
+            batchInterval: batchInterval || 20, // minutos
+            scheduledAt: scheduledAt || null,
+            couponCode: couponCode || null,
+            createdAt: new Date().toISOString(),
+            startedAt: null,
+            completedAt: null,
+            history: [] // Log de envios
+        };
+        
+        campaigns.push(campaign);
+        
+        console.log(`[CAMPAIGN] Criada: "${name}" - ${contacts.length} contatos`);
+        
+        res.json({ success: true, campaign });
+        
+    } catch (error) {
+        console.error('[CAMPAIGN] Erro ao criar:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * GET /api/campaigns
+ * Listar todas as campanhas
+ */
+app.get('/api/campaigns', (req, res) => {
+    res.json({ campaigns: campaigns.map(c => ({ ...c, contacts: undefined, history: undefined, contactCount: c.contacts?.length })) });
+});
+
+/**
+ * GET /api/campaigns/:id
+ * Detalhes de uma campanha
+ */
+app.get('/api/campaigns/:id', (req, res) => {
+    const campaign = campaigns.find(c => c.id === req.params.id);
+    if (!campaign) return res.status(404).json({ error: 'Campanha não encontrada' });
+    res.json(campaign);
+});
+
+/**
+ * POST /api/campaigns/:id/start
+ * Iniciar disparo de uma campanha (processamento no servidor)
+ */
+app.post('/api/campaigns/:id/start', async (req, res) => {
+    try {
+        const campaign = campaigns.find(c => c.id === req.params.id);
+        if (!campaign) return res.status(404).json({ error: 'Campanha não encontrada' });
+        
+        if (campaign.status === 'running') {
+            return res.status(400).json({ error: 'Campanha já está em execução' });
+        }
+        
+        campaign.status = 'running';
+        campaign.startedAt = new Date().toISOString();
+        
+        console.log(`[CAMPAIGN] Iniciando disparo: "${campaign.name}" - ${campaign.totalContacts} contatos`);
+        
+        // Responde imediatamente ao frontend
+        res.json({ success: true, message: 'Disparo iniciado', campaignId: campaign.id });
+        
+        // Processar em background (batches)
+        processCampaignBatches(campaign);
+        
+    } catch (error) {
+        console.error('[CAMPAIGN] Erro ao iniciar:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * POST /api/campaigns/:id/pause
+ * Pausar campanha em andamento
+ */
+app.post('/api/campaigns/:id/pause', (req, res) => {
+    const campaign = campaigns.find(c => c.id === req.params.id);
+    if (!campaign) return res.status(404).json({ error: 'Campanha não encontrada' });
+    campaign.status = 'paused';
+    console.log(`[CAMPAIGN] Pausada: "${campaign.name}"`);
+    res.json({ success: true, message: 'Campanha pausada' });
+});
+
+/**
+ * POST /api/campaigns/:id/resume
+ * Retomar campanha pausada
+ */
+app.post('/api/campaigns/:id/resume', async (req, res) => {
+    const campaign = campaigns.find(c => c.id === req.params.id);
+    if (!campaign) return res.status(404).json({ error: 'Campanha não encontrada' });
+    campaign.status = 'running';
+    console.log(`[CAMPAIGN] Retomada: "${campaign.name}"`);
+    res.json({ success: true, message: 'Campanha retomada' });
+    processCampaignBatches(campaign);
+});
+
+/**
+ * DELETE /api/campaigns/:id
+ * Excluir campanha
+ */
+app.delete('/api/campaigns/:id', (req, res) => {
+    const idx = campaigns.findIndex(c => c.id === req.params.id);
+    if (idx < 0) return res.status(404).json({ error: 'Campanha não encontrada' });
+    const removed = campaigns.splice(idx, 1);
+    if (removed[0]) removed[0].status = 'cancelled'; // Para parar o processamento
+    console.log(`[CAMPAIGN] Excluída: "${removed[0]?.name}"`);
+    res.json({ success: true });
+});
+
+/**
+ * GET /api/campaigns/:id/history
+ * Histórico de envio de uma campanha (timeline do contato)
+ */
+app.get('/api/campaigns/:id/history', (req, res) => {
+    const campaign = campaigns.find(c => c.id === req.params.id);
+    if (!campaign) return res.status(404).json({ error: 'Campanha não encontrada' });
+    res.json({ history: campaign.history || [] });
+});
+
+/**
+ * GET /api/contact-campaigns/:phone
+ * Ver quais campanhas um contato recebeu (para a timeline da Central)
+ */
+app.get('/api/contact-campaigns/:phone', (req, res) => {
+    const phone = req.params.phone.replace(/\D/g, '').replace(/^55/, '');
+    
+    const contactCampaigns = [];
+    campaigns.forEach(camp => {
+        const entries = (camp.history || []).filter(h => {
+            const hPhone = h.phone?.replace(/\D/g, '').replace(/^55/, '');
+            return hPhone === phone;
+        });
+        if (entries.length > 0) {
+            contactCampaigns.push({
+                campaignId: camp.id,
+                campaignName: camp.name,
+                sentAt: entries[0].sentAt,
+                status: entries[0].status,
+                message: camp.message?.substring(0, 100)
+            });
+        }
+    });
+    
+    res.json({ campaigns: contactCampaigns });
+});
+
+/**
+ * Função interna: processar batches de uma campanha
+ * Envia mensagens em lotes com delay anti-ban
+ */
+async function processCampaignBatches(campaign) {
+    const { contacts, batchSize, batchInterval, message, imageUrl, couponCode } = campaign;
+    
+    let currentIndex = campaign.sentCount; // Retomar de onde parou
+    
+    while (currentIndex < contacts.length) {
+        // Verificar se campanha foi pausada ou cancelada
+        const current = campaigns.find(c => c.id === campaign.id);
+        if (!current || current.status !== 'running') {
+            console.log(`[CAMPAIGN] "${campaign.name}" parada em ${currentIndex}/${contacts.length}`);
+            return;
+        }
+        
+        // Processar batch
+        const batch = contacts.slice(currentIndex, currentIndex + batchSize);
+        console.log(`[CAMPAIGN] "${campaign.name}" - Lote ${Math.floor(currentIndex / batchSize) + 1}: ${batch.length} mensagens`);
+        
+        for (const contact of batch) {
+            // Verificar status novamente
+            const check = campaigns.find(c => c.id === campaign.id);
+            if (!check || check.status !== 'running') return;
+            
+            try {
+                // Personalizar mensagem
+                let personalizedMsg = message
+                    .replace(/\{\{nome\}\}/gi, contact.name || 'Cliente')
+                    .replace(/\{\{telefone\}\}/gi, contact.phone || '')
+                    .replace(/\{\{cidade\}\}/gi, contact.city || '')
+                    .replace(/\{\{cupom\}\}/gi, couponCode || '');
+                
+                // Normalizar telefone para envio
+                let phoneNumber = contact.phone.replace(/\D/g, '');
+                if (!phoneNumber.startsWith('55') && phoneNumber.length <= 11) {
+                    phoneNumber = '55' + phoneNumber;
+                }
+                
+                // Enviar via Evolution API
+                const url = `${EVOLUTION_URL}/message/sendText/${INSTANCE_NAME}`;
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: evolutionHeaders,
+                    body: JSON.stringify({
+                        number: phoneNumber,
+                        text: personalizedMsg
+                    })
+                });
+                
+                const data = await response.json();
+                const success = !data.error && data.status !== 'error';
+                
+                // Registrar no histórico
+                campaign.history.push({
+                    phone: phoneNumber,
+                    name: contact.name,
+                    sentAt: new Date().toISOString(),
+                    status: success ? 'sent' : 'failed',
+                    error: success ? null : (data.message || data.error)
+                });
+                
+                if (success) {
+                    campaign.sentCount++;
+                } else {
+                    campaign.failedCount++;
+                }
+                
+                console.log(`[CAMPAIGN] ${success ? '✅' : '❌'} ${contact.name} (${phoneNumber})`);
+                
+                // Delay anti-ban: 3-7 segundos entre mensagens
+                const delay = 3000 + Math.random() * 4000;
+                await new Promise(r => setTimeout(r, delay));
+                
+            } catch (error) {
+                console.error(`[CAMPAIGN] Erro ao enviar para ${contact.name}:`, error.message);
+                campaign.failedCount++;
+                campaign.history.push({
+                    phone: contact.phone,
+                    name: contact.name,
+                    sentAt: new Date().toISOString(),
+                    status: 'error',
+                    error: error.message
+                });
+            }
+        }
+        
+        currentIndex += batchSize;
+        
+        // Se ainda há mais contatos, esperar intervalo entre lotes
+        if (currentIndex < contacts.length) {
+            const current2 = campaigns.find(c => c.id === campaign.id);
+            if (!current2 || current2.status !== 'running') return;
+            
+            console.log(`[CAMPAIGN] "${campaign.name}" - Aguardando ${batchInterval} minutos para próximo lote...`);
+            await new Promise(r => setTimeout(r, batchInterval * 60 * 1000));
+        }
+    }
+    
+    // Campanha finalizada
+    campaign.status = 'completed';
+    campaign.completedAt = new Date().toISOString();
+    console.log(`[CAMPAIGN] ✅ "${campaign.name}" CONCLUÍDA! ${campaign.sentCount} enviados, ${campaign.failedCount} falhas`);
+}
+
+// Verificador de campanhas agendadas (roda a cada 60 segundos)
+setInterval(() => {
+    const now = new Date();
+    campaigns.forEach(camp => {
+        if (camp.status === 'scheduled' && camp.scheduledAt) {
+            const scheduledTime = new Date(camp.scheduledAt);
+            if (now >= scheduledTime) {
+                console.log(`[CAMPAIGN] Campanha agendada "${camp.name}" ativada!`);
+                camp.status = 'running';
+                camp.startedAt = new Date().toISOString();
+                processCampaignBatches(camp);
+            }
+        }
+    });
+}, 60000);
+
+// ============================================================================
+// RECUPERAÇÃO DE CARRINHO - Deep Links + Cupons
+// ============================================================================
+
+/**
+ * POST /api/cart-recovery/send
+ * Enviar mensagem de recuperação de carrinho com link direto + cupom
+ */
+app.post('/api/cart-recovery/send', async (req, res) => {
+    try {
+        const { cartId, couponCode, customMessage } = req.body;
+        
+        // Buscar carrinho
+        const cart = abandonedCarts.find(c => c.id == cartId);
+        if (!cart) {
+            return res.status(404).json({ error: 'Carrinho não encontrado' });
+        }
+        
+        const phone = cart.cliente?.whatsapp?.replace(/\D/g, '') || '';
+        if (!phone) {
+            return res.status(400).json({ error: 'Cliente sem WhatsApp' });
+        }
+        
+        // Construir link do carrinho
+        let cartUrl = cart.link_carrinho || null;
+        
+        // Se não tem link direto, tentar construir
+        if (!cartUrl && SITE_BASE_URL && SITE_BASE_URL !== 'https://seusite.com.br') {
+            cartUrl = `${SITE_BASE_URL}/carrinho?id=${cart.id}`;
+        }
+        
+        // Adicionar cupom ao link (se suportado pela plataforma)
+        if (cartUrl && couponCode) {
+            const separator = cartUrl.includes('?') ? '&' : '?';
+            cartUrl = `${cartUrl}${separator}coupon=${encodeURIComponent(couponCode)}`;
+        }
+        
+        // Listar produtos do carrinho
+        const productsList = (cart.produtos || [])
+            .map(p => `  • ${p.nome}${p.variacao ? ` (${p.variacao})` : ''} - ${p.quantidade}x`)
+            .join('\n');
+        
+        // Montar mensagem
+        let text = customMessage || '';
+        
+        if (!text) {
+            text = `Olá ${cart.cliente?.nome || 'Cliente'}! 😊\n\n`;
+            text += `Vi que você deixou alguns produtos no carrinho:\n${productsList}\n\n`;
+            text += `*Total: R$ ${parseFloat(cart.valor_total).toFixed(2)}*\n\n`;
+            
+            if (couponCode) {
+                text += `🎁 Use o cupom *${couponCode}* e ganhe um desconto especial!\n\n`;
+            }
+            
+            if (cartUrl) {
+                text += `🛒 Clique aqui para finalizar sua compra:\n${cartUrl}\n\n`;
+            }
+            
+            text += `Posso te ajudar com alguma dúvida? 💬`;
+        } else {
+            // Substituir variáveis na mensagem customizada
+            text = text
+                .replace(/\{\{nome\}\}/gi, cart.cliente?.nome || 'Cliente')
+                .replace(/\{\{valor\}\}/gi, `R$ ${parseFloat(cart.valor_total).toFixed(2)}`)
+                .replace(/\{\{produtos\}\}/gi, productsList)
+                .replace(/\{\{link\}\}/gi, cartUrl || '[link indisponível]')
+                .replace(/\{\{cupom\}\}/gi, couponCode || '');
+        }
+        
+        // Normalizar telefone
+        let phoneNumber = phone;
+        if (!phoneNumber.startsWith('55') && phoneNumber.length <= 11) {
+            phoneNumber = '55' + phoneNumber;
+        }
+        
+        // Enviar via Evolution API
+        const url = `${EVOLUTION_URL}/message/sendText/${INSTANCE_NAME}`;
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: evolutionHeaders,
+            body: JSON.stringify({ number: phoneNumber, text })
+        });
+        
+        const data = await response.json();
+        const success = !data.error && data.status !== 'error';
+        
+        if (success) {
+            console.log(`[CART RECOVERY] ✅ Mensagem enviada para ${cart.cliente?.nome} (${phoneNumber})`);
+            
+            // Marcar carrinho como "recuperação enviada"
+            cart.recoveryStatus = 'sent';
+            cart.recoverySentAt = new Date().toISOString();
+            cart.recoveryCoupon = couponCode || null;
+        }
+        
+        res.json({
+            success,
+            message: success ? 'Mensagem de recuperação enviada!' : 'Falha ao enviar',
+            cartUrl,
+            phoneNumber
+        });
+        
+    } catch (error) {
+        console.error('[CART RECOVERY] Erro:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * POST /api/cart-recovery/bulk
+ * Recuperar múltiplos carrinhos abandonados de uma vez
+ */
+app.post('/api/cart-recovery/bulk', async (req, res) => {
+    try {
+        const { cartIds, couponCode, message } = req.body;
+        
+        if (!cartIds || cartIds.length === 0) {
+            return res.status(400).json({ error: 'Nenhum carrinho selecionado' });
+        }
+        
+        const results = [];
+        
+        for (const cartId of cartIds) {
+            try {
+                const cart = abandonedCarts.find(c => c.id == cartId);
+                if (!cart) {
+                    results.push({ cartId, success: false, error: 'Não encontrado' });
+                    continue;
+                }
+                
+                const phone = cart.cliente?.whatsapp?.replace(/\D/g, '') || '';
+                if (!phone) {
+                    results.push({ cartId, success: false, error: 'Sem WhatsApp' });
+                    continue;
+                }
+                
+                // Construir link
+                let cartUrl = cart.link_carrinho || null;
+                if (!cartUrl && SITE_BASE_URL && SITE_BASE_URL !== 'https://seusite.com.br') {
+                    cartUrl = `${SITE_BASE_URL}/carrinho?id=${cart.id}`;
+                }
+                if (cartUrl && couponCode) {
+                    const separator = cartUrl.includes('?') ? '&' : '?';
+                    cartUrl = `${cartUrl}${separator}coupon=${encodeURIComponent(couponCode)}`;
+                }
+                
+                const productsList = (cart.produtos || [])
+                    .map(p => `  • ${p.nome} - ${p.quantidade}x`)
+                    .join('\n');
+                
+                let text = message || `Olá ${cart.cliente?.nome || 'Cliente'}! 😊\n\nVi que você deixou alguns produtos no carrinho:\n${productsList}\n\n*Total: R$ ${parseFloat(cart.valor_total).toFixed(2)}*`;
+                
+                if (couponCode) text += `\n\n🎁 Cupom: *${couponCode}*`;
+                if (cartUrl) text += `\n\n🛒 Finalizar compra: ${cartUrl}`;
+                
+                text = text
+                    .replace(/\{\{nome\}\}/gi, cart.cliente?.nome || 'Cliente')
+                    .replace(/\{\{valor\}\}/gi, `R$ ${parseFloat(cart.valor_total).toFixed(2)}`)
+                    .replace(/\{\{link\}\}/gi, cartUrl || '')
+                    .replace(/\{\{cupom\}\}/gi, couponCode || '');
+                
+                let phoneNumber = phone;
+                if (!phoneNumber.startsWith('55') && phoneNumber.length <= 11) {
+                    phoneNumber = '55' + phoneNumber;
+                }
+                
+                const sendUrl = `${EVOLUTION_URL}/message/sendText/${INSTANCE_NAME}`;
+                const response = await fetch(sendUrl, {
+                    method: 'POST',
+                    headers: evolutionHeaders,
+                    body: JSON.stringify({ number: phoneNumber, text })
+                });
+                
+                const data = await response.json();
+                const success = !data.error && data.status !== 'error';
+                
+                cart.recoveryStatus = success ? 'sent' : 'failed';
+                cart.recoverySentAt = new Date().toISOString();
+                cart.recoveryCoupon = couponCode || null;
+                
+                results.push({ cartId, success, name: cart.cliente?.nome, phone: phoneNumber });
+                
+                // Delay anti-ban: 3-5 segundos
+                await new Promise(r => setTimeout(r, 3000 + Math.random() * 2000));
+                
+            } catch (err) {
+                results.push({ cartId, success: false, error: err.message });
+            }
+        }
+        
+        const sent = results.filter(r => r.success).length;
+        const failed = results.filter(r => !r.success).length;
+        
+        console.log(`[CART RECOVERY BULK] ${sent} enviados, ${failed} falhas`);
+        
+        res.json({ results, sent, failed });
+        
+    } catch (error) {
+        console.error('[CART RECOVERY BULK] Erro:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * GET /api/coupons/active
+ * Listar cupons ativos para seleção na recuperação de carrinho
+ */
+app.get('/api/coupons/active', async (req, res) => {
+    try {
+        // Tentar buscar do Supabase
+        if (supabase) {
+            const { data, error } = await supabase
+                .from('coupons')
+                .select('*')
+                .eq('is_active', true);
+            
+            if (!error && data) {
+                return res.json({ coupons: data });
+            }
+        }
+        
+        // Fallback: cupons do cache
+        res.json({ coupons: crmCache.coupons || [] });
+        
+    } catch (error) {
+        console.error('[COUPONS] Erro:', error);
+        res.json({ coupons: [] });
+    }
+});
+
+/**
+ * POST /api/coupons/create
+ * Criar um novo cupom
+ */
+app.post('/api/coupons/create', async (req, res) => {
+    try {
+        const { code, discount, type, minValue, maxUses, validUntil, description } = req.body;
+        
+        if (!code || !discount) {
+            return res.status(400).json({ error: 'Código e desconto são obrigatórios' });
+        }
+        
+        const coupon = {
+            id: `coupon_${Date.now()}`,
+            code: code.toUpperCase(),
+            discount: parseFloat(discount),
+            type: type || 'percent', // 'percent' ou 'fixed'
+            min_value: parseFloat(minValue) || 0,
+            max_uses: parseInt(maxUses) || 0,
+            current_uses: 0,
+            valid_until: validUntil || null,
+            is_active: true,
+            description: description || `Desconto ${type === 'fixed' ? 'R$' : ''}${discount}${type !== 'fixed' ? '%' : ''}`,
+            created_at: new Date().toISOString()
+        };
+        
+        // Salvar no Supabase se disponível
+        if (supabase) {
+            const { error } = await supabase.from('coupons').upsert([coupon], { onConflict: 'id' });
+            if (error) console.error('[COUPON] Erro Supabase:', error);
+        }
+        
+        // Salvar no cache
+        if (!crmCache.coupons) crmCache.coupons = [];
+        crmCache.coupons.push(coupon);
+        
+        console.log(`[COUPON] Criado: ${coupon.code} - ${coupon.description}`);
+        
+        res.json({ success: true, coupon });
+        
+    } catch (error) {
+        console.error('[COUPON] Erro:', error);
         res.status(500).json({ error: error.message });
     }
 });

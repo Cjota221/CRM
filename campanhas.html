@@ -149,6 +149,10 @@
                         <i data-lucide="user-x" class="w-4 h-4"></i>
                         Clientes Inativos
                     </button>
+                    <button onclick="openCartRecovery()" class="w-full btn btn-secondary text-xs justify-start">
+                        <i data-lucide="shopping-cart" class="w-4 h-4"></i>
+                        Carrinhos Abandonados
+                    </button>
                 </div>
             </div>
         </aside>
@@ -207,22 +211,32 @@
                 
                 <!-- Público Alvo -->
                 <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-2">Público Alvo</label>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Público Alvo (Segmentação RFM)</label>
                     <div class="grid grid-cols-2 gap-3">
-                        <button onclick="selectAudience('all')" class="audience-btn p-4 rounded-xl border-2 border-slate-200 text-left hover:border-primary-500 transition-colors" data-audience="all">
+                        <button onclick="selectAudience('todos')" class="audience-btn p-4 rounded-xl border-2 border-slate-200 text-left hover:border-primary-500 transition-colors" data-audience="todos">
                             <i data-lucide="users" class="w-5 h-5 text-slate-500 mb-2"></i>
                             <p class="font-medium text-slate-700">Todos os Clientes</p>
-                            <p id="countAll" class="text-xs text-slate-400">0 contatos</p>
+                            <p id="countAll" class="text-xs text-slate-400">Carregando...</p>
                         </button>
-                        <button onclick="selectAudience('inactive')" class="audience-btn p-4 rounded-xl border-2 border-slate-200 text-left hover:border-primary-500 transition-colors" data-audience="inactive">
+                        <button onclick="selectAudience('inativos')" class="audience-btn p-4 rounded-xl border-2 border-slate-200 text-left hover:border-primary-500 transition-colors" data-audience="inativos">
                             <i data-lucide="user-x" class="w-5 h-5 text-red-500 mb-2"></i>
                             <p class="font-medium text-slate-700">Inativos (90+ dias)</p>
-                            <p id="countInactive" class="text-xs text-slate-400">0 contatos</p>
+                            <p id="countInactive" class="text-xs text-slate-400">Carregando...</p>
                         </button>
                         <button onclick="selectAudience('vip')" class="audience-btn p-4 rounded-xl border-2 border-slate-200 text-left hover:border-primary-500 transition-colors" data-audience="vip">
-                            <i data-lucide="star" class="w-5 h-5 text-amber-500 mb-2"></i>
+                            <i data-lucide="crown" class="w-5 h-5 text-amber-500 mb-2"></i>
                             <p class="font-medium text-slate-700">Clientes VIP</p>
-                            <p id="countVip" class="text-xs text-slate-400">Ticket > R$ 500</p>
+                            <p id="countVip" class="text-xs text-slate-400">5+ compras ou R$500+</p>
+                        </button>
+                        <button onclick="selectAudience('recorrente')" class="audience-btn p-4 rounded-xl border-2 border-slate-200 text-left hover:border-primary-500 transition-colors" data-audience="recorrente">
+                            <i data-lucide="repeat" class="w-5 h-5 text-green-500 mb-2"></i>
+                            <p class="font-medium text-slate-700">Recorrentes</p>
+                            <p id="countRecorrente" class="text-xs text-slate-400">2-4 compras</p>
+                        </button>
+                        <button onclick="selectAudience('risco')" class="audience-btn p-4 rounded-xl border-2 border-slate-200 text-left hover:border-primary-500 transition-colors" data-audience="risco">
+                            <i data-lucide="alert-triangle" class="w-5 h-5 text-orange-500 mb-2"></i>
+                            <p class="font-medium text-slate-700">Risco de Churn</p>
+                            <p id="countRisco" class="text-xs text-slate-400">60-120 dias sem compra</p>
                         </button>
                         <button onclick="selectAudience('group')" class="audience-btn p-4 rounded-xl border-2 border-slate-200 text-left hover:border-primary-500 transition-colors" data-audience="group">
                             <i data-lucide="message-circle" class="w-5 h-5 text-emerald-500 mb-2"></i>
@@ -235,16 +249,35 @@
                             <option value="">Selecione um grupo...</option>
                         </select>
                     </div>
+                    <!-- Preview da segmentação -->
+                    <div id="segmentPreview" class="hidden mt-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-sm font-medium text-slate-700">Contatos selecionados:</span>
+                            <span id="segmentCount" class="text-sm font-bold text-purple-600">0</span>
+                        </div>
+                        <div id="segmentList" class="max-h-32 overflow-y-auto text-xs text-slate-500 space-y-1"></div>
+                    </div>
                 </div>
                 
                 <!-- Mensagem -->
                 <div>
                     <label class="block text-sm font-medium text-slate-700 mb-1">Mensagem</label>
                     <textarea id="campaignMessage" rows="5" placeholder="Digite sua mensagem... Use {{nome}} para personalizar" class="input resize-none"></textarea>
-                    <div class="flex gap-2 mt-2">
+                    <div class="flex gap-2 mt-2 flex-wrap">
                         <button onclick="insertCampaignVar('nome')" class="text-xs px-2 py-1 bg-slate-100 rounded hover:bg-slate-200">{{nome}}</button>
                         <button onclick="insertCampaignVar('cidade')" class="text-xs px-2 py-1 bg-slate-100 rounded hover:bg-slate-200">{{cidade}}</button>
+                        <button onclick="insertCampaignVar('cupom')" class="text-xs px-2 py-1 bg-amber-100 text-amber-700 rounded hover:bg-amber-200">{{cupom}}</button>
+                        <button onclick="insertCampaignVar('link')" class="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200">{{link}}</button>
                     </div>
+                </div>
+
+                <!-- Cupom (opcional) -->
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Cupom de desconto (opcional)</label>
+                    <select id="campaignCoupon" class="input text-sm">
+                        <option value="">Sem cupom</option>
+                    </select>
+                    <p class="text-xs text-slate-400 mt-1">Use {{cupom}} na mensagem para incluir o código automaticamente</p>
                 </div>
                 
                 <!-- Mídia (opcional) -->
@@ -318,69 +351,171 @@
         </div>
     </div>
 
+    <!-- Modal Carrinhos Abandonados -->
+    <div id="cartRecoveryModal" class="fixed inset-0 hidden z-50 flex items-center justify-center">
+        <div class="fixed inset-0 modal-overlay" onclick="closeCartRecovery()"></div>
+        <div class="relative bg-white w-[750px] max-h-[90vh] rounded-2xl shadow-xl flex flex-col">
+            <div class="p-5 border-b border-slate-100 flex justify-between items-center">
+                <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-xl bg-orange-100 flex items-center justify-center">
+                        <i data-lucide="shopping-cart" class="w-5 h-5 text-orange-600"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-slate-800">Carrinhos Abandonados</h3>
+                        <p class="text-xs text-slate-500">Recupere vendas perdidas com mensagens personalizadas</p>
+                    </div>
+                </div>
+                <button onclick="closeCartRecovery()" class="text-slate-400 hover:text-slate-600">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-5 space-y-5">
+                <!-- Cupom -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Cupom de desconto</label>
+                        <select id="cartCoupon" class="input text-sm">
+                            <option value="">Sem cupom</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Mensagem personalizada</label>
+                        <select id="cartMessageTemplate" class="input text-sm" onchange="setCartTemplate(this.value)">
+                            <option value="">Mensagem padrão do sistema</option>
+                            <option value="urgency">Urgência: estoque acabando</option>
+                            <option value="friendly">Amigável: esqueceu algo?</option>
+                            <option value="discount">Desconto exclusivo</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="customCartMsgWrap" class="hidden">
+                    <textarea id="cartCustomMessage" rows="3" class="input resize-none text-sm" placeholder="Use {{nome}}, {{valor}}, {{link}}, {{cupom}}, {{produtos}}"></textarea>
+                </div>
+                
+                <!-- Lista de carrinhos -->
+                <div>
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-sm font-medium text-slate-700">Carrinhos pendentes</span>
+                        <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                            <input type="checkbox" id="selectAllCarts" onchange="toggleAllCarts(this.checked)" class="w-4 h-4 rounded">
+                            Selecionar todos
+                        </label>
+                    </div>
+                    <div id="cartList" class="space-y-2 max-h-72 overflow-y-auto">
+                        <p class="text-sm text-slate-400 text-center py-6">Carregando carrinhos...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="p-5 border-t border-slate-100 flex justify-between items-center">
+                <p id="cartSummary" class="text-sm text-slate-500">Selecione os carrinhos para recuperar</p>
+                <div class="flex gap-2">
+                    <button onclick="closeCartRecovery()" class="btn btn-secondary">Cancelar</button>
+                    <button onclick="sendCartRecovery()" class="btn btn-success">
+                        <i data-lucide="send" class="w-4 h-4"></i>
+                        Enviar Recuperação
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Criar Cupom -->
+    <div id="createCouponModal" class="fixed inset-0 hidden z-50 flex items-center justify-center">
+        <div class="fixed inset-0 modal-overlay" onclick="closeCouponModal()"></div>
+        <div class="relative bg-white w-[450px] rounded-2xl shadow-xl">
+            <div class="p-5 border-b border-slate-100 flex justify-between items-center">
+                <h3 class="font-semibold text-slate-800">Novo Cupom</h3>
+                <button onclick="closeCouponModal()" class="text-slate-400 hover:text-slate-600">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-5 space-y-4">
+                <div>
+                    <label class="block text-xs text-slate-500 mb-1">Código do cupom</label>
+                    <input type="text" id="couponCode" class="input uppercase" placeholder="EX: VOLTA10">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs text-slate-500 mb-1">Tipo</label>
+                        <select id="couponType" class="input text-sm">
+                            <option value="percent">Percentual (%)</option>
+                            <option value="fixed">Valor fixo (R$)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-500 mb-1">Desconto</label>
+                        <input type="number" id="couponDiscount" class="input" placeholder="10">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs text-slate-500 mb-1">Valor mínimo (R$)</label>
+                        <input type="number" id="couponMinValue" class="input" placeholder="0">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-500 mb-1">Validade</label>
+                        <input type="date" id="couponValidUntil" class="input">
+                    </div>
+                </div>
+            </div>
+            <div class="p-5 border-t border-slate-100 flex justify-end gap-2">
+                <button onclick="closeCouponModal()" class="btn btn-secondary">Cancelar</button>
+                <button onclick="createCoupon()" class="btn btn-primary">Criar Cupom</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const API_BASE = '/api';
-        let allCampaigns = JSON.parse(localStorage.getItem('crm_campaigns') || '[]');
-        let allClients = [];
+        let allCampaigns = [];
+        let segmentedContacts = [];
         let allGroups = [];
         let selectedAudience = null;
-        let selectedContacts = [];
         let currentFilter = 'all';
         let campaignImageBase64 = null;
+        let abandonedCartsList = [];
+        let couponsList = [];
+        let pollInterval = null;
 
-        // Inicialização
+        // ============================
+        // INICIALIZAÇÃO
+        // ============================
         document.addEventListener('DOMContentLoaded', async () => {
-            await loadClients();
-            await loadGroups();
-            renderCampaigns();
-            updateStats();
-            processScheduledCampaigns();
+            await Promise.all([
+                loadSegmentCounts(),
+                loadGroups(),
+                loadCampaigns(),
+                loadCoupons()
+            ]);
             lucide.createIcons();
+            startPolling();
         });
 
-        async function loadClients() {
-            try {
-                const res = await fetch(`${API_BASE}/facilzap-proxy`);
-                const data = await res.json();
-                allClients = data.clients || [];
-                document.getElementById('countAll').textContent = `${allClients.length} contatos`;
-                
-                // Calcular inativos (90+ dias)
-                const ninetyDaysAgo = Date.now() - (90 * 24 * 60 * 60 * 1000);
-                const inactive = allClients.filter(c => {
-                    const lastOrder = (data.orders || []).filter(o => o.cliente_id == c.id).sort((a,b) => new Date(b.data) - new Date(a.data))[0];
-                    if (!lastOrder) return true;
-                    return new Date(lastOrder.data).getTime() < ninetyDaysAgo;
-                });
-                document.getElementById('countInactive').textContent = `${inactive.length} contatos`;
-                
-                // VIPs (ticket > 500)
-                const vips = allClients.filter(c => {
-                    const orders = (data.orders || []).filter(o => o.cliente_id == c.id);
-                    const total = orders.reduce((sum, o) => sum + parseFloat(o.total || 0), 0);
-                    const avg = orders.length > 0 ? total / orders.length : 0;
-                    return avg >= 500;
-                });
-                document.getElementById('countVip').textContent = `${vips.length} contatos (Ticket > R$ 500)`;
-            } catch (e) {
-                console.error('Erro ao carregar clientes:', e);
+        // ============================
+        // SEGMENTAÇÃO (BACKEND)
+        // ============================
+        async function loadSegmentCounts() {
+            const segments = ['todos', 'inativos', 'vip', 'recorrente', 'risco'];
+            const idMap = { todos: 'countAll', inativos: 'countInactive', vip: 'countVip', recorrente: 'countRecorrente', risco: 'countRisco' };
+            
+            for (const seg of segments) {
+                try {
+                    const res = await fetch(`${API_BASE}/campaigns/segment`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ segment: seg })
+                    });
+                    const data = await res.json();
+                    const el = document.getElementById(idMap[seg]);
+                    if (el) el.textContent = `${data.total || 0} contatos`;
+                } catch (e) {
+                    const el = document.getElementById(idMap[seg]);
+                    if (el) el.textContent = 'Erro';
+                }
             }
         }
 
-        async function loadGroups() {
-            try {
-                const res = await fetch(`${API_BASE}/whatsapp/groups`);
-                allGroups = await res.json();
-                
-                const select = document.getElementById('targetGroup');
-                select.innerHTML = '<option value="">Selecione um grupo...</option>' +
-                    allGroups.map(g => `<option value="${g.remoteJid}">${g.name} (${g.participantsCount || '?'} participantes)</option>`).join('');
-            } catch (e) {
-                console.error('Erro ao carregar grupos:', e);
-            }
-        }
-
-        function selectAudience(type) {
+        async function selectAudience(type) {
             selectedAudience = type;
             
             // Visual feedback
@@ -388,13 +523,593 @@
                 btn.classList.remove('border-primary-500', 'bg-primary-50');
                 btn.classList.add('border-slate-200');
             });
-            document.querySelector(`[data-audience="${type}"]`).classList.add('border-primary-500', 'bg-primary-50');
-            document.querySelector(`[data-audience="${type}"]`).classList.remove('border-slate-200');
+            const selBtn = document.querySelector(`[data-audience="${type}"]`);
+            if (selBtn) {
+                selBtn.classList.add('border-primary-500', 'bg-primary-50');
+                selBtn.classList.remove('border-slate-200');
+            }
             
             // Mostrar seletor de grupo se necessário
             document.getElementById('groupSelector').classList.toggle('hidden', type !== 'group');
+
+            // Se for segmento RFM, buscar contatos do backend
+            if (type !== 'group') {
+                try {
+                    const res = await fetch(`${API_BASE}/campaigns/segment`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ segment: type })
+                    });
+                    const data = await res.json();
+                    segmentedContacts = data.clients || [];
+                    
+                    // Mostrar preview
+                    const preview = document.getElementById('segmentPreview');
+                    const countEl = document.getElementById('segmentCount');
+                    const listEl = document.getElementById('segmentList');
+                    
+                    preview.classList.remove('hidden');
+                    countEl.textContent = segmentedContacts.length;
+                    listEl.innerHTML = segmentedContacts.slice(0, 15).map(c => 
+                        `<div class="flex justify-between"><span>${c.name}</span><span class="text-slate-400">${c.orderCount} pedidos · R$ ${c.totalSpent}</span></div>`
+                    ).join('') + (segmentedContacts.length > 15 ? `<div class="text-center text-purple-500 font-medium mt-1">+${segmentedContacts.length - 15} mais</div>` : '');
+                    
+                } catch (e) {
+                    console.error('Erro ao segmentar:', e);
+                    segmentedContacts = [];
+                }
+            }
             
             updateCampaignSummary();
+        }
+
+        // ============================
+        // GRUPOS WHATSAPP
+        // ============================
+        async function loadGroups() {
+            try {
+                const res = await fetch(`${API_BASE}/whatsapp/groups`);
+                allGroups = await res.json();
+                
+                const select = document.getElementById('targetGroup');
+                select.innerHTML = '<option value="">Selecione um grupo...</option>' +
+                    allGroups.map(g => `<option value="${g.remoteJid}">${g.name} (${g.participantsCount || '?'} membros)</option>`).join('');
+            } catch (e) {
+                console.error('Erro ao carregar grupos:', e);
+            }
+        }
+
+        // ============================
+        // CUPONS
+        // ============================
+        async function loadCoupons() {
+            try {
+                const res = await fetch(`${API_BASE}/coupons/active`);
+                const data = await res.json();
+                couponsList = data.coupons || [];
+                
+                // Preencher selects de cupom
+                const couponHTML = '<option value="">Sem cupom</option>' +
+                    couponsList.map(c => `<option value="${c.code}">${c.code} — ${c.description || c.discount + '%'}</option>`).join('') +
+                    '<option value="__new__">+ Criar novo cupom</option>';
+                
+                const campCoupon = document.getElementById('campaignCoupon');
+                const cartCoupon = document.getElementById('cartCoupon');
+                if (campCoupon) campCoupon.innerHTML = couponHTML;
+                if (cartCoupon) cartCoupon.innerHTML = couponHTML;
+                
+                // Listener para abrir modal de criar cupom
+                [campCoupon, cartCoupon].forEach(sel => {
+                    if (sel) sel.addEventListener('change', function() {
+                        if (this.value === '__new__') {
+                            this.value = '';
+                            openCouponModal();
+                        }
+                    });
+                });
+            } catch (e) {
+                console.error('Erro ao carregar cupons:', e);
+            }
+        }
+
+        function openCouponModal() {
+            document.getElementById('createCouponModal').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function closeCouponModal() {
+            document.getElementById('createCouponModal').classList.add('hidden');
+        }
+
+        async function createCoupon() {
+            const code = document.getElementById('couponCode').value.trim();
+            const discount = document.getElementById('couponDiscount').value;
+            const type = document.getElementById('couponType').value;
+            const minValue = document.getElementById('couponMinValue').value;
+            const validUntil = document.getElementById('couponValidUntil').value;
+            
+            if (!code || !discount) return alert('Preencha código e desconto');
+            
+            try {
+                const res = await fetch(`${API_BASE}/coupons/create`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code, discount, type, minValue, validUntil })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    closeCouponModal();
+                    await loadCoupons();
+                    alert(`Cupom ${code.toUpperCase()} criado!`);
+                } else {
+                    alert('Erro: ' + (data.error || 'Falha ao criar'));
+                }
+            } catch (e) {
+                alert('Erro ao criar cupom: ' + e.message);
+            }
+        }
+
+        // ============================
+        // CAMPANHAS (BACKEND)
+        // ============================
+        async function loadCampaigns() {
+            try {
+                const res = await fetch(`${API_BASE}/campaigns`);
+                const data = await res.json();
+                allCampaigns = data.campaigns || [];
+            } catch (e) {
+                console.error('Erro ao carregar campanhas:', e);
+                allCampaigns = [];
+            }
+            renderCampaigns();
+            updateStats();
+        }
+
+        function renderCampaigns() {
+            const container = document.getElementById('campaignsList');
+            let filtered = allCampaigns;
+            
+            if (currentFilter !== 'all') {
+                filtered = allCampaigns.filter(c => c.status === currentFilter);
+            }
+            
+            if (filtered.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12">
+                        <div class="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-4">
+                            <i data-lucide="megaphone" class="w-8 h-8 text-slate-300"></i>
+                        </div>
+                        <p class="text-slate-500 font-medium">Nenhuma campanha ${currentFilter !== 'all' ? 'neste status' : 'criada'}</p>
+                        <p class="text-sm text-slate-400 mt-1">Crie sua primeira campanha de disparo</p>
+                        <button onclick="openNewCampaign()" class="btn btn-primary mt-4">
+                            <i data-lucide="plus" class="w-4 h-4"></i>
+                            Nova Campanha
+                        </button>
+                    </div>
+                `;
+                lucide.createIcons();
+                return;
+            }
+            
+            container.innerHTML = filtered.map(c => {
+                const total = c.totalContacts || c.contactCount || 0;
+                const sent = c.sentCount || 0;
+                const failed = c.failedCount || 0;
+                const progress = total > 0 ? (sent / total * 100).toFixed(0) : 0;
+                
+                const statusColors = {
+                    ready: 'bg-slate-100 text-slate-700',
+                    scheduled: 'bg-amber-100 text-amber-700',
+                    running: 'bg-blue-100 text-blue-700',
+                    completed: 'bg-emerald-100 text-emerald-700',
+                    paused: 'bg-slate-100 text-slate-700',
+                    cancelled: 'bg-red-100 text-red-700'
+                };
+                const statusLabels = {
+                    ready: 'Pronta',
+                    scheduled: 'Agendada',
+                    running: 'Em Andamento',
+                    completed: 'Concluída',
+                    paused: 'Pausada',
+                    cancelled: 'Cancelada'
+                };
+                
+                const segLabels = {
+                    todos: 'Todos', vip: 'VIP', recorrente: 'Recorrentes',
+                    inativos: 'Inativos', risco: 'Risco', novos: 'Novos', custom: 'Customizado'
+                };
+                
+                return `
+                    <div class="card p-5">
+                        <div class="flex justify-between items-start mb-3">
+                            <div>
+                                <h3 class="font-semibold text-slate-800">${c.name}</h3>
+                                <div class="flex items-center gap-2 mt-1">
+                                    <span class="text-xs text-slate-400">${new Date(c.createdAt).toLocaleDateString('pt-BR')}</span>
+                                    <span class="badge bg-purple-50 text-purple-600">${segLabels[c.segment] || c.segment}</span>
+                                    ${c.couponCode ? `<span class="badge bg-amber-50 text-amber-600">🎟️ ${c.couponCode}</span>` : ''}
+                                </div>
+                            </div>
+                            <span class="badge ${statusColors[c.status] || 'bg-slate-100 text-slate-600'}">${statusLabels[c.status] || c.status}</span>
+                        </div>
+                        
+                        <p class="text-sm text-slate-600 mb-4 line-clamp-2">${c.message}</p>
+                        
+                        <div class="flex items-center gap-4 mb-4">
+                            <div class="flex-1">
+                                <div class="flex justify-between text-xs text-slate-500 mb-1">
+                                    <span>${sent}/${total} enviadas</span>
+                                    <span>${progress}%</span>
+                                </div>
+                                <div class="progress-bar">
+                                    <div class="progress-fill bg-emerald-500" style="width: ${progress}%"></div>
+                                </div>
+                            </div>
+                            ${failed > 0 ? `<span class="text-xs text-red-500">${failed} falhas</span>` : ''}
+                        </div>
+                        
+                        <div class="flex justify-between items-center">
+                            ${c.scheduledAt ? `<span class="text-xs text-slate-500"><i data-lucide="clock" class="w-3 h-3 inline mr-1"></i>${new Date(c.scheduledAt).toLocaleString('pt-BR')}</span>` : '<span></span>'}
+                            <div class="flex gap-2">
+                                ${c.status === 'ready' ? `
+                                    <button onclick="startCampaign('${c.id}')" class="btn btn-success text-xs py-1.5 px-3">
+                                        <i data-lucide="play" class="w-3 h-3"></i> Iniciar
+                                    </button>
+                                ` : ''}
+                                ${c.status === 'running' ? `
+                                    <button onclick="pauseCampaign('${c.id}')" class="btn btn-secondary text-xs py-1.5 px-3">
+                                        <i data-lucide="pause" class="w-3 h-3"></i> Pausar
+                                    </button>
+                                ` : ''}
+                                ${c.status === 'paused' ? `
+                                    <button onclick="resumeCampaign('${c.id}')" class="btn btn-success text-xs py-1.5 px-3">
+                                        <i data-lucide="play" class="w-3 h-3"></i> Retomar
+                                    </button>
+                                ` : ''}
+                                ${c.status === 'scheduled' ? `
+                                    <button onclick="startCampaign('${c.id}')" class="btn btn-success text-xs py-1.5 px-3">
+                                        <i data-lucide="play" class="w-3 h-3"></i> Iniciar Agora
+                                    </button>
+                                ` : ''}
+                                <button onclick="deleteCampaign('${c.id}')" class="btn btn-danger text-xs py-1.5 px-3">
+                                    <i data-lucide="trash-2" class="w-3 h-3"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            lucide.createIcons();
+        }
+
+        function updateStats() {
+            const running = allCampaigns.filter(c => c.status === 'running');
+            const scheduled = allCampaigns.filter(c => c.status === 'scheduled' || c.status === 'ready');
+            const sentToday = allCampaigns
+                .filter(c => new Date(c.createdAt).toDateString() === new Date().toDateString())
+                .reduce((s, c) => s + (c.sentCount || 0), 0);
+            
+            document.getElementById('statSentToday').textContent = sentToday;
+            document.getElementById('statScheduled').textContent = scheduled.length;
+            document.getElementById('statRunning').textContent = running.length;
+        }
+
+        // ============================
+        // CRIAR CAMPANHA NO BACKEND
+        // ============================
+        async function saveCampaign() {
+            const name = document.getElementById('campaignName').value.trim();
+            const message = document.getElementById('campaignMessage').value.trim();
+            const couponCode = document.getElementById('campaignCoupon').value || null;
+            
+            if (!name || !message || !selectedAudience) {
+                return alert('Preencha nome, mensagem e selecione o público');
+            }
+            
+            if (selectedAudience !== 'group' && segmentedContacts.length === 0) {
+                return alert('Nenhum contato encontrado para este segmento');
+            }
+            
+            const scheduled = document.getElementById('scheduleEnabled').checked;
+            let scheduledAt = null;
+            
+            if (scheduled) {
+                const date = document.getElementById('scheduleDate').value;
+                const time = document.getElementById('scheduleTime').value;
+                if (!date || !time) return alert('Selecione data e hora');
+                scheduledAt = new Date(`${date}T${time}`).toISOString();
+            }
+            
+            // Se grupo, buscar membros
+            let contacts = segmentedContacts.map(c => ({ id: c.id, name: c.name, phone: c.phone }));
+            
+            if (selectedAudience === 'group') {
+                const groupJid = document.getElementById('targetGroup').value;
+                if (!groupJid) return alert('Selecione um grupo');
+                // Contatos do grupo serão gerenciados no servidor
+                const group = allGroups.find(g => g.remoteJid === groupJid);
+                if (group && group.participants) {
+                    contacts = group.participants.map(p => ({
+                        id: p.id,
+                        name: p.pushName || p.id.split('@')[0],
+                        phone: p.id.split('@')[0]
+                    }));
+                }
+            }
+            
+            if (contacts.length === 0) {
+                return alert('Nenhum contato disponível');
+            }
+            
+            try {
+                // 1. Criar campanha no servidor
+                const res = await fetch(`${API_BASE}/campaigns/create`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name,
+                        message,
+                        contacts,
+                        segment: selectedAudience,
+                        batchSize: parseInt(document.getElementById('batchSize').value),
+                        batchInterval: parseInt(document.getElementById('batchInterval').value),
+                        scheduledAt: scheduledAt,
+                        couponCode: couponCode,
+                        imageUrl: campaignImageBase64 || null
+                    })
+                });
+                
+                const data = await res.json();
+                
+                if (!data.success) {
+                    return alert('Erro ao criar: ' + (data.error || 'Falha'));
+                }
+                
+                closeNewCampaign();
+                
+                // 2. Se não agendada, iniciar disparo imediatamente
+                if (!scheduled) {
+                    await fetch(`${API_BASE}/campaigns/${data.campaign.id}/start`, { method: 'POST' });
+                    alert(`Campanha "${name}" iniciada! ${contacts.length} contatos serão contatados.`);
+                } else {
+                    alert(`Campanha "${name}" agendada para ${new Date(scheduledAt).toLocaleString('pt-BR')}`);
+                }
+                
+                await loadCampaigns();
+                
+            } catch (e) {
+                console.error('Erro ao salvar campanha:', e);
+                alert('Erro ao criar campanha: ' + e.message);
+            }
+        }
+
+        // ============================
+        // AÇÕES DE CAMPANHA
+        // ============================
+        async function startCampaign(id) {
+            try {
+                const res = await fetch(`${API_BASE}/campaigns/${id}/start`, { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    await loadCampaigns();
+                } else {
+                    alert(data.error || 'Erro ao iniciar');
+                }
+            } catch (e) {
+                alert('Erro: ' + e.message);
+            }
+        }
+
+        async function pauseCampaign(id) {
+            try {
+                await fetch(`${API_BASE}/campaigns/${id}/pause`, { method: 'POST' });
+                await loadCampaigns();
+            } catch (e) {
+                alert('Erro: ' + e.message);
+            }
+        }
+
+        async function resumeCampaign(id) {
+            try {
+                await fetch(`${API_BASE}/campaigns/${id}/resume`, { method: 'POST' });
+                await loadCampaigns();
+            } catch (e) {
+                alert('Erro: ' + e.message);
+            }
+        }
+
+        async function deleteCampaign(id) {
+            if (!confirm('Excluir esta campanha?')) return;
+            try {
+                await fetch(`${API_BASE}/campaigns/${id}`, { method: 'DELETE' });
+                await loadCampaigns();
+            } catch (e) {
+                alert('Erro: ' + e.message);
+            }
+        }
+
+        // ============================
+        // CARRINHOS ABANDONADOS
+        // ============================
+        function openCartRecovery() {
+            document.getElementById('cartRecoveryModal').classList.remove('hidden');
+            loadAbandonedCarts();
+            lucide.createIcons();
+        }
+
+        function closeCartRecovery() {
+            document.getElementById('cartRecoveryModal').classList.add('hidden');
+        }
+
+        async function loadAbandonedCarts() {
+            const container = document.getElementById('cartList');
+            container.innerHTML = '<p class="text-sm text-slate-400 text-center py-4">Carregando...</p>';
+            
+            try {
+                const res = await fetch(`${API_BASE}/webhook/carts`);
+                const data = await res.json();
+                abandonedCartsList = data.carts || [];
+                
+                if (abandonedCartsList.length === 0) {
+                    container.innerHTML = `
+                        <div class="text-center py-8">
+                            <i data-lucide="check-circle" class="w-10 h-10 text-emerald-300 mx-auto mb-2"></i>
+                            <p class="text-sm text-slate-500">Nenhum carrinho abandonado no momento</p>
+                            <p class="text-xs text-slate-400 mt-1">Carrinhos são recebidos via webhook do FacilZap</p>
+                        </div>`;
+                    lucide.createIcons();
+                    return;
+                }
+                
+                container.innerHTML = abandonedCartsList.map(cart => {
+                    const products = (cart.produtos || []).map(p => p.nome).join(', ');
+                    const valor = parseFloat(cart.valor_total || 0).toFixed(2);
+                    const nome = cart.cliente?.nome || 'Cliente';
+                    const phone = cart.cliente?.whatsapp || cart.cliente?.telefone || '';
+                    const sent = cart.recoveryStatus === 'sent';
+                    const timeAgo = timeAgoStr(cart.timestamp || cart.created_at);
+                    
+                    return `
+                        <label class="flex items-start gap-3 p-3 rounded-xl border ${sent ? 'border-green-200 bg-green-50' : 'border-slate-200 hover:border-purple-300'} cursor-pointer transition-colors">
+                            <input type="checkbox" class="cart-check w-4 h-4 rounded mt-1" value="${cart.id}" ${sent ? 'disabled' : ''} onchange="updateCartSummary()">
+                            <div class="flex-1 min-w-0">
+                                <div class="flex justify-between items-start">
+                                    <span class="font-medium text-sm text-slate-800">${nome}</span>
+                                    <span class="font-bold text-sm text-slate-700">R$ ${valor}</span>
+                                </div>
+                                <p class="text-xs text-slate-500 truncate mt-0.5">${products || 'Produtos não especificados'}</p>
+                                <div class="flex items-center gap-2 mt-1">
+                                    <span class="text-xs text-slate-400">${phone}</span>
+                                    <span class="text-xs text-slate-300">·</span>
+                                    <span class="text-xs text-slate-400">${timeAgo}</span>
+                                    ${sent ? '<span class="badge badge-success text-xs">✓ Enviado</span>' : ''}
+                                    ${cart.link_carrinho ? '<span class="badge badge-info text-xs">🔗 Link</span>' : ''}
+                                </div>
+                            </div>
+                        </label>
+                    `;
+                }).join('');
+                
+                lucide.createIcons();
+            } catch (e) {
+                container.innerHTML = '<p class="text-sm text-red-500 text-center py-4">Erro ao carregar carrinhos</p>';
+                console.error(e);
+            }
+        }
+
+        function toggleAllCarts(checked) {
+            document.querySelectorAll('.cart-check:not(:disabled)').forEach(cb => cb.checked = checked);
+            updateCartSummary();
+        }
+
+        function updateCartSummary() {
+            const selected = document.querySelectorAll('.cart-check:checked');
+            const total = [...selected].reduce((sum, cb) => {
+                const cart = abandonedCartsList.find(c => c.id == cb.value);
+                return sum + (cart ? parseFloat(cart.valor_total || 0) : 0);
+            }, 0);
+            document.getElementById('cartSummary').textContent = selected.length > 0
+                ? `${selected.length} carrinhos selecionados · R$ ${total.toFixed(2)} em vendas potenciais`
+                : 'Selecione os carrinhos para recuperar';
+        }
+
+        function setCartTemplate(type) {
+            const wrap = document.getElementById('customCartMsgWrap');
+            const textarea = document.getElementById('cartCustomMessage');
+            
+            const templates = {
+                urgency: `Oi {{nome}}! ⏰\n\nOs produtos que você escolheu estão quase esgotando!\n\n{{produtos}}\n\nTotal: {{valor}}\n\n${'{'}{'{'}}cupom{'}'}{'}'} ? 🎁 Use o cupom *{{cupom}}* para garantir! : ''}}\n\n🛒 Finalize aqui: {{link}}`,
+                friendly: `Olá {{nome}}! 😊\n\nParece que você esqueceu alguns itens no carrinho:\n\n{{produtos}}\n\nTotal: {{valor}}\n\nPosso te ajudar com algo? Estou aqui! 💬\n\n🛒 {{link}}`,
+                discount: `{{nome}}, tenho uma surpresa! 🎁\n\nSeu carrinho de {{valor}} ainda está esperando por você.\n\nUse o cupom *{{cupom}}* e ganhe desconto exclusivo!\n\n🛒 Finalize agora: {{link}}`
+            };
+            
+            if (type && templates[type]) {
+                wrap.classList.remove('hidden');
+                textarea.value = templates[type];
+            } else {
+                wrap.classList.add('hidden');
+                textarea.value = '';
+            }
+        }
+
+        async function sendCartRecovery() {
+            const selected = document.querySelectorAll('.cart-check:checked');
+            if (selected.length === 0) return alert('Selecione pelo menos um carrinho');
+            
+            const coupon = document.getElementById('cartCoupon').value;
+            const customMsg = document.getElementById('cartCustomMessage').value.trim();
+            
+            const btn = event.target;
+            btn.disabled = true;
+            btn.innerHTML = '<i data-lucide="loader" class="w-4 h-4 animate-spin"></i> Enviando...';
+            
+            try {
+                if (selected.length === 1) {
+                    // Envio individual
+                    const res = await fetch(`${API_BASE}/cart-recovery/send`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            cartId: selected[0].value,
+                            couponCode: coupon || undefined,
+                            customMessage: customMsg || undefined
+                        })
+                    });
+                    const data = await res.json();
+                    alert(data.success ? '✅ Mensagem de recuperação enviada!' : '❌ Falha: ' + data.error);
+                } else {
+                    // Envio em massa
+                    const cartIds = [...selected].map(cb => cb.value);
+                    const res = await fetch(`${API_BASE}/cart-recovery/bulk`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            cartIds,
+                            couponCode: coupon || undefined,
+                            message: customMsg || undefined
+                        })
+                    });
+                    const data = await res.json();
+                    alert(`✅ ${data.sent} enviadas · ❌ ${data.failed} falhas`);
+                }
+                
+                // Recarregar lista
+                await loadAbandonedCarts();
+                
+            } catch (e) {
+                alert('Erro: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i data-lucide="send" class="w-4 h-4"></i> Enviar Recuperação';
+                lucide.createIcons();
+            }
+        }
+
+        // ============================
+        // UI HELPERS
+        // ============================
+        function openNewCampaign() {
+            document.getElementById('newCampaignModal').classList.remove('hidden');
+            loadSegmentCounts();
+            loadCoupons();
+            lucide.createIcons();
+        }
+
+        function closeNewCampaign() {
+            document.getElementById('newCampaignModal').classList.add('hidden');
+            // Reset form
+            document.getElementById('campaignName').value = '';
+            document.getElementById('campaignMessage').value = '';
+            document.getElementById('campaignCoupon').value = '';
+            selectedAudience = null;
+            segmentedContacts = [];
+            campaignImageBase64 = null;
+            document.getElementById('segmentPreview').classList.add('hidden');
+            document.querySelectorAll('.audience-btn').forEach(btn => {
+                btn.classList.remove('border-primary-500', 'bg-primary-50');
+                btn.classList.add('border-slate-200');
+            });
         }
 
         function toggleSchedule() {
@@ -413,7 +1128,6 @@
         function previewCampaignImage(event) {
             const file = event.target.files[0];
             if (!file) return;
-            
             const reader = new FileReader();
             reader.onload = (e) => {
                 campaignImageBase64 = e.target.result;
@@ -430,329 +1144,78 @@
         }
 
         function updateCampaignSummary() {
-            let count = 0;
-            if (selectedAudience === 'all') count = allClients.length;
-            else if (selectedAudience === 'group') count = '?';
-            else count = document.getElementById(`count${selectedAudience.charAt(0).toUpperCase() + selectedAudience.slice(1)}`).textContent.split(' ')[0];
-            
-            const batchSize = document.getElementById('batchSize').value;
-            const interval = document.getElementById('batchInterval').value;
+            const count = segmentedContacts.length || 0;
+            const batchSize = parseInt(document.getElementById('batchSize').value) || 10;
+            const interval = parseInt(document.getElementById('batchInterval').value) || 20;
             
             const batches = Math.ceil(count / batchSize);
             const totalMinutes = batches * interval;
             const hours = Math.floor(totalMinutes / 60);
             const mins = totalMinutes % 60;
             
-            document.getElementById('campaignSummary').textContent = 
-                `${count} contatos • ${batches} lotes • ~${hours}h${mins}min para completar`;
-        }
-
-        function openNewCampaign() {
-            document.getElementById('newCampaignModal').classList.remove('hidden');
-            lucide.createIcons();
-        }
-
-        function closeNewCampaign() {
-            document.getElementById('newCampaignModal').classList.add('hidden');
-            // Reset form
-            document.getElementById('campaignName').value = '';
-            document.getElementById('campaignMessage').value = '';
-            selectedAudience = null;
-            document.querySelectorAll('.audience-btn').forEach(btn => {
-                btn.classList.remove('border-primary-500', 'bg-primary-50');
-                btn.classList.add('border-slate-200');
-            });
-        }
-
-        async function saveCampaign() {
-            const name = document.getElementById('campaignName').value.trim();
-            const message = document.getElementById('campaignMessage').value.trim();
-            
-            if (!name || !message || !selectedAudience) {
-                return alert('Preencha todos os campos obrigatórios');
-            }
-            
-            const scheduled = document.getElementById('scheduleEnabled').checked;
-            let scheduleTime = null;
-            
-            if (scheduled) {
-                const date = document.getElementById('scheduleDate').value;
-                const time = document.getElementById('scheduleTime').value;
-                if (!date || !time) return alert('Selecione data e hora para agendamento');
-                scheduleTime = new Date(`${date}T${time}`).getTime();
-            }
-            
-            const campaign = {
-                id: Date.now(),
-                name,
-                message,
-                image: campaignImageBase64,
-                audience: selectedAudience,
-                targetGroup: selectedAudience === 'group' ? document.getElementById('targetGroup').value : null,
-                batchSize: parseInt(document.getElementById('batchSize').value),
-                batchInterval: parseInt(document.getElementById('batchInterval').value),
-                scheduledFor: scheduleTime,
-                status: scheduled ? 'scheduled' : 'running',
-                createdAt: Date.now(),
-                sent: 0,
-                failed: 0,
-                total: 0,
-                currentBatch: 0,
-                lastBatchAt: null
-            };
-            
-            // Calcular total de contatos
-            if (selectedAudience === 'all') {
-                campaign.total = allClients.length;
-                campaign.contacts = allClients.map(c => ({ id: c.id, name: c.nome, phone: c.telefone || c.celular }));
-            }
-            // ... outros tipos de audience
-            
-            allCampaigns.push(campaign);
-            localStorage.setItem('crm_campaigns', JSON.stringify(allCampaigns));
-            
-            closeNewCampaign();
-            renderCampaigns();
-            updateStats();
-            
-            if (!scheduled) {
-                startCampaign(campaign.id);
-            }
-            
-            alert(scheduled ? 'Campanha agendada com sucesso!' : 'Campanha iniciada!');
-        }
-
-        function renderCampaigns() {
-            const container = document.getElementById('campaignsList');
-            let filtered = allCampaigns;
-            
-            if (currentFilter !== 'all') {
-                filtered = allCampaigns.filter(c => c.status === currentFilter);
-            }
-            
-            if (filtered.length === 0) {
-                container.innerHTML = `
-                    <div class="text-center py-12">
-                        <div class="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-4">
-                            <i data-lucide="megaphone" class="w-8 h-8 text-slate-300"></i>
-                        </div>
-                        <p class="text-slate-500 font-medium">Nenhuma campanha ${currentFilter !== 'all' ? 'neste status' : 'criada'}</p>
-                    </div>
-                `;
-                lucide.createIcons();
-                return;
-            }
-            
-            container.innerHTML = filtered.map(c => {
-                const progress = c.total > 0 ? (c.sent / c.total * 100).toFixed(0) : 0;
-                const statusColors = {
-                    scheduled: 'bg-amber-100 text-amber-700',
-                    running: 'bg-blue-100 text-blue-700',
-                    completed: 'bg-emerald-100 text-emerald-700',
-                    paused: 'bg-slate-100 text-slate-700'
-                };
-                const statusLabels = {
-                    scheduled: 'Agendada',
-                    running: 'Em Andamento',
-                    completed: 'Concluída',
-                    paused: 'Pausada'
-                };
-                
-                return `
-                    <div class="card p-5">
-                        <div class="flex justify-between items-start mb-4">
-                            <div>
-                                <h3 class="font-semibold text-slate-800">${c.name}</h3>
-                                <p class="text-xs text-slate-500 mt-1">Criada em ${new Date(c.createdAt).toLocaleDateString('pt-BR')}</p>
-                            </div>
-                            <span class="badge ${statusColors[c.status]}">${statusLabels[c.status]}</span>
-                        </div>
-                        
-                        <p class="text-sm text-slate-600 mb-4 line-clamp-2">${c.message}</p>
-                        
-                        <div class="flex items-center gap-4 mb-4">
-                            <div class="flex-1">
-                                <div class="flex justify-between text-xs text-slate-500 mb-1">
-                                    <span>${c.sent}/${c.total} enviadas</span>
-                                    <span>${progress}%</span>
-                                </div>
-                                <div class="progress-bar">
-                                    <div class="progress-fill bg-emerald-500" style="width: ${progress}%"></div>
-                                </div>
-                            </div>
-                            ${c.failed > 0 ? `<span class="text-xs text-red-500">${c.failed} falhas</span>` : ''}
-                        </div>
-                        
-                        <div class="flex justify-between items-center">
-                            ${c.scheduledFor ? `<span class="text-xs text-slate-500"><i data-lucide="clock" class="w-3 h-3 inline mr-1"></i>${new Date(c.scheduledFor).toLocaleString('pt-BR')}</span>` : '<span></span>'}
-                            <div class="flex gap-2">
-                                ${c.status === 'running' ? `
-                                    <button onclick="pauseCampaign(${c.id})" class="btn btn-secondary text-xs py-1.5 px-3">
-                                        <i data-lucide="pause" class="w-3 h-3"></i> Pausar
-                                    </button>
-                                ` : ''}
-                                ${c.status === 'paused' ? `
-                                    <button onclick="resumeCampaign(${c.id})" class="btn btn-success text-xs py-1.5 px-3">
-                                        <i data-lucide="play" class="w-3 h-3"></i> Retomar
-                                    </button>
-                                ` : ''}
-                                ${c.status === 'scheduled' ? `
-                                    <button onclick="startCampaign(${c.id})" class="btn btn-success text-xs py-1.5 px-3">
-                                        <i data-lucide="play" class="w-3 h-3"></i> Iniciar Agora
-                                    </button>
-                                ` : ''}
-                                <button onclick="deleteCampaign(${c.id})" class="btn btn-danger text-xs py-1.5 px-3">
-                                    <i data-lucide="trash-2" class="w-3 h-3"></i>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-            
-            lucide.createIcons();
-        }
-
-        function updateStats() {
-            const today = new Date().toDateString();
-            const sentToday = allCampaigns
-                .filter(c => c.status === 'completed' && new Date(c.createdAt).toDateString() === today)
-                .reduce((sum, c) => sum + c.sent, 0);
-            
-            document.getElementById('statSentToday').textContent = sentToday;
-            document.getElementById('statScheduled').textContent = allCampaigns.filter(c => c.status === 'scheduled').length;
-            document.getElementById('statRunning').textContent = allCampaigns.filter(c => c.status === 'running').length;
+            document.getElementById('campaignSummary').textContent = count > 0
+                ? `${count} contatos · ${batches} lotes · ~${hours}h${mins.toString().padStart(2, '0')}min para completar`
+                : 'Selecione o público e a mensagem';
         }
 
         function filterCampaigns(filter) {
             currentFilter = filter;
             
-            // Update button styles
             ['filterAll', 'filterScheduled', 'filterRunning', 'filterCompleted', 'filterPaused'].forEach(id => {
                 const btn = document.getElementById(id);
-                if (id === `filter${filter.charAt(0).toUpperCase() + filter.slice(1)}` || (filter === 'all' && id === 'filterAll')) {
-                    btn.classList.add('bg-slate-100', 'text-slate-700');
-                    btn.classList.remove('text-slate-500');
-                } else {
-                    btn.classList.remove('bg-slate-100', 'text-slate-700');
-                    btn.classList.add('text-slate-500');
-                }
+                if (!btn) return;
+                const match = (filter === 'all' && id === 'filterAll') || 
+                              id === `filter${filter.charAt(0).toUpperCase() + filter.slice(1)}`;
+                btn.classList.toggle('bg-slate-100', match);
+                btn.classList.toggle('text-slate-700', match);
+                btn.classList.toggle('text-slate-500', !match);
             });
             
             renderCampaigns();
         }
 
         function searchCampaigns(query) {
-            // Implementar busca
-        }
-
-        async function startCampaign(id) {
-            const campaign = allCampaigns.find(c => c.id === id);
-            if (!campaign) return;
-            
-            campaign.status = 'running';
-            campaign.lastBatchAt = Date.now();
-            saveCampaigns();
+            const q = query.toLowerCase();
+            const container = document.getElementById('campaignsList');
+            const filtered = allCampaigns.filter(c => 
+                c.name.toLowerCase().includes(q) || c.message.toLowerCase().includes(q)
+            );
+            // Re-render with filtered
+            const bkp = allCampaigns;
+            allCampaigns = filtered;
             renderCampaigns();
-            updateStats();
-            
-            // Iniciar processamento
-            processCampaignBatch(id);
-        }
-
-        async function processCampaignBatch(id) {
-            const campaign = allCampaigns.find(c => c.id === id);
-            if (!campaign || campaign.status !== 'running') return;
-            
-            const startIdx = campaign.sent;
-            const endIdx = Math.min(startIdx + campaign.batchSize, campaign.total);
-            const batch = campaign.contacts.slice(startIdx, endIdx);
-            
-            for (const contact of batch) {
-                try {
-                    // Processar variáveis
-                    let text = campaign.message.replace(/\{\{nome\}\}/gi, contact.name || 'Cliente');
-                    
-                    // Enviar mensagem
-                    await fetch(`${API_BASE}/whatsapp/send-message`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ number: contact.phone, text })
-                    });
-                    
-                    campaign.sent++;
-                    
-                    // Delay entre mensagens (2-5 segundos)
-                    await new Promise(r => setTimeout(r, 2000 + Math.random() * 3000));
-                    
-                } catch (e) {
-                    console.error('Erro ao enviar:', e);
-                    campaign.failed++;
-                }
-            }
-            
-            campaign.currentBatch++;
-            campaign.lastBatchAt = Date.now();
-            
-            if (campaign.sent >= campaign.total) {
-                campaign.status = 'completed';
-            }
-            
-            saveCampaigns();
-            renderCampaigns();
-            updateStats();
-            
-            // Agendar próximo lote
-            if (campaign.status === 'running') {
-                setTimeout(() => processCampaignBatch(id), campaign.batchInterval * 60 * 1000);
-            }
-        }
-
-        function pauseCampaign(id) {
-            const campaign = allCampaigns.find(c => c.id === id);
-            if (campaign) {
-                campaign.status = 'paused';
-                saveCampaigns();
-                renderCampaigns();
-                updateStats();
-            }
-        }
-
-        function resumeCampaign(id) {
-            startCampaign(id);
-        }
-
-        function deleteCampaign(id) {
-            if (!confirm('Excluir esta campanha?')) return;
-            allCampaigns = allCampaigns.filter(c => c.id !== id);
-            saveCampaigns();
-            renderCampaigns();
-            updateStats();
-        }
-
-        function saveCampaigns() {
-            localStorage.setItem('crm_campaigns', JSON.stringify(allCampaigns));
-        }
-
-        function processScheduledCampaigns() {
-            const now = Date.now();
-            allCampaigns.forEach(c => {
-                if (c.status === 'scheduled' && c.scheduledFor && c.scheduledFor <= now) {
-                    startCampaign(c.id);
-                }
-            });
-            
-            // Verificar a cada minuto
-            setTimeout(processScheduledCampaigns, 60000);
+            allCampaigns = bkp;
         }
 
         function openImportFromGroup() {
-            alert('Funcionalidade em desenvolvimento: Importar contatos de grupos do WhatsApp');
+            selectAudience('group');
+            openNewCampaign();
         }
 
         function openInactiveClients() {
-            selectAudience('inactive');
             openNewCampaign();
+            setTimeout(() => selectAudience('inativos'), 300);
+        }
+
+        // Polling para atualizar progresso das campanhas ativas
+        function startPolling() {
+            pollInterval = setInterval(async () => {
+                const hasRunning = allCampaigns.some(c => c.status === 'running');
+                if (hasRunning) {
+                    await loadCampaigns();
+                }
+            }, 10000); // A cada 10 segundos
+        }
+
+        function timeAgoStr(dateStr) {
+            if (!dateStr) return '';
+            const diff = Date.now() - new Date(dateStr).getTime();
+            const mins = Math.floor(diff / 60000);
+            if (mins < 60) return `${mins}min atrás`;
+            const hours = Math.floor(mins / 60);
+            if (hours < 24) return `${hours}h atrás`;
+            const days = Math.floor(hours / 24);
+            return `${days}d atrás`;
         }
     </script>
 </body>
