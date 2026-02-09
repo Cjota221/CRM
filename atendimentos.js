@@ -1208,29 +1208,31 @@ async function loadMessages(remoteJid, isUpdate = false) {
         // Extrair número do remoteJid solicitado para comparação
         const requestPhoneNormalized = extractPhoneFromJid(remoteJid);
         const isGroupRequest = String(remoteJid).includes('@g.us');
+        const isLidRequest = String(remoteJid).includes('@lid');
         
         messages = messages.filter(msg => {
             const msgRemoteJid = msg.key?.remoteJid || msg.remoteJid || '';
             
-            // Se for grupo, comparar JID completo
+            // Match exato de JID (funciona para @lid, @s.whatsapp.net, @g.us)
+            if (msgRemoteJid === remoteJid) return true;
+            
+            // Se for grupo, comparar sem sufixo
             if (isGroupRequest) {
-                return msgRemoteJid === remoteJid || 
-                       msgRemoteJid.replace(/@g\.us$/, '') === remoteJid.replace(/@g\.us$/, '');
+                return msgRemoteJid.replace(/@g\.us$/, '') === remoteJid.replace(/@g\.us$/, '');
             }
             
-            // Para contatos, usar normalização de telefone
+            // @lid: exigir match exato (já testado acima) — não tentar normalizar como telefone
+            if (isLidRequest) return false;
+            
+            // Para contatos @s.whatsapp.net, usar normalização de telefone
             const msgPhoneNormalized = extractPhoneFromJid(msgRemoteJid);
             
-            // Comparar números normalizados
             const matches = msgPhoneNormalized === requestPhoneNormalized ||
-                           // Fallback: comparar últimos 9 dígitos (sem DDD variável)
                            (msgPhoneNormalized.length >= 9 && requestPhoneNormalized.length >= 9 &&
                             msgPhoneNormalized.slice(-9) === requestPhoneNormalized.slice(-9));
             
             if (!matches && msgRemoteJid) {
-                console.warn(`[⚠️ REJEITADO] Mensagem não pertence a este chat:`, 
-                    `msg=${msgRemoteJid} (${msgPhoneNormalized})`, 
-                    `expected=${remoteJid} (${requestPhoneNormalized})`);
+                console.warn(`[⚠️ REJEITADO] msg=${msgRemoteJid} expected=${remoteJid}`);
             }
             
             return matches;
@@ -1243,6 +1245,18 @@ async function loadMessages(remoteJid, isUpdate = false) {
             console.log('❌ Sem mensagens ou formato inválido');
             container.innerHTML = '<div class="text-center p-4 text-gray-500">Nenhuma mensagem nesta conversa.</div>';
             return;
+        }
+        
+        // ====== OTIMIZAÇÃO: Pular re-render se mensagens não mudaram ======
+        if (isUpdate && messages.length > 0) {
+            const newHash = messages.map(m => m.key?.id || m.messageTimestamp).join(',');
+            if (window._lastMsgHash === newHash) {
+                // Sem mudanças — não re-renderizar
+                return;
+            }
+            window._lastMsgHash = newHash;
+        } else if (messages.length > 0) {
+            window._lastMsgHash = messages.map(m => m.key?.id || m.messageTimestamp).join(',');
         }
 
         // Pausar todos os áudios antes de limpar o container
@@ -2340,7 +2354,8 @@ function onClientNameChanged(newName) {
 async function saveNewClient() {
     const name = document.getElementById('newClientName').value.trim();
     const email = document.getElementById('newClientEmail').value.trim();
-    const state = document.getElementById('newClientState').value;
+    const stateEl = document.getElementById('newClientState');
+    const state = stateEl ? stateEl.value : '';
     const phone = document.getElementById('newClientPhone').value;
     
     if (!name) return alert('Nome é obrigatório');

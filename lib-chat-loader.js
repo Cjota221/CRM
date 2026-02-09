@@ -10,6 +10,12 @@ class ChatLoadingSystem {
         this.isLoading = false;
         this.lastLoadTime = 0;
         this.loadingCache = null; // Para evitar multiple requests
+        
+        // Throttle para fotos de perfil (evitar ERR_INSUFFICIENT_RESOURCES)
+        this._picQueue = [];       // Fila de {chat, cleanPhone, resolve}
+        this._picActive = 0;       // Requests ativos
+        this._picMax = 5;          // Máximo simultâneo
+        this._picCache = new Set(); // JIDs já buscados nesta sessão
     }
     
     /**
@@ -260,17 +266,49 @@ class ChatLoadingSystem {
     }
     
     /**
-     * Buscar foto de perfil do servidor e atualizar na lista
+     * Buscar foto de perfil do servidor e atualizar na lista (COM THROTTLING)
+     * Usa fila interna para limitar a 5 requests simultâneos
      */
     async lazyLoadProfilePic(chat, cleanPhone) {
+        // Ignorar @lid (Linked IDs não têm foto buscável por telefone)
+        const jid = (chat.remoteJid || chat.id || '');
+        if (jid.includes('@lid')) return;
+        
+        const targetJid = cleanPhone.startsWith('55') ? `${cleanPhone}@s.whatsapp.net` : `55${cleanPhone}@s.whatsapp.net`;
+        
+        // Deduplicar: não buscar o mesmo JID duas vezes
+        if (this._picCache.has(targetJid)) return;
+        this._picCache.add(targetJid);
+        
+        // Enfileirar e processar
+        return new Promise(resolve => {
+            this._picQueue.push({ chat, targetJid, resolve });
+            this._processPickQueue();
+        });
+    }
+    
+    /**
+     * Processar fila de fotos de perfil respeitando o limite
+     */
+    async _processPickQueue() {
+        while (this._picQueue.length > 0 && this._picActive < this._picMax) {
+            const item = this._picQueue.shift();
+            this._picActive++;
+            this._fetchProfilePic(item).finally(() => {
+                this._picActive--;
+                this._processPickQueue();
+            });
+        }
+    }
+    
+    async _fetchProfilePic({ chat, targetJid, resolve }) {
         try {
-            const jid = cleanPhone.startsWith('55') ? `${cleanPhone}@s.whatsapp.net` : `55${cleanPhone}@s.whatsapp.net`;
-            const res = await fetch(`/api/whatsapp/profile-picture/${jid}`);
+            const res = await fetch(`/api/whatsapp/profile-picture/${targetJid}`);
+            if (!res.ok) { resolve(); return; }
             const data = await res.json();
             
             if (data.profilePicUrl) {
                 chat.profilePicUrl = data.profilePicUrl;
-                // Atualizar avatar na DOM
                 const chatKey = createChatKey(chat.remoteJid || chat.id);
                 const chatEl = document.querySelector(`[data-chat-key="${chatKey}"]`);
                 if (chatEl) {
@@ -285,6 +323,7 @@ class ChatLoadingSystem {
         } catch (e) {
             // Silenciar erro - foto é opcional
         }
+        resolve();
     }
     
     /**

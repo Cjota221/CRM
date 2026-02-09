@@ -1229,13 +1229,15 @@ app.post('/api/whatsapp/messages/fetch', async (req, res) => {
         }
         
         // Se ainda não encontrar, tentar terceira forma (sem where)
-        if (!data?.messages?.length && !data?.data?.length) {
-            console.log(`[API] Tentativa 3: buscando todas as mensagens e filtrando...`);
+        // APENAS para @s.whatsapp.net — @lid exige match exato, não faz sentido buscar tudo
+        const isLidJid = String(remoteJid).includes('@lid');
+        if (!data?.messages?.length && !data?.data?.length && !isLidJid) {
+            console.log(`[API] Tentativa 3: buscando mensagens recentes e filtrando...`);
             response = await fetch(url, {
                 method: 'POST',
                 headers: evolutionHeaders,
                 body: JSON.stringify({
-                    options: { limit: 100, order: "DESC" } 
+                    options: { limit: 50, order: "DESC" } 
                 })
             });
             data = await response.json();
@@ -1254,7 +1256,10 @@ app.post('/api/whatsapp/messages/fetch', async (req, res) => {
                                msgRemoteJid.replace(/@g\.us$/, '') === remoteJid.replace(/@g\.us$/, '');
                     }
                     
-                    // Para contatos, usar normalização
+                    // Para contatos, comparar JID exato primeiro
+                    if (msgRemoteJid === remoteJid) return true;
+                    
+                    // Fallback: normalização de telefone
                     const msgPhoneNormalized = normalizePhone(msgRemoteJid);
                     return msgPhoneNormalized === requestPhoneNormalized ||
                            (msgPhoneNormalized.length >= 9 && requestPhoneNormalized.length >= 9 &&
