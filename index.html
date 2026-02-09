@@ -9,10 +9,13 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
+            darkMode: 'class',
             theme: {
                 extend: {
                     colors: {
-                        primary: { 50: '#f0f4ff', 100: '#e0e7ff', 500: '#1e3a5f', 600: '#162d4d', 700: '#0f1f33' }
+                        primary: { 50: '#f0f4ff', 100: '#e0e7ff', 500: '#1e3a5f', 600: '#162d4d', 700: '#0f1f33' },
+                        surface: { light: '#f4f5f7', dark: '#1a1a2e' },
+                        card: { light: '#f0f1f5', dark: '#16213e' }
                     }
                 }
             }
@@ -25,13 +28,58 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <script>
+        // Dark mode: aplicar antes do render pra evitar flash
+        (function() {
+            const dm = localStorage.getItem('crm-dark-mode');
+            if (dm === 'true') document.documentElement.classList.add('dark');
+        })();
+    </script>
     <style>
         * { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
-        body { background-color: #f8fafc; color: #1e293b; }
+        body { background-color: #f8fafc; color: #1e293b; transition: background-color 0.3s, color 0.3s; }
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* ====== DARK MODE ====== */
+        .dark body, html.dark body { background-color: #0f172a; color: #e2e8f0; }
+        .dark .bg-slate-50, .dark .bg-white { background-color: #1e293b !important; }
+        .dark .bg-slate-100 { background-color: #334155 !important; }
+        .dark .border-slate-100, .dark .border-slate-50 { border-color: #334155 !important; }
+        .dark .border-slate-200 { border-color: #475569 !important; }
+        .dark .text-slate-800, .dark .text-slate-700 { color: #f1f5f9 !important; }
+        .dark .text-slate-600 { color: #cbd5e1 !important; }
+        .dark .text-slate-500 { color: #94a3b8 !important; }
+        .dark .text-slate-400 { color: #64748b !important; }
+        .dark .text-slate-300 { color: #94a3b8 !important; }
+        .dark .card, .dark .metric-card { background-color: #1e293b !important; border-color: #334155 !important; }
+        .dark .input { background-color: #0f172a; border-color: #334155; color: #e2e8f0; }
+        .dark .input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
+        .dark .nav-item { color: #94a3b8; }
+        .dark .nav-item:hover { background-color: #334155; color: #f1f5f9; }
+        .dark .nav-item.active { background-color: #3b82f6; color: white; }
+        .dark .btn-secondary { background-color: #334155; color: #cbd5e1; }
+        .dark .btn-secondary:hover { background-color: #475569; }
+        .dark .modal-overlay, .dark .modal-bg { background-color: rgba(0,0,0,0.7); }
+        .dark .toast-notification { background-color: #1e293b; color: #e2e8f0; border-color: #334155; }
+        .dark .shadow-sm { box-shadow: 0 1px 3px rgb(0 0 0 / 0.3) !important; }
+        .dark .hover\:bg-slate-50:hover { background-color: #334155 !important; }
+        .dark .hover\:bg-slate-100:hover { background-color: #475569 !important; }
+        .dark .divide-slate-50 > :not(:first-child) { border-color: #334155 !important; }
+        .dark .divide-x > :not(:first-child) { border-color: #334155 !important; }
+        .dark .bg-red-50, .dark .bg-red-50\/40 { background-color: rgba(239,68,68,0.1) !important; }
+        .dark .bg-amber-50, .dark .bg-amber-50\/40 { background-color: rgba(245,158,11,0.1) !important; }
+        .dark .bg-emerald-50 { background-color: rgba(16,185,129,0.1) !important; }
+        .dark .bg-purple-50, .dark .bg-purple-50\/40 { background-color: rgba(139,92,246,0.1) !important; }
+        .dark .bg-violet-50 { background-color: rgba(139,92,246,0.1) !important; }
+        .dark table th { background-color: #1e293b; color: #94a3b8; }
+        .dark table td { border-color: #334155; }
+        .dark table tr:hover { background-color: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #475569; }
+        .dark ::-webkit-scrollbar-thumb { background: #475569; }
+        .dark ::-webkit-scrollbar-thumb:hover { background: #64748b; }
         
         .badge { padding: 0.375rem 0.75rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 500; letter-spacing: 0.025em; }
         .badge-success { background-color: #ecfdf5; color: #059669; }
@@ -55,7 +103,7 @@
         .nav-item.active, .nav-link.active { background-color: #1e3a5f; color: white; }
         .nav-item.active:hover { background-color: #162d4d; }
         
-        .card { background: white; border-radius: 1rem; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05); border: 1px solid #f1f5f9; }
+        .card { background: #f7f8fa; border-radius: 1rem; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05); border: 1px solid #e8eaef; }
         .card-hover:hover { box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05); transform: translateY(-1px); transition: all 0.2s ease; }
         
         .btn { display: inline-flex; align-items: center; justify-content: center; padding: 0.625rem 1.25rem; font-size: 0.875rem; font-weight: 500; border-radius: 0.75rem; transition: all 0.15s ease; gap: 0.5rem; }
@@ -81,7 +129,7 @@
         .table-header { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; }
         .modal-overlay, .modal-bg { background-color: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); }
         
-        .metric-card { background: white; border-radius: 1rem; padding: 1.5rem; border: 1px solid #f1f5f9; }
+        .metric-card { background: #f7f8fa; border-radius: 1rem; padding: 1.5rem; border: 1px solid #e8eaef; }
         .metric-value { font-size: 2rem; font-weight: 700; color: #1e293b; line-height: 1; }
         .metric-label { font-size: 0.8rem; font-weight: 500; color: #64748b; margin-bottom: 0.5rem; }
         .metric-sublabel { font-size: 0.7rem; color: #94a3b8; margin-top: 0.25rem; }
@@ -145,16 +193,31 @@
             50% { opacity: 0.7; }
         }
 
+        /* KPI Dashboard Cards (tom mais escuro que branco puro) */
+        .kpi-card-dash { background: #f0f1f5; border: 1px solid #e0e3eb; }
+        .kpi-card-dash:hover { box-shadow: 0 4px 12px rgb(0 0 0 / 0.06); transform: translateY(-1px); }
+        .dark .kpi-card-dash { background: #1e293b; border-color: #334155; }
+
+        /* Section containers dasher */
+        .section-dash { background: #f4f5f9; border: 1px solid #e0e3eb; }
+        .dark .section-dash { background: #1e293b; border-color: #334155; }
+
+        /* Dark mode toggle */
+        .dark-mode-toggle { width: 44px; height: 24px; border-radius: 12px; background: #e2e8f0; position: relative; cursor: pointer; transition: background 0.3s; border: none; padding: 0; }
+        .dark-mode-toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: white; transition: transform 0.3s; box-shadow: 0 1px 3px rgba(0,0,0,0.15); }
+        .dark .dark-mode-toggle { background: #6366f1; }
+        .dark .dark-mode-toggle::after { transform: translateX(20px); }
+
         /* Fix: hidden + flex lint conflict */
         .d-flex:not(.hidden) { display: flex; }
     </style>
 </head>
-<body class="bg-slate-50 min-h-screen">
+<body class="bg-slate-50 dark:bg-slate-900 min-h-screen">
     <div class="flex h-screen">
         <!-- Sidebar -->
-        <aside class="w-64 bg-white border-r border-slate-100 flex flex-col">
-            <div class="px-6 py-6 border-b border-slate-100">
-                <h1 class="text-xl font-semibold text-slate-800">CRM</h1>
+        <aside class="w-64 bg-white dark:bg-slate-800 border-r border-slate-100 dark:border-slate-700 flex flex-col">
+            <div class="px-6 py-6 border-b border-slate-100 dark:border-slate-700">
+                <h1 class="text-xl font-semibold text-slate-800 dark:text-slate-100">CRM</h1>
                 <p class="text-xs text-slate-400 mt-0.5">Sistema de Gestão</p>
             </div>
             <nav class="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
@@ -226,6 +289,13 @@
                         <i data-lucide="settings" class="w-5 h-5"></i>
                         <span>Configurações</span>
                     </a>
+                    <div class="nav-item justify-between cursor-default">
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="moon" class="w-5 h-5" id="dark-mode-icon"></i>
+                            <span>Modo Escuro</span>
+                        </div>
+                        <button class="dark-mode-toggle" id="dark-mode-toggle" onclick="toggleDarkMode()" title="Alternar modo escuro"></button>
+                    </div>
                     <a href="#" onclick="handleLogout(event)" class="nav-item text-red-500 hover:bg-red-50 mt-2">
                         <i data-lucide="log-out" class="w-5 h-5"></i>
                         <span>Sair do CRM</span>
@@ -238,10 +308,10 @@
         <main class="flex-1 flex flex-col overflow-hidden">
             <!-- DASHBOARD PAGE - CENTRO DE COMANDO FINANCEIRO -->
             <div id="dashboard-page" class="page-content flex flex-col h-full">
-                <header class="bg-white border-b border-slate-100 px-8 py-5">
+                <header class="bg-white dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700 px-8 py-5">
                     <div class="flex justify-between items-center">
                         <div>
-                            <h1 class="text-xl font-semibold text-slate-800">Centro de Comando</h1>
+                            <h1 class="text-xl font-semibold text-slate-800 dark:text-slate-100">Centro de Comando</h1>
                             <p class="text-xs text-slate-400 mt-0.5">Vigilante IA v2.0 • Visão geral comercial</p>
                         </div>
                         <div class="flex gap-2">
@@ -261,7 +331,7 @@
                         
                         <!-- KPIs SIMPLIFICADOS -->
                         <div class="grid grid-cols-4 gap-6 mb-10">
-                            <div class="bg-white rounded-xl p-5 border border-slate-100 shadow-sm hover:shadow transition-all">
+                            <div class="kpi-card-dash rounded-xl p-5 shadow-sm hover:shadow transition-all">
                                 <div class="flex items-center gap-3 mb-3">
                                     <div class="w-9 h-9 rounded-lg bg-red-50 flex items-center justify-center"><i data-lucide="trending-down" class="w-4.5 h-4.5 text-red-500"></i></div>
                                     <span class="text-xs text-slate-400">LTV em Risco</span>
@@ -269,7 +339,7 @@
                                 <p class="text-2xl font-bold text-red-600" id="dash-ltv-risk">R$ 0</p>
                                 <p class="text-xs text-slate-400 mt-1" id="dash-ltv-risk-clients">0 clientes parados</p>
                             </div>
-                            <div class="bg-white rounded-xl p-5 border border-slate-100 shadow-sm hover:shadow transition-all">
+                            <div class="kpi-card-dash rounded-xl p-5 shadow-sm hover:shadow transition-all">
                                 <div class="flex items-center gap-3 mb-3">
                                     <div class="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center"><i data-lucide="target" class="w-4.5 h-4.5 text-amber-500"></i></div>
                                     <span class="text-xs text-slate-400">Oportunidades</span>
@@ -277,7 +347,7 @@
                                 <p class="text-2xl font-bold text-amber-600" id="dash-opportunity-value">R$ 0</p>
                                 <p class="text-xs text-slate-400 mt-1" id="dash-opportunity-count">0 prontos para reposição</p>
                             </div>
-                            <div class="bg-white rounded-xl p-5 border border-slate-100 shadow-sm hover:shadow transition-all">
+                            <div class="kpi-card-dash rounded-xl p-5 shadow-sm hover:shadow transition-all">
                                 <div class="flex items-center gap-3 mb-3">
                                     <div class="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center"><i data-lucide="arrow-up-circle" class="w-4.5 h-4.5 text-emerald-500"></i></div>
                                     <span class="text-xs text-slate-400">Recuperados</span>
@@ -285,7 +355,7 @@
                                 <p class="text-2xl font-bold text-emerald-600" id="dash-recovered-count">0</p>
                                 <p class="text-xs text-slate-400 mt-1" id="dash-recovered-value">R$ 0 este mês</p>
                             </div>
-                            <div class="bg-white rounded-xl p-5 border border-slate-100 shadow-sm hover:shadow transition-all cursor-pointer" onclick="document.getElementById('section-c4').scrollIntoView({behavior:'smooth'})">
+                            <div class="kpi-card-dash rounded-xl p-5 shadow-sm hover:shadow transition-all cursor-pointer" onclick="document.getElementById('section-c4').scrollIntoView({behavior:'smooth'})">
                                 <div class="flex items-center gap-3 mb-3">
                                     <div class="w-9 h-9 rounded-lg bg-purple-50 flex items-center justify-center"><i data-lucide="rocket" class="w-4.5 h-4.5 text-purple-500"></i></div>
                                     <span class="text-xs text-slate-400">Potencial C4</span>
@@ -296,7 +366,7 @@
                         </div>
 
                         <!-- SEÇÃO: ATENÇÃO IMEDIATA -->
-                        <div class="bg-white rounded-xl border border-slate-100 shadow-sm mb-10 overflow-hidden">
+                        <div class="section-dash rounded-xl shadow-sm mb-10 overflow-hidden">
                             <div class="px-6 py-3.5 border-b border-slate-50 flex items-center gap-2 bg-red-50/40">
                                 <i data-lucide="alert-triangle" class="w-4 h-4 text-red-500"></i>
                                 <span class="text-sm font-semibold text-slate-700">Atenção Imediata</span>
@@ -357,7 +427,7 @@
                         </div>
 
                         <!-- SEÇÃO: CRESCIMENTO -->
-                        <div class="bg-white rounded-xl border border-slate-100 shadow-sm mb-10 overflow-hidden" id="section-c4">
+                        <div class="section-dash rounded-xl shadow-sm mb-10 overflow-hidden" id="section-c4">
                             <div class="px-6 py-3.5 border-b border-slate-50 flex items-center gap-2 bg-purple-50/40">
                                 <i data-lucide="rocket" class="w-4 h-4 text-purple-500"></i>
                                 <span class="text-sm font-semibold text-slate-700">Crescimento</span>
@@ -395,7 +465,7 @@
                         </div>
 
                         <!-- SINAIS DE RISCO (compacto) -->
-                        <div class="bg-white rounded-xl border border-slate-100 shadow-sm mb-10 overflow-hidden">
+                        <div class="section-dash rounded-xl shadow-sm mb-10 overflow-hidden">
                             <div class="px-6 py-3.5 border-b border-slate-50 flex items-center gap-2">
                                 <i data-lucide="activity" class="w-4 h-4 text-slate-400"></i>
                                 <span class="text-sm font-semibold text-slate-700">Sinais de Risco</span>
@@ -438,7 +508,7 @@
                         </div>
 
                         <!-- AÇÕES RÁPIDAS -->
-                        <div class="bg-white rounded-xl border border-slate-100 shadow-sm">
+                        <div class="section-dash rounded-xl shadow-sm">
                             <div class="px-6 py-3.5 border-b border-slate-50 flex items-center gap-2">
                                 <i data-lucide="zap" class="w-4 h-4 text-slate-400"></i>
                                 <span class="text-sm font-semibold text-slate-700">Ações Rápidas</span>
@@ -826,6 +896,22 @@ Aproveite e volte a comprar conosco!</textarea></div><div><label class="block te
     <script src="script.js"></script>
     <script>
         lucide.createIcons();
+        // Dark mode toggle
+        function toggleDarkMode() {
+            const html = document.documentElement;
+            html.classList.toggle('dark');
+            const isDark = html.classList.contains('dark');
+            localStorage.setItem('crm-dark-mode', isDark);
+            // Atualizar ícone
+            const icon = document.getElementById('dark-mode-icon');
+            if (icon) { icon.setAttribute('data-lucide', isDark ? 'sun' : 'moon'); lucide.createIcons(); }
+        }
+        // Aplicar ícone correto no load
+        (function() {
+            const isDark = document.documentElement.classList.contains('dark');
+            const icon = document.getElementById('dark-mode-icon');
+            if (icon && isDark) { icon.setAttribute('data-lucide', 'sun'); lucide.createIcons(); }
+        })();
         async function handleLogout(e) {
             e.preventDefault();
             try { await fetch('/api/auth/logout', { method: 'POST' }); } catch(e) {}
