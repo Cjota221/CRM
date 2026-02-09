@@ -98,6 +98,23 @@ function normalizePhoneServer(raw) {
 }
 
 /**
+ * Garantir que o número tenha DDI 55 (Brasil) para envio via Evolution API
+ * Recebe número normalizado (sem DDI) e retorna com DDI
+ */
+function ensureDDI55(phone) {
+    if (!phone) return '';
+    const cleaned = String(phone).replace(/\D/g, '');
+    // Se já começa com 55 e tem 12+ dígitos, já tem DDI
+    if (cleaned.startsWith('55') && cleaned.length >= 12) return cleaned;
+    // Se tem 10-11 dígitos (DDD + número), adicionar 55
+    if (cleaned.length >= 10 && cleaned.length <= 11) return '55' + cleaned;
+    // Se tem 12-13 dígitos e começa com 55, já é válido
+    if (cleaned.length >= 12) return cleaned;
+    // Fallback: adicionar 55
+    return '55' + cleaned;
+}
+
+/**
  * Buscar cliente por telefone no cache com lógica fuzzy
  * Verifica TODOS os campos de telefone (não short-circuit)
  * Faz match exato + fuzzy (últimos 9 dígitos)
@@ -383,24 +400,38 @@ async function handleWebhook(req, res) {
                 break;
                 
             case 'carrinho_abandonado_criado':
+                // Normalizar WhatsApp do cliente (garantir DDI 55)
+                const cartPhone = dados.cliente?.whatsapp || dados.cliente?.telefone || dados.cliente?.celular || '';
+                const cartPhoneNorm = normalizePhoneServer(cartPhone);
+                const cartPhoneWithDDI = ensureDDI55(cartPhoneNorm);
+                
                 processedData = {
                     tipo: 'carrinho_abandonado',
                     id: dados.id,
                     cliente: {
                         id: dados.cliente?.id,
                         nome: dados.cliente?.nome,
-                        whatsapp: dados.cliente?.whatsapp,
+                        whatsapp: cartPhoneWithDDI, // Normalizado com DDI 55
+                        whatsapp_raw: cartPhone, // Original para debug
                         email: dados.cliente?.email
                     },
                     valor_total: dados.valor_total,
                     quantidade_produtos: dados.quantidade_produtos,
-                    produtos: dados.produtos?.map(p => ({
-                        nome: p.nome,
-                        variacao: p.variacao?.nome,
-                        quantidade: p.quantidade,
-                        preco: p.preco
-                    })),
-                    // NOVO: Capturar link do carrinho (deep link)
+                    produtos: dados.produtos?.map(p => {
+                        // Garantir que p.nome seja string (fix [object Object])
+                        let nomeProduto = '';
+                        if (typeof p === 'string') {
+                            nomeProduto = p;
+                        } else if (p && typeof p === 'object') {
+                            nomeProduto = p.nome || p.name || p.titulo || p.descricao || JSON.stringify(p);
+                        }
+                        return {
+                            nome: nomeProduto,
+                            variacao: typeof p?.variacao === 'object' ? (p.variacao?.nome || p.variacao?.name || '') : (p?.variacao || ''),
+                            quantidade: parseInt(p?.quantidade || p?.qty || 1),
+                            preco: parseFloat(p?.preco || p?.valor || p?.price || 0)
+                        };
+                    }),
                     link_carrinho: dados.url || dados.link_carrinho || dados.link || dados.checkout_url || null,
                     iniciado_em: dados.iniciado_em,
                     ultima_atualizacao: dados.ultima_atualizacao
@@ -2397,8 +2428,9 @@ app.post('/api/campaigns/segment', async (req, res) => {
                 return items.map(i => i.categoria || i.category || 'Sem categoria');
             }))];
             
-            // Telefone normalizado
-            const phone = (client.telefone || client.celular || client.whatsapp || '').replace(/\D/g, '');
+            // Telefone normalizado com função centralizada + DDI para envio
+            const phoneNorm = normalizePhoneServer(client.telefone || client.celular || client.whatsapp || '');
+            const phone = ensureDDI55(phoneNorm);
             
             return {
                 ...client,
@@ -2432,6 +2464,14 @@ app.post('/api/campaigns/segment', async (req, res) => {
                     break;
                 case 'risco':
                     clients = clients.filter(c => c.daysSinceLastPurchase >= 60 && c.daysSinceLastPurchase < 120 && c.orderCount > 0);
+                    break;
+                case 'fieis':
+                    // Clientes fiéis: mais de 2 pedidos
+                    clients = clients.filter(c => c.orderCount > 2);
+                    break;
+                case 'inativos_30':
+                    // Inativos 30+ dias (último pedido há mais de 30 dias)
+                    clients = clients.filter(c => c.daysSinceLastPurchase >= 30 && c.orderCount > 0);
                     break;
                 case 'todos':
                 default:
@@ -2895,9 +2935,13 @@ app.post('/api/cart-recovery/bulk', async (req, res) => {
                     continue;
                 }
                 
-                const phone = cart.cliente?.whatsapp?.replace(/\D/g, '') || '';
-                if (!phone) {
-                    results.push({ cartId, success: false, error: 'Sem WhatsApp' });
+                // Normalizar telefone com função centralizada
+                const rawBulkPhone = cart.cliente?.whatsapp || cart.cliente?.telefone || '';
+                const normBulkPhone = normalizePhoneServer(rawBulkPhone);
+                const phoneNumber = ensureDDI55(normBulkPhone);
+                
+                if (!phoneNumber || phoneNumber.length < 12) {
+                    results.push({ cartId, success: false, error: 'Sem WhatsApp válido' });
                     continue;
                 }
                 
@@ -2911,8 +2955,13 @@ app.post('/api/cart-recovery/bulk', async (req, res) => {
                     cartUrl = `${cartUrl}${separator}coupon=${encodeURIComponent(couponCode)}`;
                 }
                 
+                // Listar produtos (garantir string, fix [object Object])
                 const productsList = (cart.produtos || [])
-                    .map(p => `  • ${p.nome} - ${p.quantidade}x`)
+                    .map(p => {
+                        const nome = (typeof p === 'string') ? p : (p?.nome || p?.name || 'Produto');
+                        const qtd = p?.quantidade || p?.qty || 1;
+                        return `  • ${nome} - ${qtd}x`;
+                    })
                     .join('\n');
                 
                 let text = message || `Olá ${cart.cliente?.nome || 'Cliente'}! 😊\n\nVi que você deixou alguns produtos no carrinho:\n${productsList}\n\n*Total: R$ ${parseFloat(cart.valor_total).toFixed(2)}*`;
@@ -2925,11 +2974,6 @@ app.post('/api/cart-recovery/bulk', async (req, res) => {
                     .replace(/\{\{valor\}\}/gi, `R$ ${parseFloat(cart.valor_total).toFixed(2)}`)
                     .replace(/\{\{link\}\}/gi, cartUrl || '')
                     .replace(/\{\{cupom\}\}/gi, couponCode || '');
-                
-                let phoneNumber = phone;
-                if (!phoneNumber.startsWith('55') && phoneNumber.length <= 11) {
-                    phoneNumber = '55' + phoneNumber;
-                }
                 
                 const sendUrl = `${EVOLUTION_URL}/message/sendText/${INSTANCE_NAME}`;
                 const response = await fetch(sendUrl, {

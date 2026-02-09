@@ -238,12 +238,35 @@
                             <p class="font-medium text-slate-700">Risco de Churn</p>
                             <p id="countRisco" class="text-xs text-slate-400">60-120 dias sem compra</p>
                         </button>
+                        <button onclick="selectAudience('fieis')" class="audience-btn p-4 rounded-xl border-2 border-slate-200 text-left hover:border-primary-500 transition-colors" data-audience="fieis">
+                            <i data-lucide="heart" class="w-5 h-5 text-pink-500 mb-2"></i>
+                            <p class="font-medium text-slate-700">Clientes Fiéis</p>
+                            <p id="countFieis" class="text-xs text-slate-400">3+ compras</p>
+                        </button>
+                        <button onclick="selectAudience('inativos_30')" class="audience-btn p-4 rounded-xl border-2 border-slate-200 text-left hover:border-primary-500 transition-colors" data-audience="inativos_30">
+                            <i data-lucide="clock" class="w-5 h-5 text-slate-500 mb-2"></i>
+                            <p class="font-medium text-slate-700">Inativos 30+ dias</p>
+                            <p id="countInativos30" class="text-xs text-slate-400">Último pedido há 30+ dias</p>
+                        </button>
                         <button onclick="selectAudience('group')" class="audience-btn p-4 rounded-xl border-2 border-slate-200 text-left hover:border-primary-500 transition-colors" data-audience="group">
                             <i data-lucide="message-circle" class="w-5 h-5 text-emerald-500 mb-2"></i>
                             <p class="font-medium text-slate-700">Grupo WhatsApp</p>
                             <p class="text-xs text-slate-400">Selecionar grupo</p>
                         </button>
                     </div>
+                    
+                    <!-- Filtro por Cidade -->
+                    <div class="mt-3">
+                        <label class="block text-xs font-medium text-slate-500 mb-1">Filtrar por cidade (opcional)</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="cityFilter" placeholder="Ex: Goiânia, São Paulo..." class="input text-sm flex-1">
+                            <button onclick="applyCityFilter()" class="btn btn-secondary text-xs px-3">
+                                <i data-lucide="map-pin" class="w-3.5 h-3.5"></i>
+                                Filtrar
+                            </button>
+                        </div>
+                    </div>
+                    
                     <div id="groupSelector" class="hidden mt-3">
                         <select id="targetGroup" class="input">
                             <option value="">Selecione um grupo...</option>
@@ -495,8 +518,12 @@
         // SEGMENTAÇÃO (BACKEND)
         // ============================
         async function loadSegmentCounts() {
-            const segments = ['todos', 'inativos', 'vip', 'recorrente', 'risco'];
-            const idMap = { todos: 'countAll', inativos: 'countInactive', vip: 'countVip', recorrente: 'countRecorrente', risco: 'countRisco' };
+            const segments = ['todos', 'inativos', 'vip', 'recorrente', 'risco', 'fieis', 'inativos_30'];
+            const idMap = { 
+                todos: 'countAll', inativos: 'countInactive', vip: 'countVip', 
+                recorrente: 'countRecorrente', risco: 'countRisco',
+                fieis: 'countFieis', inativos_30: 'countInativos30'
+            };
             
             for (const seg of segments) {
                 try {
@@ -512,6 +539,41 @@
                     const el = document.getElementById(idMap[seg]);
                     if (el) el.textContent = 'Erro';
                 }
+            }
+        }
+
+        // Filtro por cidade — aplica ao segmento atual
+        async function applyCityFilter() {
+            const city = document.getElementById('cityFilter')?.value?.trim();
+            if (!city) {
+                alert('Digite o nome da cidade');
+                return;
+            }
+            
+            try {
+                const segment = selectedAudience || 'todos';
+                const res = await fetch(`${API_BASE}/campaigns/segment`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ segment: segment !== 'group' ? segment : 'todos', city })
+                });
+                const data = await res.json();
+                segmentedContacts = data.clients || [];
+                
+                const preview = document.getElementById('segmentPreview');
+                const countEl = document.getElementById('segmentCount');
+                const listEl = document.getElementById('segmentList');
+                
+                preview.classList.remove('hidden');
+                countEl.textContent = segmentedContacts.length;
+                listEl.innerHTML = segmentedContacts.slice(0, 15).map(c => 
+                    `<div class="flex justify-between"><span>${c.name}</span><span class="text-slate-400">${c.city || ''} · ${c.orderCount} ped. · R$ ${c.totalSpent}</span></div>`
+                ).join('') + (segmentedContacts.length > 15 ? `<div class="text-center text-purple-500 font-medium mt-1">+${segmentedContacts.length - 15} mais</div>` : '');
+                
+                updateCampaignSummary();
+            } catch (e) {
+                console.error('Erro ao filtrar por cidade:', e);
+                alert('Erro ao filtrar: ' + e.message);
             }
         }
 
@@ -963,10 +1025,18 @@
                 }
                 
                 container.innerHTML = abandonedCartsList.map(cart => {
-                    const products = (cart.produtos || []).map(p => p.nome).join(', ');
+                    // Fix [object Object]: garantir que extraímos string do nome
+                    const products = (cart.produtos || []).map(p => {
+                        if (typeof p === 'string') return p;
+                        if (p && typeof p === 'object') return p.nome || p.name || p.titulo || 'Produto';
+                        return 'Produto';
+                    }).join(', ');
                     const valor = parseFloat(cart.valor_total || 0).toFixed(2);
                     const nome = cart.cliente?.nome || 'Cliente';
-                    const phone = cart.cliente?.whatsapp || cart.cliente?.telefone || '';
+                    const rawPhone = cart.cliente?.whatsapp || cart.cliente?.telefone || '';
+                    // Formatar telefone para exibição (mostrar com +55)
+                    const cleanedPhone = rawPhone.replace(/\D/g, '');
+                    const phone = cleanedPhone.length >= 12 ? `+${cleanedPhone}` : (cleanedPhone.length >= 10 ? `+55${cleanedPhone}` : cleanedPhone);
                     const sent = cart.recoveryStatus === 'sent';
                     const timeAgo = timeAgoStr(cart.timestamp || cart.created_at);
                     
