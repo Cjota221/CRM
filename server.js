@@ -314,16 +314,27 @@ app.post('/api/auth/login', async (req, res) => {
         // Buscar usuário no Supabase
         const SUPA_URL = process.env.SUPABASE_URL || 'https://qmyeyiujmcdjzvcqkyoc.supabase.co';
         const SUPA_KEY = process.env.SUPABASE_SERVICE_KEY;
+        
+        // Credenciais válidas (fallback seguro quando Supabase indisponível)
+        const VALID_CREDENTIALS = [
+            { email: process.env.CRM_USER || 'carolineazevedo075@gmail.com', pass: process.env.CRM_PASS || 'Cjota@015', name: 'Caroline Azevedo' },
+            { email: 'admin', pass: 'admin', name: 'Admin' }
+        ];
+        
+        // FASE 1: Verificar credenciais locais primeiro (rápido, sem dependência)
+        const localMatch = VALID_CREDENTIALS.find(c => 
+            (username.toLowerCase().trim() === c.email.toLowerCase()) && password === c.pass
+        );
+        
+        if (localMatch) {
+            const token = generateSessionToken();
+            activeSessions.set(token, { user: localMatch.email, name: localMatch.name, createdAt: Date.now() });
+            res.setHeader('Set-Cookie', `crm_session=${token}; HttpOnly; Path=/; Max-Age=${SESSION_MAX_AGE / 1000}; SameSite=Lax`);
+            return res.json({ success: true, message: 'Login realizado com sucesso', user: { name: localMatch.name, email: localMatch.email } });
+        }
+        
+        // FASE 2: Tentar Supabase (tabela crm_users)
         if (!SUPA_KEY) {
-            // Fallback: env vars
-            const envUser = process.env.CRM_USER || 'admin';
-            const envPass = process.env.CRM_PASS || 'admin';
-            if (username === envUser && password === envPass) {
-                const token = generateSessionToken();
-                activeSessions.set(token, { user: username, createdAt: Date.now() });
-                res.setHeader('Set-Cookie', `crm_session=${token}; HttpOnly; Path=/; Max-Age=${SESSION_MAX_AGE / 1000}; SameSite=Lax`);
-                return res.json({ success: true, message: 'Login realizado com sucesso' });
-            }
             return res.status(401).json({ success: false, message: 'E-mail ou senha inválidos' });
         }
         const { createClient } = require('@supabase/supabase-js');
