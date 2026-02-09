@@ -75,6 +75,25 @@ to = "/.netlify/functions/whatsapp-proxy?route=sync-client-name"
 status = 200
 force = true
 
+# AI Ecosystem routes
+[[redirects]]
+from = "/api/ai/orchestrator"
+to = "/.netlify/functions/ai-orchestrator"
+status = 200
+force = true
+
+[[redirects]]
+from = "/api/ai/webhook"
+to = "/.netlify/functions/evolution-webhook"
+status = 200
+force = true
+
+[[redirects]]
+from = "/webhook/evolution"
+to = "/.netlify/functions/evolution-webhook"
+status = 200
+force = true
+
 [functions]
 node_bundler = "esbuild"
 
@@ -89,3 +108,9 @@ timeout = 10
 
 [functions."whatsapp-proxy"]
 timeout = 30
+
+[functions."ai-orchestrator"]
+timeout = 30
+
+[functions."evolution-webhook"]
+timeout = 15
