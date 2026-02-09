@@ -2,6 +2,17 @@
 // INICIALIZAÇÃO DO SISTEMA - Nova Arquitetura Profissional
 // ============================================================================
 
+// Debounced cloud save — salva no Supabase 3s após última alteração
+let _cloudSaveTimer = null;
+function scheduleCloudSave() {
+    if (_cloudSaveTimer) clearTimeout(_cloudSaveTimer);
+    _cloudSaveTimer = setTimeout(() => {
+        if (window.CRMAutoSync && typeof window.CRMAutoSync.saveToCloud === 'function') {
+            window.CRMAutoSync.saveToCloud();
+        }
+    }, 3000);
+}
+
 /**
  * Inicializar o sistema de chats com a nova arquitetura
  * Chama: Data Layer → Chat Loader → Anne Panel
@@ -344,6 +355,7 @@ if (allTags.length === 0) {
         { id: 6, name: 'Aguardando Resposta', color: '#3b82f6', trigger: null }
     ];
     localStorage.setItem('crm_tags', JSON.stringify(allTags));
+    scheduleCloudSave();
 }
 
 // Inicializar mensagens rápidas padrão
@@ -356,10 +368,23 @@ if (quickReplies.length === 0) {
         { id: 5, shortcut: 'prazo', message: 'Oi {{nome}}! Nossos prazos são:\n\n• Pronta-entrega: 3-7 dias úteis\n• Fabricação personalizada: 15-20 dias úteis' }
     ];
     localStorage.setItem('crm_quick_replies', JSON.stringify(quickReplies));
+    scheduleCloudSave();
 }
 
 // Inicialização
 document.addEventListener('DOMContentLoaded', async () => {
+    // 0. Escutar evento de dados carregados do Supabase para atualizar variáveis
+    window.addEventListener('crm-cloud-loaded', () => {
+        console.log('[Atendimento] Recarregando dados do Supabase...');
+        allTags = JSON.parse(localStorage.getItem('crm_tags') || '[]');
+        chatTags = JSON.parse(localStorage.getItem('crm_chat_tags') || '{}');
+        quickReplies = JSON.parse(localStorage.getItem('crm_quick_replies') || '[]');
+        snoozedChats = JSON.parse(localStorage.getItem('crm_snoozed') || '{}');
+        clientNotes = JSON.parse(localStorage.getItem('crm_client_notes') || '{}');
+        scheduledMessages = JSON.parse(localStorage.getItem('crm_scheduled') || '[]');
+        loadCRMData();
+    });
+
     // 1. Verificar conexão WhatsApp
     await checkConnection();
 
@@ -2222,6 +2247,7 @@ function renderClientPanel(client, phone) {
 function saveClientNotes(clientId, notes) {
     clientNotes[clientId] = notes;
     localStorage.setItem('crm_client_notes', JSON.stringify(clientNotes));
+    scheduleCloudSave();
 }
 
 function showAllOrders(clientId) {
@@ -2384,6 +2410,7 @@ async function saveNewClient() {
         if (leadTag) {
             chatTags[currentChatId] = chatTags[currentChatId].filter(id => id !== leadTag.id);
             localStorage.setItem('crm_chat_tags', JSON.stringify(chatTags));
+            scheduleCloudSave();
             renderChatTags();
         }
     }
@@ -2461,6 +2488,7 @@ function linkClientToChat(clientId) {
         if (leadTag) {
             chatTags[currentChatId] = chatTags[currentChatId].filter(id => id !== leadTag.id);
             localStorage.setItem('crm_chat_tags', JSON.stringify(chatTags));
+            scheduleCloudSave();
             renderChatTags();
         }
     }
@@ -2542,6 +2570,7 @@ function toggleTag(tagId) {
     }
     
     localStorage.setItem('crm_chat_tags', JSON.stringify(chatTags));
+    scheduleCloudSave();
     renderChatTags();
     renderTagsList();
 }
@@ -2578,6 +2607,7 @@ function createTag() {
     
     allTags.push(newTag);
     localStorage.setItem('crm_tags', JSON.stringify(allTags));
+    scheduleCloudSave();
     
     nameInput.value = '';
     renderTagsList();
@@ -2588,12 +2618,14 @@ function deleteTag(tagId) {
     
     allTags = allTags.filter(t => t.id !== tagId);
     localStorage.setItem('crm_tags', JSON.stringify(allTags));
+    scheduleCloudSave();
     
     // Remover tag de todos os chats
     Object.keys(chatTags).forEach(chatId => {
         chatTags[chatId] = chatTags[chatId].filter(id => id !== tagId);
     });
     localStorage.setItem('crm_chat_tags', JSON.stringify(chatTags));
+    scheduleCloudSave();
     
     renderTagsList();
     renderChatTags();
@@ -2781,6 +2813,7 @@ function saveQuickReply() {
     }
     
     localStorage.setItem('crm_quick_replies', JSON.stringify(quickReplies));
+    scheduleCloudSave();
     closeEditQuickReply();
     openQuickReplies();
 }
@@ -2789,6 +2822,7 @@ function deleteQuickReply(id) {
     if (!confirm('Excluir esta mensagem rápida?')) return;
     quickReplies = quickReplies.filter(q => q.id !== id);
     localStorage.setItem('crm_quick_replies', JSON.stringify(quickReplies));
+    scheduleCloudSave();
     renderQuickRepliesList();
     lucide.createIcons();
 }
@@ -2851,6 +2885,7 @@ function snoozeChat(days) {
     
     snoozedChats[currentChatId] = wakeTime.getTime();
     localStorage.setItem('crm_snoozed', JSON.stringify(snoozedChats));
+    scheduleCloudSave();
     
     closeSnoozeModal();
     alert(`Conversa adiada! Reaparecerá em ${days} dia(s) às 09:00.`);
@@ -2868,6 +2903,7 @@ function snoozeCustom() {
     
     snoozedChats[currentChatId] = wakeTime.getTime();
     localStorage.setItem('crm_snoozed', JSON.stringify(snoozedChats));
+    scheduleCloudSave();
     
     closeSnoozeModal();
     alert(`Conversa adiada até ${wakeTime.toLocaleDateString('pt-BR')} às 09:00.`);
@@ -2888,6 +2924,7 @@ function processSnoozedChats() {
     
     if (changed) {
         localStorage.setItem('crm_snoozed', JSON.stringify(snoozedChats));
+        scheduleCloudSave();
     }
 }
 
@@ -4191,6 +4228,7 @@ function deleteCampaign(id) {
 
 function saveCampaigns() {
     localStorage.setItem('crm_campaigns', JSON.stringify(allCampaigns));
+    scheduleCloudSave();
 }
 
 function openImportFromGroup() {
@@ -4503,6 +4541,7 @@ function saveClientNotes() {
     clientNotes[chatId] = existingData;
     
     localStorage.setItem('crm_client_notes', JSON.stringify(clientNotes));
+    scheduleCloudSave();
     showToast('Notas salvas!', 'success');
     loadClientNotes();
 }
@@ -4554,6 +4593,7 @@ function saveScheduledMessage() {
     
     scheduledMessages.push(scheduled);
     localStorage.setItem('crm_scheduled', JSON.stringify(scheduledMessages));
+    scheduleCloudSave();
     
     showToast(`Mensagem agendada para ${new Date(dateTime).toLocaleString('pt-BR')}`, 'success');
     closeScheduleModal();
@@ -4602,6 +4642,7 @@ async function sendScheduledMessage(id) {
     }
     
     localStorage.setItem('crm_scheduled', JSON.stringify(scheduledMessages));
+    scheduleCloudSave();
 }
 
 // Inicializar timers de mensagens agendadas
@@ -4715,6 +4756,7 @@ function markAsResolved() {
         resolvedTag = { id: Date.now(), name: 'Resolvido', color: '#10b981' };
         allTags.push(resolvedTag);
         localStorage.setItem('crm_tags', JSON.stringify(allTags));
+        scheduleCloudSave();
     }
     
     const currentTags = chatTags[currentChatId] || [];
@@ -4722,6 +4764,7 @@ function markAsResolved() {
         currentTags.push(resolvedTag.id);
         chatTags[currentChatId] = currentTags;
         localStorage.setItem('crm_chat_tags', JSON.stringify(chatTags));
+        scheduleCloudSave();
     }
     
     showToast('Conversa marcada como resolvida!', 'success');

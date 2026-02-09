@@ -1526,7 +1526,8 @@ app.post('/api/supabase-sync', async (req, res) => {
             }
 
             case 'syncAll': {
-                const { clients, products, orders, coupons, campaigns, settings } = data;
+                const { clients, products, orders, coupons, campaigns, settings,
+                        tags, chat_tags, quick_replies, client_notes, snoozed, scheduled, ai_tags, coupon_assignments } = data;
                 const results = {};
 
                 if (clients?.length > 0) {
@@ -1559,18 +1560,73 @@ app.post('/api/supabase-sync', async (req, res) => {
                     if (error) console.error('Erro settings:', error);
                     results.settings = true;
                 }
+                // ---- DADOS DO ATENDIMENTO ----
+                if (tags?.length > 0) {
+                    // Limpar e reinserir tags (replace strategy)
+                    await supabase.from('crm_tags').delete().neq('id', 0);
+                    const { error } = await supabase.from('crm_tags').insert(tags);
+                    if (error) console.error('Erro tags:', error);
+                    results.tags = tags.length;
+                }
+                if (chat_tags?.length > 0) {
+                    await supabase.from('crm_chat_tags').delete().neq('id', 0);
+                    const { error } = await supabase.from('crm_chat_tags').insert(chat_tags);
+                    if (error) console.error('Erro chat_tags:', error);
+                    results.chat_tags = chat_tags.length;
+                }
+                if (quick_replies?.length > 0) {
+                    await supabase.from('crm_quick_replies').delete().neq('id', 0);
+                    const { error } = await supabase.from('crm_quick_replies').insert(quick_replies);
+                    if (error) console.error('Erro quick_replies:', error);
+                    results.quick_replies = quick_replies.length;
+                }
+                if (client_notes?.length > 0) {
+                    const { error } = await supabase.from('crm_client_notes').upsert(client_notes, { onConflict: 'id' });
+                    if (error) console.error('Erro client_notes:', error);
+                    results.client_notes = client_notes.length;
+                }
+                if (snoozed?.length > 0) {
+                    await supabase.from('crm_snoozed').delete().neq('chat_id', '');
+                    const { error } = await supabase.from('crm_snoozed').insert(snoozed);
+                    if (error) console.error('Erro snoozed:', error);
+                    results.snoozed = snoozed.length;
+                }
+                if (scheduled?.length > 0) {
+                    const { error } = await supabase.from('crm_scheduled').upsert(scheduled, { onConflict: 'id' });
+                    if (error) console.error('Erro scheduled:', error);
+                    results.scheduled = scheduled.length;
+                }
+                if (ai_tags?.length > 0) {
+                    const { error } = await supabase.from('crm_ai_tags').upsert(ai_tags, { onConflict: 'client_id' });
+                    if (error) console.error('Erro ai_tags:', error);
+                    results.ai_tags = ai_tags.length;
+                }
+                if (coupon_assignments?.length > 0) {
+                    const { error } = await supabase.from('crm_coupon_assignments').upsert(coupon_assignments, { onConflict: 'id' });
+                    if (error) console.error('Erro coupon_assignments:', error);
+                    results.coupon_assignments = coupon_assignments.length;
+                }
 
                 return res.json({ success: true, synced: results });
             }
 
             case 'loadAll': {
-                const [clientsRes, productsRes, ordersRes, couponsRes, campaignsRes, settingsRes] = await Promise.all([
+                const [clientsRes, productsRes, ordersRes, couponsRes, campaignsRes, settingsRes,
+                       tagsRes, chatTagsRes, quickRepliesRes, clientNotesRes, snoozedRes, scheduledRes, aiTagsRes, couponAssignRes] = await Promise.all([
                     supabase.from('clients').select('*'),
                     supabase.from('products').select('*'),
                     supabase.from('orders').select('*'),
                     supabase.from('coupons').select('*'),
                     supabase.from('campaigns').select('*'),
-                    supabase.from('settings').select('*').eq('id', 'main').single()
+                    supabase.from('settings').select('*').eq('id', 'main').single(),
+                    supabase.from('crm_tags').select('*').order('id'),
+                    supabase.from('crm_chat_tags').select('*'),
+                    supabase.from('crm_quick_replies').select('*').order('id'),
+                    supabase.from('crm_client_notes').select('*'),
+                    supabase.from('crm_snoozed').select('*'),
+                    supabase.from('crm_scheduled').select('*'),
+                    supabase.from('crm_ai_tags').select('*'),
+                    supabase.from('crm_coupon_assignments').select('*')
                 ]);
 
                 return res.json({
@@ -1579,7 +1635,15 @@ app.post('/api/supabase-sync', async (req, res) => {
                     orders: ordersRes.data || [],
                     coupons: couponsRes.data || [],
                     campaigns: campaignsRes.data || [],
-                    settings: settingsRes.data || null
+                    settings: settingsRes.data || null,
+                    tags: tagsRes.data || [],
+                    chat_tags: chatTagsRes.data || [],
+                    quick_replies: quickRepliesRes.data || [],
+                    client_notes: clientNotesRes.data || [],
+                    snoozed: snoozedRes.data || [],
+                    scheduled: scheduledRes.data || [],
+                    ai_tags: aiTagsRes.data || [],
+                    coupon_assignments: couponAssignRes.data || []
                 });
             }
 

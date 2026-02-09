@@ -48,6 +48,17 @@ function formatCurrency(value) {
     return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+// Debounced cloud save
+let _crmCloudSaveTimer = null;
+function scheduleCloudSave() {
+    if (_crmCloudSaveTimer) clearTimeout(_crmCloudSaveTimer);
+    _crmCloudSaveTimer = setTimeout(() => {
+        if (window.CRMAutoSync && typeof window.CRMAutoSync.saveToCloud === 'function') {
+            window.CRMAutoSync.saveToCloud();
+        }
+    }, 3000);
+}
+
 // ============================================================================
 // ARMAZENAMENTO LOCAL (LocalStorage)
 // ============================================================================
@@ -64,6 +75,7 @@ const Storage = {
     save(key, data) {
         try {
             localStorage.setItem(key, JSON.stringify(data));
+            scheduleCloudSave();
             return true;
         } catch (e) {
             console.error('Erro ao salvar no localStorage:', e);
@@ -237,6 +249,44 @@ const SupabaseSync = {
             risk_days: settings.riskDays,
             groq_api_key: settings.groqApiKey
         };
+
+        // Preparar dados do atendimento (localStorage → Supabase)
+        const rawTags = Storage.load('crm_tags', []);
+        const rawChatTags = Storage.load('crm_chat_tags', {});
+        const rawQuickReplies = Storage.load('crm_quick_replies', []);
+        const rawClientNotes = Storage.load('crm_client_notes', {});
+        const rawSnoozed = Storage.load('crm_snoozed', {});
+        const rawScheduled = Storage.load('crm_scheduled', []);
+        const rawAiTags = Storage.load('crm_ai_tags', {});
+        const rawCouponAssign = Storage.load('crm_coupon_assignments', []);
+
+        // Converter chatTags de { chatId: [tagIds] } para array de rows
+        const chatTagsForDb = [];
+        Object.entries(rawChatTags).forEach(([chatId, tagIds]) => {
+            (tagIds || []).forEach(tagId => {
+                chatTagsForDb.push({ chat_id: chatId, tag_id: tagId });
+            });
+        });
+
+        // Converter clientNotes de { chatId: {text, history} } para array
+        const clientNotesForDb = Object.entries(rawClientNotes).map(([chatId, note]) => ({
+            id: chatId,
+            text: note.text || '',
+            history: note.history || []
+        }));
+
+        // Converter snoozed de { chatId: timestamp } para array
+        const snoozedForDb = Object.entries(rawSnoozed).map(([chatId, wakeAt]) => ({
+            chat_id: chatId,
+            wake_at: wakeAt
+        }));
+
+        // Converter ai_tags de { clientId: {tags, updatedAt} } para array
+        const aiTagsForDb = Object.entries(rawAiTags).map(([clientId, data]) => ({
+            client_id: clientId,
+            tags: data,
+            updated_at: data.updatedAt || new Date().toISOString()
+        }));
         
         return await this.call('syncAll', null, {
             clients: clientsForDb,
@@ -244,7 +294,15 @@ const SupabaseSync = {
             orders: ordersForDb,
             coupons,
             campaigns,
-            settings: settingsForDb
+            settings: settingsForDb,
+            tags: rawTags,
+            chat_tags: chatTagsForDb.length > 0 ? chatTagsForDb : undefined,
+            quick_replies: rawQuickReplies,
+            client_notes: clientNotesForDb.length > 0 ? clientNotesForDb : undefined,
+            snoozed: snoozedForDb.length > 0 ? snoozedForDb : undefined,
+            scheduled: rawScheduled.length > 0 ? rawScheduled : undefined,
+            ai_tags: aiTagsForDb.length > 0 ? aiTagsForDb : undefined,
+            coupon_assignments: rawCouponAssign.length > 0 ? rawCouponAssign : undefined
         });
     },
     
@@ -330,6 +388,60 @@ const SupabaseSync = {
                 riskDays: result.settings.risk_days || currentSettings.riskDays,
                 groqApiKey: result.settings.groq_api_key || currentSettings.groqApiKey
             });
+        }
+
+        // ---- RESTAURAR DADOS DO ATENDIMENTO ----
+        if (result.tags?.length > 0) {
+            Storage.save('crm_tags', result.tags);
+        }
+
+        if (result.chat_tags?.length > 0) {
+            // Converter array de rows para { chatId: [tagIds] }
+            const chatTagsObj = {};
+            result.chat_tags.forEach(row => {
+                if (!chatTagsObj[row.chat_id]) chatTagsObj[row.chat_id] = [];
+                chatTagsObj[row.chat_id].push(row.tag_id);
+            });
+            Storage.save('crm_chat_tags', chatTagsObj);
+        }
+
+        if (result.quick_replies?.length > 0) {
+            Storage.save('crm_quick_replies', result.quick_replies);
+        }
+
+        if (result.client_notes?.length > 0) {
+            // Converter array para { chatId: { text, history } }
+            const notesObj = {};
+            result.client_notes.forEach(row => {
+                notesObj[row.id] = { text: row.text || '', history: row.history || [] };
+            });
+            Storage.save('crm_client_notes', notesObj);
+        }
+
+        if (result.snoozed?.length > 0) {
+            // Converter array para { chatId: timestamp }
+            const snoozedObj = {};
+            result.snoozed.forEach(row => {
+                snoozedObj[row.chat_id] = row.wake_at;
+            });
+            Storage.save('crm_snoozed', snoozedObj);
+        }
+
+        if (result.scheduled?.length > 0) {
+            Storage.save('crm_scheduled', result.scheduled);
+        }
+
+        if (result.ai_tags?.length > 0) {
+            // Converter array para { clientId: { ...tags } }
+            const aiTagsObj = {};
+            result.ai_tags.forEach(row => {
+                aiTagsObj[row.client_id] = row.tags || {};
+            });
+            Storage.save('crm_ai_tags', aiTagsObj);
+        }
+
+        if (result.coupon_assignments?.length > 0) {
+            Storage.save('crm_coupon_assignments', result.coupon_assignments);
         }
         
         return result;
