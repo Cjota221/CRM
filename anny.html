@@ -150,9 +150,13 @@
                     </a>
                 </div>
             </nav>
+            <div class="px-3 py-3 border-t border-slate-100">
+                <a href="#" onclick="handleLogout(event)" class="nav-item text-red-500 hover:bg-red-50">
+                    <i data-lucide="log-out" class="w-5 h-5"></i>
+                    <span>Sair do CRM</span>
+                </a>
+            </div>
         </aside>
-
-        <!-- Main Content -->
         <main class="flex-1 flex flex-col overflow-hidden">
             <!-- Header -->
             <header class="bg-white border-b border-slate-100 px-8 py-5">
@@ -851,6 +855,12 @@
             // Verificar contexto da Vigilante após inicializar
             setTimeout(() => AnnyChat.checkVigilanteContext(), 500);
         });
+
+        async function handleLogout(e) {
+            if (e) e.preventDefault();
+            try { await fetch('/api/auth/logout', { method: 'POST' }); } catch(e) {}
+            window.location.href = '/login.html';
+        }
     </script>
 </body>
 </html>

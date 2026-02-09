@@ -84,6 +84,9 @@
             <i data-lucide="plus" class="w-4 h-4"></i>
             Nova Campanha
         </button>
+        <button onclick="handleLogout()" class="btn text-slate-500 hover:bg-red-50 hover:text-red-600 ml-2" title="Sair do CRM">
+            <i data-lucide="power" class="w-4 h-4"></i>
+        </button>
     </header>
 
     <!-- Main Content -->
@@ -1286,6 +1289,12 @@
             if (hours < 24) return `${hours}h atrás`;
             const days = Math.floor(hours / 24);
             return `${days}d atrás`;
+        }
+    </script>
+    <script>
+        async function handleLogout() {
+            try { await fetch('/api/auth/logout', { method: 'POST' }); } catch(e) {}
+            window.location.href = '/login.html';
         }
     </script>
 </body>

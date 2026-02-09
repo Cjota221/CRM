@@ -221,6 +221,10 @@
                         <i data-lucide="settings" class="w-5 h-5"></i>
                         <span>Configurações</span>
                     </a>
+                    <a href="#" onclick="handleLogout(event)" class="nav-item text-red-500 hover:bg-red-50 mt-2">
+                        <i data-lucide="log-out" class="w-5 h-5"></i>
+                        <span>Sair do CRM</span>
+                    </a>
                 </div>
             </nav>
         </aside>
@@ -843,6 +847,13 @@ Aproveite e volte a comprar conosco!</textarea></div><div><label class="block te
     </div>
     
     <script src="script.js"></script>
-    <script>lucide.createIcons();</script>
+    <script>
+        lucide.createIcons();
+        async function handleLogout(e) {
+            e.preventDefault();
+            try { await fetch('/api/auth/logout', { method: 'POST' }); } catch(e) {}
+            window.location.href = '/login.html';
+        }
+    </script>
 </body>
 </html>

@@ -241,6 +241,11 @@
                 <i data-lucide="plug" class="w-4 h-4" id="connectIcon"></i>
                 <span id="connectText">Conectar</span>
             </button>
+            <div class="w-px h-6 bg-slate-200 mx-1"></div>
+            <button onclick="handleLogout()" class="btn btn-secondary text-sm py-2 text-slate-500 hover:bg-red-50 hover:text-red-600" title="Sair do CRM">
+                <i data-lucide="power" class="w-4 h-4"></i>
+                <span class="hidden sm:inline ml-1">Sair</span>
+            </button>
         </div>
     </header>
 
@@ -1157,6 +1162,12 @@ Ex:
     <script src="lib-chat-loader.js"></script>
     <script src="lib-anne-panel.js"></script>
     <script src="atendimentos.js"></script>
-    <script>lucide.createIcons();</script>
+    <script>
+        lucide.createIcons();
+        async function handleLogout() {
+            try { await fetch('/api/auth/logout', { method: 'POST' }); } catch(e) {}
+            window.location.href = '/login.html';
+        }
+    </script>
 </body>
 </html>

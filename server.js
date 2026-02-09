@@ -4,10 +4,60 @@ const bodyParser = require('body-parser');
 require('dotenv').config(); // Carrega variáveis de ambiente do arquivo .env
 const fetch = require('node-fetch');
 const path = require('path');
-const https = require('https'); 
+const https = require('https');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = 3000;
+
+// ============================================================================
+// SISTEMA DE AUTENTICAÇÃO
+// ============================================================================
+const AUTH_USER = process.env.CRM_USER || 'admin';
+const AUTH_PASS = process.env.CRM_PASS || 'admin';
+const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+const SESSION_MAX_AGE = 24 * 60 * 60 * 1000; // 24 horas
+
+// Armazena sessões ativas em memória { token: { user, createdAt } }
+const activeSessions = new Map();
+
+function generateSessionToken() {
+    return crypto.randomBytes(48).toString('hex');
+}
+
+function cleanExpiredSessions() {
+    const now = Date.now();
+    for (const [token, session] of activeSessions) {
+        if (now - session.createdAt > SESSION_MAX_AGE) {
+            activeSessions.delete(token);
+        }
+    }
+}
+// Limpa sessões expiradas a cada hora
+setInterval(cleanExpiredSessions, 60 * 60 * 1000);
+
+function parseCookies(cookieHeader) {
+    const cookies = {};
+    if (!cookieHeader) return cookies;
+    cookieHeader.split(';').forEach(c => {
+        const [key, ...rest] = c.trim().split('=');
+        if (key) cookies[key.trim()] = rest.join('=').trim();
+    });
+    return cookies;
+}
+
+function isAuthenticated(req) {
+    const cookies = parseCookies(req.headers.cookie);
+    const token = cookies['crm_session'];
+    if (!token) return false;
+    const session = activeSessions.get(token);
+    if (!session) return false;
+    if (Date.now() - session.createdAt > SESSION_MAX_AGE) {
+        activeSessions.delete(token);
+        return false;
+    }
+    return true;
+}
 
 // ============================================================================
 // SISTEMA DE MONITORAMENTO DE CONEXÃO (HEALTH CHECK)
@@ -253,6 +303,72 @@ const SITE_BASE_URL = process.env.SITE_BASE_URL || 'https://seusite.com.br'; // 
 // Middleware
 app.use(cors());
 app.use(bodyParser.json({ limit: '1000mb' })); // Aumenta limite de JSON para sincronização grande
+
+// ============================================================================
+// ROTAS DE AUTENTICAÇÃO (ANTES do static middleware)
+// ============================================================================
+app.post('/api/auth/login', (req, res) => {
+    const { username, password } = req.body || {};
+    if (username === AUTH_USER && password === AUTH_PASS) {
+        const token = generateSessionToken();
+        activeSessions.set(token, { user: username, createdAt: Date.now() });
+        res.setHeader('Set-Cookie', `crm_session=${token}; HttpOnly; Path=/; Max-Age=${SESSION_MAX_AGE / 1000}; SameSite=Lax`);
+        return res.json({ success: true, message: 'Login realizado com sucesso' });
+    }
+    return res.status(401).json({ success: false, message: 'Usuário ou senha inválidos' });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+    const cookies = parseCookies(req.headers.cookie);
+    const token = cookies['crm_session'];
+    if (token) activeSessions.delete(token);
+    res.setHeader('Set-Cookie', 'crm_session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax');
+    return res.json({ success: true, message: 'Logout realizado' });
+});
+
+app.get('/api/auth/check', (req, res) => {
+    return res.json({ authenticated: isAuthenticated(req) });
+});
+
+// Middleware de proteção — redireciona para login se não autenticado
+app.use((req, res, next) => {
+    // Permitir sempre: login page, auth API, webhooks, assets públicos
+    const publicPaths = [
+        '/login.html',
+        '/api/auth/',
+        '/api/evolution/webhook',  // Webhook precisa funcionar sem auth
+        '/api/facilzap/webhook'
+    ];
+
+    const reqPath = req.path.toLowerCase();
+
+    // Permitir paths públicos
+    if (publicPaths.some(p => reqPath.startsWith(p))) return next();
+
+    // Permitir raiz redirecionar
+    if (reqPath === '/' || reqPath === '') {
+        if (!isAuthenticated(req)) return res.redirect('/login.html');
+        return next();
+    }
+
+    // Proteger páginas HTML
+    if (reqPath.endsWith('.html') && reqPath !== '/login.html') {
+        if (!isAuthenticated(req)) return res.redirect('/login.html');
+        return next();
+    }
+
+    // Proteger rotas de API (exceto auth e webhooks)
+    if (reqPath.startsWith('/api/') && !publicPaths.some(p => reqPath.startsWith(p))) {
+        if (!isAuthenticated(req)) {
+            return res.status(401).json({ error: 'Não autenticado' });
+        }
+        return next();
+    }
+
+    // Permitir assets estáticos (JS, CSS, imagens, fontes)
+    next();
+});
+
 app.use(express.static(path.join(__dirname, '/')));
 
 // ============================================================================
