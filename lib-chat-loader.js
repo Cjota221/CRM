@@ -235,6 +235,7 @@ class ChatLoadingSystem {
      */
     generateAvatarHTML(chat) {
         const initial = (chat.displayName || '?').charAt(0).toUpperCase();
+        const gradient = this.getAvatarGradient(initial); // Pre-compute
         
         // Grupo: emoji de grupo
         if (chat.isGroup) {
@@ -246,10 +247,44 @@ class ChatLoadingSystem {
         
         // Contato: foto se disponível, senão inicial
         if (chat.profilePicUrl) {
-            return `<img src="${chat.profilePicUrl}" alt="${chat.displayName}" class="w-12 h-12 rounded-full object-cover" onerror="this.outerHTML='<div class=\\'w-12 h-12 rounded-full ${this.getAvatarGradient(initial)} flex items-center justify-center text-white font-bold\\'>${initial}</div>'">`;
+            return `<img src="${chat.profilePicUrl}" alt="${chat.displayName}" class="w-12 h-12 rounded-full object-cover" onerror="this.outerHTML='<div class=\\'w-12 h-12 rounded-full ${gradient} flex items-center justify-center text-white font-bold\\'>${initial}</div>'">`;
         }
         
-        return `<div class="w-12 h-12 rounded-full ${this.getAvatarGradient(initial)} flex items-center justify-center text-white font-bold">${initial}</div>`;
+        // Sem foto: tentar buscar do servidor (lazy load)
+        const cleanPhone = chat.cleanPhone || extractPhoneFromJid(chat.remoteJid || chat.id);
+        if (cleanPhone && !chat.isGroup) {
+            this.lazyLoadProfilePic(chat, cleanPhone);
+        }
+        
+        return `<div class="w-12 h-12 rounded-full ${gradient} flex items-center justify-center text-white font-bold" data-phone="${cleanPhone}">${initial}</div>`;
+    }
+    
+    /**
+     * Buscar foto de perfil do servidor e atualizar na lista
+     */
+    async lazyLoadProfilePic(chat, cleanPhone) {
+        try {
+            const jid = cleanPhone.startsWith('55') ? `${cleanPhone}@s.whatsapp.net` : `55${cleanPhone}@s.whatsapp.net`;
+            const res = await fetch(`/api/whatsapp/profile-picture/${jid}`);
+            const data = await res.json();
+            
+            if (data.profilePicUrl) {
+                chat.profilePicUrl = data.profilePicUrl;
+                // Atualizar avatar na DOM
+                const chatKey = createChatKey(chat.remoteJid || chat.id);
+                const chatEl = document.querySelector(`[data-chat-key="${chatKey}"]`);
+                if (chatEl) {
+                    const avatarContainer = chatEl.querySelector('.flex-shrink-0');
+                    if (avatarContainer) {
+                        const initial = (chat.displayName || '?').charAt(0).toUpperCase();
+                        const gradient = this.getAvatarGradient(initial);
+                        avatarContainer.innerHTML = `<img src="${data.profilePicUrl}" class="w-12 h-12 rounded-full object-cover" onerror="this.outerHTML='<div class=\\'w-12 h-12 rounded-full ${gradient} flex items-center justify-center text-white font-bold\\'>${initial}</div>'">`;
+                    }
+                }
+            }
+        } catch (e) {
+            // Silenciar erro - foto é opcional
+        }
     }
     
     /**

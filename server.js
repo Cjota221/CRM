@@ -75,6 +75,106 @@ let crmCache = {
     products: [],
     lastUpdate: null
 };
+let crmCacheLoading = false; // Evitar requisições duplicadas
+
+/**
+ * Normalizar telefone de forma consistente (server-side)
+ * Remove tudo que não é dígito, remove DDI 55 se o número tiver 12+ dígitos
+ * @param {string} raw - Número bruto
+ * @returns {string} Número limpo (ex: "94984121802")
+ */
+function normalizePhoneServer(raw) {
+    if (!raw) return '';
+    let cleaned = String(raw).replace(/\D/g, '');
+    // Remover DDI 55 apenas se o número tiver 12+ dígitos (DDI + DDD + número)
+    if (cleaned.startsWith('55') && cleaned.length >= 12) {
+        cleaned = cleaned.substring(2);
+    }
+    // Se ainda ficou com mais de 11, pegar últimos 11
+    if (cleaned.length > 11) {
+        cleaned = cleaned.slice(-11);
+    }
+    return cleaned;
+}
+
+/**
+ * Buscar cliente por telefone no cache com lógica fuzzy
+ * Verifica TODOS os campos de telefone (não short-circuit)
+ * Faz match exato + fuzzy (últimos 9 dígitos)
+ */
+function findClientByPhone(normalizedPhone) {
+    if (!crmCache.clients || crmCache.clients.length === 0) return null;
+    if (!normalizedPhone || normalizedPhone.length < 8) return null;
+    
+    const last9 = normalizedPhone.slice(-9);
+    
+    // Primeiro: match exato em qualquer campo
+    let client = crmCache.clients.find(c => {
+        const phones = [
+            normalizePhoneServer(c.telefone),
+            normalizePhoneServer(c.celular),
+            normalizePhoneServer(c.phone),
+            normalizePhoneServer(c.whatsapp)
+        ].filter(p => p.length >= 8);
+        return phones.some(p => p === normalizedPhone);
+    });
+    
+    // Segundo: fuzzy match (últimos 9 dígitos) caso exato falhe
+    if (!client) {
+        client = crmCache.clients.find(c => {
+            const phones = [
+                normalizePhoneServer(c.telefone),
+                normalizePhoneServer(c.celular),
+                normalizePhoneServer(c.phone),
+                normalizePhoneServer(c.whatsapp)
+            ].filter(p => p.length >= 8);
+            return phones.some(p => p.slice(-9) === last9);
+        });
+    }
+    
+    return client;
+}
+
+/**
+ * Garantir que o cache CRM está populado (auto-load se vazio)
+ */
+async function ensureCrmCache() {
+    if (crmCache.clients && crmCache.clients.length > 0) return true;
+    if (crmCacheLoading) {
+        // Esperar até 10s pelo carregamento em andamento
+        for (let i = 0; i < 100; i++) {
+            await new Promise(r => setTimeout(r, 100));
+            if (crmCache.clients && crmCache.clients.length > 0) return true;
+        }
+        return false;
+    }
+    
+    if (!FACILZAP_TOKEN) return false;
+    
+    try {
+        crmCacheLoading = true;
+        console.log('[CACHE] Auto-carregando dados FacilZap...');
+        const twoYearsAgo = new Date();
+        twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+        const dataInicial = twoYearsAgo.toISOString().split('T')[0];
+        const dataFinal = new Date().toISOString().split('T')[0];
+        
+        const [clients, orders, products] = await Promise.all([
+            fetchAllPages('https://api.facilzap.app.br/clientes', FACILZAP_TOKEN),
+            fetchAllPages('https://api.facilzap.app.br/pedidos', FACILZAP_TOKEN, `&filtros[data_inicial]=${dataInicial}&filtros[data_final]=${dataFinal}&filtros[incluir_produtos]=1`),
+            fetchAllPages('https://api.facilzap.app.br/produtos', FACILZAP_TOKEN)
+        ]);
+        
+        crmCache = { clients, orders, products, lastUpdate: new Date() };
+        console.log(`[CACHE] ✅ Auto-carregado: ${clients.length} clientes, ${orders.length} pedidos`);
+        return true;
+    } catch (error) {
+        console.error('[CACHE] Erro ao auto-carregar:', error.message);
+        return false;
+    } finally {
+        crmCacheLoading = false;
+    }
+}
 
 // ============================================================================
 // CONFIGURAÇÃO
@@ -1684,29 +1784,23 @@ app.post('/api/client-lookup', async (req, res) => {
             return res.status(400).json({ error: 'Phone é obrigatório' });
         }
         
-        // Buscar no cache do CRM
-        if (!crmCache.clients || crmCache.clients.length === 0) {
-            return res.json(null); // Sem clientes carregados
-        }
+        // Garantir cache populado
+        await ensureCrmCache();
         
-        // Normalizar telefone para busca (remover +55 e caracteres especiais)
-        const normalizedPhone = phone.replace(/\D/g, '').replace(/^55/, '');
-        
-        // Procurar cliente por telefone
-        const client = crmCache.clients.find(c => {
-            const clientPhone = c.telefone?.replace(/\D/g, '').replace(/^55/, '') || 
-                               c.celular?.replace(/\D/g, '').replace(/^55/, '') ||
-                               c.phone?.replace(/\D/g, '').replace(/^55/, '');
-            return clientPhone === normalizedPhone;
-        });
+        // Normalizar e buscar com função centralizada (exato + fuzzy)
+        const normalizedPhone = normalizePhoneServer(phone);
+        const client = findClientByPhone(normalizedPhone);
         
         if (!client) {
             return res.json(null); // Cliente não encontrado
         }
         
         // Calcular status baseado em pedidos
-        const clientOrders = crmCache.orders.filter(o => o.id_cliente === client.id);
-        const status = clientOrders.length > 3 ? 'VIP' : clientOrders.length > 0 ? 'Recorrente' : 'Lead';
+        const clientOrders = (crmCache.orders || []).filter(o => 
+            o.id_cliente === client.id || o.cliente_id === client.id ||
+            String(o.id_cliente) === String(client.id) || String(o.cliente_id) === String(client.id)
+        );
+        const status = clientOrders.length >= 5 ? 'VIP' : clientOrders.length >= 2 ? 'Recorrente' : clientOrders.length > 0 ? 'Cliente' : 'Lead';
         
         // Retornar dados do cliente
         res.json({
@@ -2021,29 +2115,27 @@ app.get('/api/client-brain/:phone', async (req, res) => {
             return res.status(400).json({ error: 'Phone é obrigatório' });
         }
         
-        // Normalizar telefone
-        const normalizedPhone = phone.replace(/\D/g, '').replace(/^55/, '');
+        // Normalizar telefone com função centralizada
+        const normalizedPhone = normalizePhoneServer(phone);
+        console.log(`[BRAIN] Buscando cliente: raw="${phone}" → normalized="${normalizedPhone}"`);
         
-        // Buscar cliente no cache do CRM (FacilZap)
-        let client = null;
+        // Garantir que o cache está populado (auto-carrega se vazio)
+        await ensureCrmCache();
+        
+        // Buscar cliente usando função centralizada (match exato + fuzzy)
+        let client = findClientByPhone(normalizedPhone);
         let clientOrders = [];
         
-        if (crmCache.clients && crmCache.clients.length > 0) {
-            client = crmCache.clients.find(c => {
-                const clientPhone = c.telefone?.replace(/\D/g, '').replace(/^55/, '') || 
-                                   c.celular?.replace(/\D/g, '').replace(/^55/, '') ||
-                                   c.phone?.replace(/\D/g, '').replace(/^55/, '');
-                return clientPhone === normalizedPhone;
-            });
-            
-            if (client && crmCache.orders) {
-                clientOrders = crmCache.orders.filter(o => 
-                    o.id_cliente === client.id || 
-                    o.cliente_id === client.id ||
-                    o.cliente?.telefone?.replace(/\D/g, '').replace(/^55/, '') === normalizedPhone
-                );
-            }
+        if (client && crmCache.orders) {
+            clientOrders = crmCache.orders.filter(o => 
+                o.id_cliente === client.id || 
+                o.cliente_id === client.id ||
+                String(o.id_cliente) === String(client.id) ||
+                String(o.cliente_id) === String(client.id)
+            );
         }
+        
+        console.log(`[BRAIN] Resultado: ${client ? '✅ ' + (client.nome || client.name) + ' (' + clientOrders.length + ' pedidos)' : '❌ Não encontrado'}`);
         
         // Se não encontrou cliente, retornar como Lead Novo
         if (!client) {

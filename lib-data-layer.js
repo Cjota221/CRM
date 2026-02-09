@@ -159,10 +159,10 @@ class DataLayer {
             ...rawChat,
             isGroup: isGroupJid(rawChat.remoteJid || rawChat.id),
             cleanPhone: extractPhoneFromJid(rawChat.remoteJid || rawChat.id),
-            client: null, // Será preenchido abaixo
+            client: null,
             displayName: rawChat.pushName || rawChat.name || 'Desconhecido',
             isKnownClient: false,
-            clientStatus: null, // 'VIP', 'Recorrente', 'Lead Novo'
+            clientStatus: null,
         };
         
         // Se não é grupo, tentar encontrar cliente
@@ -171,7 +171,8 @@ class DataLayer {
             
             if (client) {
                 enrichedChat.client = client;
-                enrichedChat.displayName = client.name; // Usar nome do CRM
+                // Usar nome do CRM em vez do pushName
+                enrichedChat.displayName = client.name || rawChat.pushName || rawChat.name || 'Desconhecido';
                 enrichedChat.isKnownClient = true;
                 enrichedChat.clientStatus = client.status || 'Cliente';
             } else {

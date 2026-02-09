@@ -219,8 +219,19 @@ function formatWhatsAppText(text) {
     // Quebras de linha
     formatted = formatted.replace(/\n/g, '<br>');
     
-    // Links clicáveis
-    formatted = formatted.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" class="text-blue-500 underline hover:text-blue-600">$1</a>');
+    // Detectar links de pedido (ex: cjotarasteirinhas.com.br/pedido/5230599/mkTzLX)
+    // Transformar em links clicáveis que abrem detalhes do pedido no CRM
+    formatted = formatted.replace(
+        /(https?:\/\/[^\s]*\/pedido\/(\d+)[^\s]*)/g,
+        '<a href="$1" target="_blank" class="text-blue-500 underline hover:text-blue-600">$1</a> <button onclick="showOrderDetails(\'$2\')" class="inline-flex items-center gap-1 ml-1 px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 text-xs font-medium hover:bg-purple-200 transition-colors" title="Ver pedido no CRM"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>#$2</button>'
+    );
+    
+    // Links genéricos clicáveis (que não sejam de pedido, já tratados acima)
+    formatted = formatted.replace(/(https?:\/\/[^\s<]+)(?!<\/a>)/g, (match) => {
+        // Ignorar se já está dentro de um <a> tag
+        if (match.includes('</a>') || match.includes('<button')) return match;
+        return `<a href="${match}" target="_blank" class="text-blue-500 underline hover:text-blue-600">${match}</a>`;
+    });
     
     return formatted;
 }
@@ -253,16 +264,23 @@ function getContactDisplayName(chatData) {
     // Extrair número limpo do JID
     const cleanPhone = cleanPhoneNumber(jid);
     
-    // 1. PRIORIDADE 1: Nome do CRM
+    // 1. PRIORIDADE 1: Nome do CRM (usando displayName do enrichChat se disponível)
+    if (chatData.isKnownClient && chatData.client?.name) {
+        return chatData.client.name;
+    }
+    if (chatData.displayName && chatData.isKnownClient) {
+        return chatData.displayName;
+    }
+    
     if (cleanPhone && cleanPhone.length >= 8 && allClients && allClients.length > 0) {
-        const lastDigits = cleanPhone.slice(-9);
-        const lastDigits8 = cleanPhone.slice(-8);
+        const last9 = cleanPhone.slice(-9);
         
         const client = allClients.find(c => {
-            const p = cleanPhoneNumber(c.telefone || c.celular || c.whatsapp || '');
-            if (!p || p.length < 8) return false;
-            return p.includes(lastDigits) || p.includes(lastDigits8) || 
-                   lastDigits.includes(p.slice(-8)) || lastDigits8.includes(p.slice(-8));
+            const phones = [c.telefone, c.celular, c.whatsapp, c.phone]
+                .filter(Boolean)
+                .map(p => cleanPhoneNumber(p))
+                .filter(p => p.length >= 8);
+            return phones.some(p => p === cleanPhone || p.slice(-9) === last9);
         });
         
         if (client && client.nome && client.nome.trim()) {
@@ -1568,19 +1586,15 @@ function openClientSidebar() {
 }
 
 function findAndRenderClientCRM(chatId) {
-    // chatId vem como "5511999999999@s.whatsapp.net" ou "556282237075@s.whatsapp.net"
+    // chatId vem como "5594984121802@s.whatsapp.net" ou "556282237075@s.whatsapp.net"
     const panel = document.getElementById('crmDataContainer');
     
-    // Limpar o JID para extrair apenas dígitos
+    // Usar normalizePhone centralizado (lib-data-layer.js)
+    // Remove @s.whatsapp.net, DDI 55, e limpa caracteres
     const whatsappPhone = chatId.replace('@s.whatsapp.net', '').replace(/\D/g, '');
+    const normalizedPhone = (typeof normalizePhone === 'function') ? normalizePhone(chatId) : whatsappPhone;
     
-    // Remover o DDI "55" do início se presente para comparação com números armazenados
-    let phoneWithoutDDI = whatsappPhone;
-    if (whatsappPhone.startsWith('55') && whatsappPhone.length > 11) {
-        phoneWithoutDDI = whatsappPhone.substring(2); // Remove "55"
-    }
-    
-    console.log('[CRM Brain] Buscando dados para:', phoneWithoutDDI);
+    console.log(`[CRM Brain] Buscando: raw="${chatId}" → whatsapp="${whatsappPhone}" → normalized="${normalizedPhone}"`);
     
     // Nome do perfil WhatsApp (pushname)
     const whatsappName = currentChatData?.pushName || currentChatData?.name || 'Contato';
@@ -1592,43 +1606,168 @@ function findAndRenderClientCRM(chatId) {
         </div>
     `;
     
-    // Chamar API do "Cérebro"
-    fetch(`${API_BASE}/client-brain/${phoneWithoutDDI}`)
+    // Chamar API do "Cérebro" — enviar o telefone completo COM DDI
+    // O servidor agora faz normalização e fuzzy match internamente
+    fetch(`${API_BASE}/client-brain/${whatsappPhone}`)
         .then(res => res.json())
         .then(data => {
-            console.log('[CRM Brain] Resposta:', data);
+            console.log('[CRM Brain] Resposta:', data.found ? `✅ ${data.client?.name}` : '❌ Lead Novo');
             
             if (!data.found) {
-                // Lead novo - não encontrado no sistema
-                renderNewLeadPanelBrain(whatsappPhone, whatsappName, data);
+                // Tentar fallback local antes de declarar Lead Novo
+                const localResult = tryLocalClientMatch(normalizedPhone);
+                if (localResult) {
+                    console.log('[CRM Brain] Fallback local encontrou:', localResult.nome || localResult.name);
+                    currentClient = localResult;
+                    renderLocalClientPanel(localResult, whatsappPhone);
+                } else {
+                    renderNewLeadPanelBrain(whatsappPhone, whatsappName, data);
+                }
             } else {
-                // Cliente encontrado - mostrar painel completo
+                // Cliente encontrado - atualizar nome no header se disponível
                 currentClient = data.client;
+                if (data.client?.name) {
+                    const headerName = document.getElementById('headerName');
+                    if (headerName) headerName.innerText = data.client.name;
+                }
                 renderClientPanelBrain(data, whatsappPhone);
             }
         })
         .catch(err => {
             console.error('[CRM Brain] Erro:', err);
             // Fallback: usar busca local
-            fallbackLocalClientSearch(chatId, whatsappPhone, phoneWithoutDDI, whatsappName);
+            fallbackLocalClientSearch(chatId, whatsappPhone, normalizedPhone, whatsappName);
         });
+}
+
+// Busca local rápida em allClients (dados já carregados via facilzap-proxy)
+function tryLocalClientMatch(normalizedPhone) {
+    if (!allClients || allClients.length === 0) return null;
+    const last9 = normalizedPhone.slice(-9);
+    
+    return allClients.find(c => {
+        const phones = [c.telefone, c.celular, c.phone, c.whatsapp]
+            .filter(Boolean)
+            .map(p => String(p).replace(/\D/g, ''))
+            .map(p => (p.startsWith('55') && p.length >= 12) ? p.substring(2) : p)
+            .filter(p => p.length >= 8);
+        
+        return phones.some(p => p === normalizedPhone || p.slice(-9) === last9);
+    }) || null;
+}
+
+// Renderizar painel com dados locais (quando o client-brain falha mas temos dados locais)
+function renderLocalClientPanel(client, phone) {
+    const panel = document.getElementById('crmDataContainer');
+    const clientOrders = allOrders.filter(o => 
+        o.id_cliente === client.id || o.cliente_id === client.id ||
+        String(o.id_cliente) === String(client.id) || String(o.cliente_id) === String(client.id)
+    );
+    
+    const totalSpent = clientOrders.reduce((sum, o) => sum + (parseFloat(o.valor_total) || 0), 0);
+    const avgTicket = clientOrders.length > 0 ? totalSpent / clientOrders.length : 0;
+    const name = client.nome || client.name || 'Cliente';
+    
+    // Determinar status
+    let status = 'Cliente', statusColor = 'from-blue-500 to-blue-600', statusEmoji = '✅';
+    if (clientOrders.length >= 5 || totalSpent >= 500) {
+        status = 'Cliente VIP'; statusColor = 'from-purple-500 to-purple-600'; statusEmoji = '👑';
+    } else if (clientOrders.length >= 2) {
+        status = 'Recorrente'; statusColor = 'from-emerald-500 to-emerald-600'; statusEmoji = '⭐';
+    }
+    
+    // Produtos comprados (agregar)
+    const productMap = {};
+    clientOrders.forEach(o => {
+        const items = o.itens || o.products || o.produtos || [];
+        items.forEach(item => {
+            const pName = item.nome || item.name || item.produto || 'Produto';
+            const qty = parseInt(item.quantidade || item.qty || 1);
+            productMap[pName] = (productMap[pName] || 0) + qty;
+        });
+    });
+    const productsHtml = Object.keys(productMap).length > 0
+        ? Object.entries(productMap).sort((a,b) => b[1] - a[1]).map(([name, qty]) =>
+            `<div class="flex justify-between items-center py-1.5 border-b border-slate-100 last:border-0">
+                <span class="text-sm text-slate-700 truncate flex-1">${escapeHtml(name)}</span>
+                <span class="text-xs text-slate-400 ml-2">${qty}x</span>
+            </div>`
+        ).join('')
+        : '<p class="text-xs text-slate-400 text-center py-2">Sem histórico</p>';
+    
+    const ordersHtml = clientOrders.sort((a,b) => new Date(b.data) - new Date(a.data)).slice(0, 5).map(o =>
+        `<div class="p-3 border border-slate-200 rounded-lg">
+            <div class="flex justify-between items-start mb-1">
+                <span class="font-medium text-slate-800 text-sm">#${o.id}</span>
+                <span class="font-bold text-emerald-600 text-sm">R$ ${parseFloat(o.valor_total || 0).toFixed(2)}</span>
+            </div>
+            <div class="flex justify-between items-center">
+                <span class="text-xs text-slate-500">${o.data ? new Date(o.data).toLocaleDateString('pt-BR') : '-'}</span>
+                <span class="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-600">${(o.itens || o.products || []).length} itens</span>
+            </div>
+        </div>`
+    ).join('') || '<p class="text-xs text-slate-400 text-center py-3">Nenhum pedido</p>';
+    
+    panel.innerHTML = `
+        <div class="space-y-4">
+            <div class="bg-gradient-to-br ${statusColor} rounded-xl p-4 text-white">
+                <div class="flex items-center gap-3 mb-3">
+                    <div class="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center text-2xl font-bold backdrop-blur">
+                        ${name.charAt(0).toUpperCase()}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <h3 class="font-bold text-lg truncate">${escapeHtml(name)}</h3>
+                        <p class="text-sm opacity-90">${statusEmoji} ${status}</p>
+                    </div>
+                </div>
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+                <div class="bg-slate-50 p-3 rounded-xl text-center">
+                    <p class="text-xs text-slate-500 mb-1">Pedidos</p>
+                    <p class="text-xl font-bold text-slate-800">${clientOrders.length}</p>
+                </div>
+                <div class="bg-slate-50 p-3 rounded-xl text-center">
+                    <p class="text-xs text-slate-500 mb-1">Ticket</p>
+                    <p class="text-lg font-bold text-emerald-600">R$ ${parseInt(avgTicket)}</p>
+                </div>
+                <div class="bg-slate-50 p-3 rounded-xl text-center">
+                    <p class="text-xs text-slate-500 mb-1">Total</p>
+                    <p class="text-lg font-bold text-blue-600">R$ ${parseInt(totalSpent)}</p>
+                </div>
+            </div>
+            <div class="border border-slate-200 rounded-xl p-3">
+                <h4 class="font-semibold text-slate-800 text-sm flex items-center gap-2 mb-2">
+                    <i data-lucide="star" class="w-4 h-4 text-amber-500"></i>Produtos Comprados
+                </h4>
+                <div class="max-h-32 overflow-y-auto">${productsHtml}</div>
+            </div>
+            <div>
+                <h4 class="font-semibold text-slate-800 text-sm flex items-center gap-2 mb-2">
+                    <i data-lucide="receipt" class="w-4 h-4"></i>Últimos Pedidos
+                </h4>
+                <div class="space-y-2">${ordersHtml}</div>
+            </div>
+            <div class="bg-slate-50 rounded-xl p-3 text-sm">
+                <p class="text-slate-600"><strong>Email:</strong> ${client.email || 'N/A'}</p>
+                <p class="text-slate-600"><strong>Telefone:</strong> ${formatPhone(phone)}</p>
+                ${client.cidade || client.city ? `<p class="text-slate-600"><strong>Cidade:</strong> ${client.cidade || client.city}</p>` : ''}
+            </div>
+        </div>
+    `;
+    lucide.createIcons();
 }
 
 // Fallback para busca local (quando API falha)
 function fallbackLocalClientSearch(chatId, whatsappPhone, phoneWithoutDDI, whatsappName) {
-    let client = allClients.find(c => {
-        const storedPhone = (c.telefone || c.celular || c.whatsapp || '').replace(/\D/g, '').replace(/^55/, '');
-        if (!storedPhone) return false;
-        return storedPhone === phoneWithoutDDI || storedPhone.slice(-9) === phoneWithoutDDI.slice(-9);
-    });
+    const localClient = tryLocalClientMatch(phoneWithoutDDI);
     
-    if (!client) {
+    if (!localClient) {
         const displayPhone = whatsappPhone.startsWith('55') ? whatsappPhone : '55' + whatsappPhone;
         renderNewLeadPanel(displayPhone, whatsappName);
         currentClient = null;
     } else {
-        currentClient = client;
-        renderClientPanel(client, whatsappPhone);
+        currentClient = localClient;
+        renderLocalClientPanel(localClient, whatsappPhone);
     }
 }
 
@@ -3085,6 +3224,122 @@ function escapeHtml(text) {
                .replace(/>/g, "&gt;")
                .replace(/"/g, "&quot;")
                .replace(/'/g, "&#039;");
+}
+
+/**
+ * Mostrar detalhes de um pedido no painel lateral do CRM
+ * Chamado quando o usuário clica no botão de pedido dentro das mensagens
+ */
+function showOrderDetails(orderId) {
+    const panel = document.getElementById('crmDataContainer');
+    if (!panel) return;
+    
+    // Buscar pedido nos dados locais
+    const order = allOrders.find(o => String(o.id) === String(orderId));
+    
+    if (!order) {
+        // Tentar buscar do servidor
+        panel.innerHTML = `
+            <div class="space-y-4">
+                <div class="bg-purple-50 border border-purple-200 rounded-xl p-4">
+                    <h4 class="font-bold text-purple-800 flex items-center gap-2 mb-2">
+                        <i data-lucide="receipt" class="w-5 h-5"></i>
+                        Pedido #${escapeHtml(orderId)}
+                    </h4>
+                    <p class="text-sm text-purple-600">Pedido não encontrado no cache local.</p>
+                    <p class="text-xs text-purple-500 mt-1">Tente sincronizar os dados primeiro.</p>
+                </div>
+                <button onclick="findAndRenderClientCRM(currentRemoteJid)" class="w-full btn btn-secondary text-sm">
+                    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                    Voltar para dados do cliente
+                </button>
+            </div>
+        `;
+        lucide.createIcons();
+        return;
+    }
+    
+    // Dados do pedido
+    const items = order.itens || order.products || order.produtos || [];
+    const total = parseFloat(order.valor_total || order.total || 0);
+    const date = order.data ? new Date(order.data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Data desconhecida';
+    const status = order.status || order.situacao || 'Desconhecido';
+    
+    // Status badge
+    const statusMap = {
+        'Pago': { color: 'bg-emerald-100 text-emerald-700', icon: '✅' },
+        'Aprovado': { color: 'bg-emerald-100 text-emerald-700', icon: '✅' },
+        'Concluído': { color: 'bg-emerald-100 text-emerald-700', icon: '✅' },
+        'Pendente': { color: 'bg-amber-100 text-amber-700', icon: '⏳' },
+        'Cancelado': { color: 'bg-red-100 text-red-700', icon: '❌' },
+        'Enviado': { color: 'bg-blue-100 text-blue-700', icon: '📦' },
+    };
+    const statusInfo = statusMap[status] || { color: 'bg-slate-100 text-slate-600', icon: '📋' };
+    
+    // Itens HTML
+    const itemsHtml = items.map(item => {
+        const nome = item.nome || item.name || item.produto || 'Produto';
+        const qty = parseInt(item.quantidade || item.qty || 1);
+        const preco = parseFloat(item.preco || item.preco_unitario || item.valor || 0);
+        const variacao = item.variacao || item.variant || '';
+        
+        return `
+            <div class="flex justify-between items-center py-2 border-b border-slate-100 last:border-0">
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm text-slate-800 truncate">${escapeHtml(nome)}</p>
+                    ${variacao ? `<p class="text-xs text-slate-400">${escapeHtml(variacao)}</p>` : ''}
+                </div>
+                <div class="text-right ml-3">
+                    <p class="text-sm font-medium text-slate-700">${qty}x</p>
+                    <p class="text-xs text-slate-500">R$ ${preco.toFixed(2)}</p>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    // Dados do cliente do pedido
+    const clienteNome = order.cliente?.nome || order.cliente_nome || '';
+    
+    panel.innerHTML = `
+        <div class="space-y-4">
+            <!-- Header do Pedido -->
+            <div class="bg-gradient-to-br from-purple-500 to-purple-700 rounded-xl p-4 text-white">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="font-bold text-lg">Pedido #${escapeHtml(orderId)}</h3>
+                    <span class="px-2 py-1 rounded-full text-xs font-medium ${statusInfo.color}">${statusInfo.icon} ${escapeHtml(status)}</span>
+                </div>
+                <p class="text-sm opacity-90">${date}</p>
+                ${clienteNome ? `<p class="text-sm opacity-80 mt-1">${escapeHtml(clienteNome)}</p>` : ''}
+            </div>
+            
+            <!-- Total -->
+            <div class="bg-slate-50 rounded-xl p-4 text-center">
+                <p class="text-xs text-slate-500 mb-1">Valor Total</p>
+                <p class="text-2xl font-bold text-emerald-600">R$ ${total.toFixed(2)}</p>
+                <p class="text-xs text-slate-400 mt-1">${items.length} ${items.length === 1 ? 'item' : 'itens'}</p>
+            </div>
+            
+            <!-- Itens -->
+            <div class="border border-slate-200 rounded-xl p-3">
+                <h4 class="font-semibold text-slate-800 text-sm flex items-center gap-2 mb-3">
+                    <i data-lucide="package" class="w-4 h-4 text-purple-500"></i>
+                    Itens do Pedido
+                </h4>
+                <div class="max-h-48 overflow-y-auto">
+                    ${itemsHtml || '<p class="text-xs text-slate-400 text-center py-2">Sem itens detalhados</p>'}
+                </div>
+            </div>
+            
+            <!-- Ações -->
+            <div class="flex gap-2">
+                <button onclick="findAndRenderClientCRM(currentRemoteJid)" class="flex-1 btn btn-secondary text-xs">
+                    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                    Voltar ao Cliente
+                </button>
+            </div>
+        </div>
+    `;
+    lucide.createIcons();
 }
 
 // ============================================================================
