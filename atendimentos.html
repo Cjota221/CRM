@@ -175,6 +175,10 @@
         #notesPanel.open {
             transform: translateX(0);
         }
+
+        /* Fix: hidden + flex/grid lint conflict */
+        .d-flex:not(.hidden) { display: flex; }
+        .d-grid:not(.hidden) { display: grid; }
     </style>
 </head>
 <body class="bg-slate-50 h-screen flex flex-col">
@@ -322,7 +326,7 @@
         <!-- Coluna 2: Chat Ativo -->
         <section class="flex-1 flex flex-col chat-bg relative">
             <!-- Header do Chat -->
-            <div id="chatHeader" class="h-16 bg-white border-b border-slate-100 flex items-center px-5 justify-between hidden">
+            <div id="chatHeader" class="h-16 bg-white border-b border-slate-100 d-flex items-center px-5 justify-between hidden">
                 <div class="flex items-center gap-3 flex-1 cursor-pointer hover:bg-slate-50 -mx-2 px-2 py-2 rounded-lg transition" onclick="openClientSidebar()" title="Clique para ver/editar dados do contato">
                     <div class="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-semibold text-sm relative overflow-hidden">
                         <img id="headerAvatar" src="" alt="Avatar" class="w-10 h-10 rounded-full object-cover hidden">
@@ -556,7 +560,7 @@
     </main>
 
     <!-- VIEW CAMPANHAS -->
-    <main id="viewCampaigns" class="flex-1 flex overflow-hidden hidden">
+    <main id="viewCampaigns" class="flex-1 d-flex overflow-hidden hidden">
         <!-- Sidebar: Estatísticas e Filtros -->
         <aside class="w-72 bg-white border-r border-slate-100 p-5 overflow-y-auto">
             <h3 class="font-semibold text-slate-800 mb-4">Visão Geral</h3>
@@ -651,7 +655,7 @@
     </main>
 
     <!-- Modal de Produtos (Catálogo) -->
-    <div id="productModal" class="fixed inset-0 hidden z-50 flex items-center justify-center">
+    <div id="productModal" class="fixed inset-0 hidden z-50 d-flex items-center justify-center">
         <div class="fixed inset-0 modal-overlay" onclick="closeProductModal()"></div>
         <div class="relative bg-white w-[680px] max-h-[85vh] rounded-2xl shadow-xl flex flex-col">
             <!-- Header -->
@@ -700,7 +704,7 @@
     </div>
 
     <!-- Modal QR Code -->
-    <div id="qrModal" class="fixed inset-0 hidden z-50 flex items-center justify-center">
+    <div id="qrModal" class="fixed inset-0 hidden z-50 d-flex items-center justify-center">
         <div class="fixed inset-0 modal-overlay" onclick="document.getElementById('qrModal').classList.add('hidden')"></div>
         <div class="relative bg-white p-8 rounded-2xl text-center max-w-sm w-full shadow-xl">
             <div class="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center mx-auto mb-4">
@@ -719,7 +723,7 @@
     </div>
 
     <!-- Modal de Etiquetas -->
-    <div id="tagsModal" class="fixed inset-0 hidden z-50 flex items-center justify-center">
+    <div id="tagsModal" class="fixed inset-0 hidden z-50 d-flex items-center justify-center">
         <div class="fixed inset-0 modal-overlay" onclick="closeTagsModal()"></div>
         <div class="relative bg-white w-[400px] rounded-2xl shadow-xl">
             <div class="p-5 border-b border-slate-100 flex justify-between items-center">
@@ -755,7 +759,7 @@
     </div>
 
     <!-- Modal de Mensagens Rápidas -->
-    <div id="quickRepliesModal" class="fixed inset-0 hidden z-50 flex items-center justify-center">
+    <div id="quickRepliesModal" class="fixed inset-0 hidden z-50 d-flex items-center justify-center">
         <div class="fixed inset-0 modal-overlay" onclick="closeQuickReplies()"></div>
         <div class="relative bg-white w-[500px] max-h-[80vh] rounded-2xl shadow-xl flex flex-col">
             <div class="p-5 border-b border-slate-100 flex justify-between items-center">
@@ -788,7 +792,7 @@
     </div>
 
     <!-- Modal Nova/Editar Mensagem Rápida -->
-    <div id="editQuickReplyModal" class="fixed inset-0 hidden z-50 flex items-center justify-center">
+    <div id="editQuickReplyModal" class="fixed inset-0 hidden z-50 d-flex items-center justify-center">
         <div class="fixed inset-0 modal-overlay" onclick="closeEditQuickReply()"></div>
         <div class="relative bg-white w-[500px] rounded-2xl shadow-xl">
             <div class="p-5 border-b border-slate-100">
@@ -818,7 +822,7 @@
     </div>
 
     <!-- Modal de Snooze (Soneca) -->
-    <div id="snoozeModal" class="fixed inset-0 hidden z-50 flex items-center justify-center">
+    <div id="snoozeModal" class="fixed inset-0 hidden z-50 d-flex items-center justify-center">
         <div class="fixed inset-0 modal-overlay" onclick="closeSnoozeModal()"></div>
         <div class="relative bg-white w-[350px] rounded-2xl shadow-xl">
             <div class="p-5 border-b border-slate-100 flex justify-between items-center">
@@ -865,7 +869,7 @@
     </div>
 
     <!-- Modal Buscar/Vincular Cliente -->
-    <div id="searchClientModal" class="fixed inset-0 hidden z-50 flex items-center justify-center">
+    <div id="searchClientModal" class="fixed inset-0 hidden z-50 d-flex items-center justify-center">
         <div class="fixed inset-0 modal-overlay" onclick="closeSearchClientModal()"></div>
         <div class="relative bg-white w-[450px] max-h-[80vh] rounded-2xl shadow-xl flex flex-col">
             <div class="p-5 border-b border-slate-100 flex justify-between items-center">
@@ -892,7 +896,7 @@
     </div>
 
     <!-- Modal Nova Campanha -->
-    <div id="newCampaignModal" class="fixed inset-0 hidden z-50 flex items-center justify-center">
+    <div id="newCampaignModal" class="fixed inset-0 hidden z-50 d-flex items-center justify-center">
         <div class="fixed inset-0 modal-overlay" onclick="closeNewCampaign()"></div>
         <div class="relative bg-white w-[700px] max-h-[90vh] rounded-2xl shadow-xl flex flex-col">
             <div class="p-5 border-b border-slate-100 flex justify-between items-center">
@@ -970,7 +974,7 @@
                         <input type="checkbox" id="scheduleEnabled" onchange="toggleSchedule()" class="w-4 h-4 rounded">
                         <span class="text-sm font-medium text-slate-700">Agendar envio</span>
                     </label>
-                    <div id="scheduleOptions" class="hidden grid grid-cols-2 gap-3">
+                    <div id="scheduleOptions" class="hidden d-grid grid-cols-2 gap-3">
                         <div>
                             <label class="block text-xs text-slate-500 mb-1">Data</label>
                             <input type="date" id="scheduleDate" class="input">
@@ -1025,7 +1029,7 @@
     </div>
 
     <!-- Modal de Agendamento de Mensagem -->
-    <div id="scheduleModal" class="fixed inset-0 hidden z-50 flex items-center justify-center">
+    <div id="scheduleModal" class="fixed inset-0 hidden z-50 d-flex items-center justify-center">
         <div class="fixed inset-0 modal-overlay" onclick="closeScheduleModal()"></div>
         <div class="relative bg-white w-[450px] rounded-2xl shadow-xl">
             <div class="p-5 border-b border-slate-100 flex justify-between items-center">
@@ -1100,7 +1104,7 @@ Ex:
     </div>
 
     <!-- Modal de Detalhes de Conexão -->
-    <div id="connectionDetailsModal" class="fixed inset-0 hidden z-50 flex items-center justify-center">
+    <div id="connectionDetailsModal" class="fixed inset-0 hidden z-50 d-flex items-center justify-center">
         <div class="fixed inset-0 modal-overlay" onclick="closeConnectionDetails()"></div>
         <div class="relative bg-white w-[500px] rounded-2xl shadow-xl">
             <div class="p-5 border-b border-slate-100 flex justify-between items-center">

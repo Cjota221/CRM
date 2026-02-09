@@ -53,6 +53,10 @@
         .progress-fill { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
         
         .modal-overlay { background-color: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); }
+
+        /* Fix: hidden + flex/grid lint conflict */
+        .d-flex:not(.hidden) { display: flex; }
+        .d-grid:not(.hidden) { display: grid; }
     </style>
 </head>
 <body class="bg-slate-50 h-screen flex flex-col">
@@ -189,7 +193,7 @@
     </main>
 
     <!-- Modal Nova Campanha -->
-    <div id="newCampaignModal" class="fixed inset-0 hidden z-50 flex items-center justify-center">
+    <div id="newCampaignModal" class="fixed inset-0 hidden z-50 d-flex items-center justify-center">
         <div class="fixed inset-0 modal-overlay" onclick="closeNewCampaign()"></div>
         <div class="relative bg-white w-[700px] max-h-[90vh] rounded-2xl shadow-xl flex flex-col">
             <div class="p-5 border-b border-slate-100 flex justify-between items-center">
@@ -324,7 +328,7 @@
                         <input type="checkbox" id="scheduleEnabled" onchange="toggleSchedule()" class="w-4 h-4 rounded">
                         <span class="text-sm font-medium text-slate-700">Agendar envio</span>
                     </label>
-                    <div id="scheduleOptions" class="hidden grid grid-cols-2 gap-3">
+                    <div id="scheduleOptions" class="hidden d-grid grid-cols-2 gap-3">
                         <div>
                             <label class="block text-xs text-slate-500 mb-1">Data</label>
                             <input type="date" id="scheduleDate" class="input">
@@ -380,7 +384,7 @@
     </div>
 
     <!-- Modal Carrinhos Abandonados -->
-    <div id="cartRecoveryModal" class="fixed inset-0 hidden z-50 flex items-center justify-center">
+    <div id="cartRecoveryModal" class="fixed inset-0 hidden z-50 d-flex items-center justify-center">
         <div class="fixed inset-0 modal-overlay" onclick="closeCartRecovery()"></div>
         <div class="relative bg-white w-[750px] max-h-[90vh] rounded-2xl shadow-xl flex flex-col">
             <div class="p-5 border-b border-slate-100 flex justify-between items-center">
@@ -448,7 +452,7 @@
     </div>
 
     <!-- Modal Criar Cupom -->
-    <div id="createCouponModal" class="fixed inset-0 hidden z-50 flex items-center justify-center">
+    <div id="createCouponModal" class="fixed inset-0 hidden z-50 d-flex items-center justify-center">
         <div class="fixed inset-0 modal-overlay" onclick="closeCouponModal()"></div>
         <div class="relative bg-white w-[450px] rounded-2xl shadow-xl">
             <div class="p-5 border-b border-slate-100 flex justify-between items-center">

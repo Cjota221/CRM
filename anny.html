@@ -61,7 +61,7 @@
         
         /* Chat Styles */
         .chat-container { display: flex; flex-direction: column; height: calc(100vh - 180px); }
-        .chat-messages { flex: 1; overflow-y: auto; padding: 1.5rem; space-y: 1rem; }
+        .chat-messages { flex: 1; overflow-y: auto; padding: 1.5rem; }
         
         .message { max-width: 85%; margin-bottom: 1rem; }
         .message-user { margin-left: auto; }
@@ -105,6 +105,9 @@
         .insight-card.priority-high { border-left: 3px solid #dc2626; }
         .insight-card.priority-medium { border-left: 3px solid #f59e0b; }
         .insight-card.priority-low { border-left: 3px solid #10b981; }
+
+        /* Fix: hidden + flex lint conflict */
+        .d-flex:not(.hidden) { display: flex; }
     </style>
 </head>
 <body class="bg-slate-50 min-h-screen">
@@ -270,7 +273,7 @@
     </div>
 
     <!-- Action Modal (for sending campaigns) -->
-    <div id="action-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm hidden z-50 flex items-center justify-center">
+    <div id="action-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm hidden z-50 d-flex items-center justify-center">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4">
             <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
                 <h3 class="font-semibold text-slate-800">Enviar Campanha</h3>
