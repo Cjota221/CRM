@@ -99,7 +99,7 @@ let recordedAudioBlob = null;
 let recordedAudioUrl = null;
 let audioElement = null;
 
-const API_BASE = 'http://localhost:3000/api';
+const API_BASE = '/api';
 
 // ============================================================================
 // FUNÇÕES DE TELEFONE - Usar lib-data-layer.js (centralizado)

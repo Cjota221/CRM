@@ -1,0 +1,2190 @@
+﻿{
+    "updatedAt":  "2026-02-09T00:40:01.587Z",
+    "createdAt":  "2026-02-07T18:03:18.102Z",
+    "id":  "WiOj3Zu6dNWAxe0-94G4Z",
+    "name":  "Agente Anne",
+    "description":  null,
+    "active":  true,
+    "isArchived":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "httpMethod":  "POST",
+                                         "path":  "Agente Anne",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.webhook",
+                      "typeVersion":  2.1,
+                      "position":  [
+                                       -1008,
+                                       -1600
+                                   ],
+                      "id":  "2c206ff9-425b-412a-a4d8-221c68e65d05",
+                      "name":  "Webhook",
+                      "webhookId":  "d5d2b648-e19a-4f22-a8be-56607a25c3b6"
+                  },
+                  {
+                      "parameters":  {
+                                         "assignments":  {
+                                                             "assignments":  [
+                                                                                 {
+                                                                                     "id":  "fb5f9e6b-440c-4166-a784-320f772b100a",
+                                                                                     "name":  "instancia",
+                                                                                     "value":  "={{ $json.body.instance }}",
+                                                                                     "type":  "string"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "b758fae1-a1be-4605-9785-44c0d51ecdc3",
+                                                                                     "name":  "numero do cliente",
+                                                                                     "value":  "={{ $json.body.data.key.remoteJid }}",
+                                                                                     "type":  "string"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "684539f0-784b-4d51-9d1d-a85392145cf3",
+                                                                                     "name":  "fui eu quem enviei",
+                                                                                     "value":  "={{ $json.body.data.key.fromMe }}",
+                                                                                     "type":  "boolean"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "a9d5c3d7-0616-476b-afaf-778523916c18",
+                                                                                     "name":  "id",
+                                                                                     "value":  "={{ $json.body.data.key.id }}",
+                                                                                     "type":  "string"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "fae2c6d4-10c7-417f-b558-be2bf5347f1c",
+                                                                                     "name":  "mensagem",
+                                                                                     "value":  "={{ $json.body.data.message.conversation }}",
+                                                                                     "type":  "string"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "f3bf1d2c-4dc6-4ccd-ba76-8f3a65e5bb1a",
+                                                                                     "name":  "nome do cliente",
+                                                                                     "value":  "={{ $json.body.data.pushName }}",
+                                                                                     "type":  "string"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "e2850055-bdb8-4e46-9262-51b3ff15b925",
+                                                                                     "name":  "massegeType",
+                                                                                     "value":  "={{ $json.body.data.messageType }}",
+                                                                                     "type":  "string"
+                                                                                 }
+                                                                             ]
+                                                         },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.set",
+                      "typeVersion":  3.4,
+                      "position":  [
+                                       -688,
+                                       -1600
+                                   ],
+                      "id":  "b4336b43-b4d9-4953-ae25-aa774d74c5c7",
+                      "name":  "Dados"
+                  },
+                  {
+                      "parameters":  {
+                                         "promptType":  "define",
+                                         "text":  "=",
+                                         "options":  {
+                                                         "systemMessage":  "# ANE - ATENDENTE CJ RASTEIRINHAS\n\nVocê é Ane, consultora de vendas da CJ Rasteirinhas (atacado de calçados femininos).\n\n## REGRAS CRÍTICAS\n\n1. Cumprimente com nome UMA VEZ no início. Depois vá direto ao ponto.\n2. SEMPRE envie os links quando falar de produtos.\n3. Leia o histórico - não repita o que já foi dito.\n4. Zero menus numerados (1,2,3,4).\n5. Uma pergunta por vez no final.\n\n## INFORMAÇÕES BASE\n\n**Atacado:**\n- Pedido mínimo: 5 pares\n- Pode misturar modelos, cores, tamanhos\n- Pronta entrega\n- A partir de R$ 25\n\n**Frete:**\n- Calculado no checkout\n- Grátis acima de R$ 2.000\n\n**Links:**\n- Catálogo: https://cjotarasteirinhas.com.br/c/atacado/produtos/62981480687\n- Até R$30: https://cjotarasteirinhas.com.br/c/atacado/categoria/342723/62981480687\n- Havaiana Strass R$25: https://cjotarasteirinhas.com.br/c/atacado/categoria/305853/62981480687\n- Selene R$35: https://cjotarasteirinhas.com.br/c/atacado/categoria/325257/62981480687\n- Átria R$35: https://cjotarasteirinhas.com.br/c/atacado/categoria/344956/62981480687\n\n## RESPOSTAS PRONTAS\n\n**Cliente: \"Quero ver produtos\"**\nOi [Nome]! Sou a Ane da CJ 😊\n\nCatálogo: https://cjotarasteirinhas.com.br/c/atacado/produtos/62981480687\n\nCampeões:\n🥇 Havaiana Strass R$25: [link]\n🥈 Selene R$35: [link]\n\nProcura algo específico?\n\n**Cliente: \"Mais vendidos\"**\nNossos campeões:\n\n🥇 Havaiana Strass - R$25\n[link]\n\n🥈 Selene - R$35\n[link]\n\n🥉 Átria - R$35\n[link]\n\nQual combina com seu público?\n\n**Cliente: \"Mais barato\"**\nHavaiana Strass - R$25 (campeã!)\n[link]\n\nMais até R$30:\n[link]\n\nQuer começar com quantos pares?\n\n**Cliente: \"Como funciona atacado\"**\nTrabalhamos só com atacado:\n- Mínimo: 5 pares\n- Pode misturar\n- Pronta entrega\n- A partir de R$25/par\n\nVocê já trabalha com revenda?\n\n**Cliente: \"C4\" ou \"Franquia\"**\nO C4 é um site completo pronto com sua marca.\n\nDuas formas:\n- Caixa Reserva: crédito R$125, monta estoque\n- Dropshipping: sem estoque\n\nO valor vira mercadoria.\n\nDemo: https://c4franquias.com/site/vivaz\n\n**Cliente: \"Frete\"**\nCalculado no checkout pelo CEP.\n\nFrete grátis acima de R$2.000!\n\nQual o tamanho do seu pedido?\n\n## O QUE NÃO FAZER\n\n❌ Repetir \"Oi [Nome]!\" toda hora\n❌ Criar menus (1, 2, 3, 4)\n❌ Ficar perguntando sem enviar links\n❌ Repetir informações já ditas\n❌ Dar \"resumo rápido\" toda mensagem\n\n## ESTRUTURA\n\n1. Cumprimento (só primeira vez)\n2. Resposta direta + links\n3. Uma pergunta\n\nNome do cliente: {{ $(\u0027Dados\u0027).item.json[\u0027nome do cliente\u0027] }}"
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.agent",
+                      "typeVersion":  3.1,
+                      "position":  [
+                                       960,
+                                       -736
+                                   ],
+                      "id":  "cdf62728-a0a9-4de5-9021-86bea818962e",
+                      "name":  "AI Agent"
+                  },
+                  {
+                      "parameters":  {
+                                         "sessionIdType":  "customKey",
+                                         "sessionKey":  "={{ $(\u0027Dados\u0027).item.json[\u0027numero do cliente\u0027] }} {{ $(\u0027Dados\u0027).item.json.instancia }}",
+                                         "sessionTTL":  86400,
+                                         "contextWindowLength":  15
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.memoryRedisChat",
+                      "typeVersion":  1.5,
+                      "position":  [
+                                       1232,
+                                       -416
+                                   ],
+                      "id":  "6a143490-6de4-45b9-aaed-08b24d14d1ed",
+                      "name":  "Redis Chat Memory",
+                      "credentials":  {
+                                          "redis":  {
+                                                        "id":  "JBSGaKK99bbwdjqw",
+                                                        "name":  "Redis account 2"
+                                                    }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "messages-api",
+                                         "instanceName":  "={{ $(\u0027Dados\u0027).item.json.instancia }}",
+                                         "remoteJid":  "={{ $(\u0027Dados\u0027).item.json[\u0027numero do cliente\u0027] }}",
+                                         "messageText":  "={{ $json.output }}",
+                                         "options_message":  {
+                                                                 "delay":  4000,
+                                                                 "linkPreview":  true
+                                                             }
+                                     },
+                      "type":  "n8n-nodes-evolution-api.evolutionApi",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1584,
+                                       -736
+                                   ],
+                      "id":  "77ed1c46-3e30-4a38-9707-2f9f050e9906",
+                      "name":  "Enviar texto",
+                      "credentials":  {
+                                          "evolutionApi":  {
+                                                               "id":  "R4jyTtJmYGCD28i6",
+                                                               "name":  "Evolution account"
+                                                           }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "model":  {
+                                                       "__rl":  true,
+                                                       "mode":  "list",
+                                                       "value":  "gpt-5-mini"
+                                                   },
+                                         "builtInTools":  {
+
+                                                          },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+                      "typeVersion":  1.3,
+                      "position":  [
+                                       992,
+                                       -480
+                                   ],
+                      "id":  "afb72177-9c6f-4f18-b9aa-7ea8bc562d97",
+                      "name":  "OpenAI Chat Model",
+                      "credentials":  {
+                                          "openAiApi":  {
+                                                            "id":  "io3OaLi1DUFltC74",
+                                                            "name":  "OpenAi account"
+                                                        }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "rules":  {
+                                                       "values":  [
+                                                                      {
+                                                                          "conditions":  {
+                                                                                             "options":  {
+                                                                                                             "caseSensitive":  true,
+                                                                                                             "leftValue":  "",
+                                                                                                             "typeValidation":  "strict",
+                                                                                                             "version":  3
+                                                                                                         },
+                                                                                             "conditions":  [
+                                                                                                                {
+                                                                                                                    "leftValue":  "={{ $json.massegeType }}",
+                                                                                                                    "rightValue":  "conversation",
+                                                                                                                    "operator":  {
+                                                                                                                                     "type":  "string",
+                                                                                                                                     "operation":  "equals"
+                                                                                                                                 },
+                                                                                                                    "id":  "eeaa7985-0959-40d1-9369-6d9d69e4d69d"
+                                                                                                                }
+                                                                                                            ],
+                                                                                             "combinator":  "and"
+                                                                                         }
+                                                                      },
+                                                                      {
+                                                                          "conditions":  {
+                                                                                             "options":  {
+                                                                                                             "caseSensitive":  true,
+                                                                                                             "leftValue":  "",
+                                                                                                             "typeValidation":  "strict",
+                                                                                                             "version":  3
+                                                                                                         },
+                                                                                             "conditions":  [
+                                                                                                                {
+                                                                                                                    "id":  "3f3e76fd-3cb8-4d60-bfd5-fdfe4a68b9d1",
+                                                                                                                    "leftValue":  "={{ $json.massegeType }}",
+                                                                                                                    "rightValue":  "audioMessage",
+                                                                                                                    "operator":  {
+                                                                                                                                     "type":  "string",
+                                                                                                                                     "operation":  "equals"
+                                                                                                                                 }
+                                                                                                                }
+                                                                                                            ],
+                                                                                             "combinator":  "and"
+                                                                                         }
+                                                                      }
+                                                                  ]
+                                                   },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.switch",
+                      "typeVersion":  3.4,
+                      "position":  [
+                                       -320,
+                                       -1600
+                                   ],
+                      "id":  "d54aeb13-642e-4e1d-b3af-7032da9e92d2",
+                      "name":  "Switch"
+                  },
+                  {
+                      "parameters":  {
+                                         "assignments":  {
+                                                             "assignments":  [
+                                                                                 {
+                                                                                     "id":  "0f07762f-402b-404c-a883-c7c03b6ced36",
+                                                                                     "name":  "message",
+                                                                                     "value":  "={{ $(\u0027Dados\u0027).item.json.mensagem }}",
+                                                                                     "type":  "string"
+                                                                                 }
+                                                                             ]
+                                                         },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.set",
+                      "typeVersion":  3.4,
+                      "position":  [
+                                       0,
+                                       -1616
+                                   ],
+                      "id":  "ca8ad177-cfa8-4b6e-9b92-b6c0016d2e77",
+                      "name":  "Set text message"
+                  },
+                  {
+                      "parameters":  {
+                                         "assignments":  {
+                                                             "assignments":  [
+                                                                                 {
+                                                                                     "id":  "3e4e6816-4b0b-4af6-8bec-019fd07e8eb5",
+                                                                                     "name":  "message",
+                                                                                     "value":  "={{ $json.message }}",
+                                                                                     "type":  "string"
+                                                                                 }
+                                                                             ]
+                                                         },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.set",
+                      "typeVersion":  3.4,
+                      "position":  [
+                                       384,
+                                       -1616
+                                   ],
+                      "id":  "5a85f273-457d-45a3-a184-a93b0903b289",
+                      "name":  "message"
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "chat-api",
+                                         "operation":  "get-media-base64",
+                                         "instanceName":  "={{ $(\u0027Dados\u0027).item.json.instancia }}",
+                                         "messageId":  "={{ $(\u0027Dados\u0027).item.json.id }}"
+                                     },
+                      "type":  "n8n-nodes-evolution-api.evolutionApi",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -960,
+                                       -1248
+                                   ],
+                      "id":  "0f3c2555-8a66-43be-a484-b2fd2524bd47",
+                      "name":  "Obter m dia em base64",
+                      "credentials":  {
+                                          "evolutionApi":  {
+                                                               "id":  "R4jyTtJmYGCD28i6",
+                                                               "name":  "Evolution account"
+                                                           }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "toBinary",
+                                         "sourceProperty":  "data.base64",
+                                         "options":  {
+                                                         "mimeType":  "audio/mpeg"
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.convertToFile",
+                      "typeVersion":  1.1,
+                      "position":  [
+                                       -672,
+                                       -1248
+                                   ],
+                      "id":  "8d7b6456-bc96-4961-a369-b8685b4fdec6",
+                      "name":  "Convert to File"
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "https://api.groq.com/openai/v1/audio/transcriptions",
+                                         "authentication":  "predefinedCredentialType",
+                                         "nodeCredentialType":  "groqApi",
+                                         "sendBody":  true,
+                                         "contentType":  "multipart-form-data",
+                                         "bodyParameters":  {
+                                                                "parameters":  [
+                                                                                   {
+                                                                                       "name":  "model",
+                                                                                       "value":  "whisper-large-v3-turbo"
+                                                                                   },
+                                                                                   {
+                                                                                       "name":  "temperature",
+                                                                                       "value":  "0"
+                                                                                   },
+                                                                                   {
+                                                                                       "name":  "response_format",
+                                                                                       "value":  "verbose_json"
+                                                                                   },
+                                                                                   {
+                                                                                       "name":  "language",
+                                                                                       "value":  "pt"
+                                                                                   },
+                                                                                   {
+                                                                                       "parameterType":  "formBinaryData",
+                                                                                       "name":  "file",
+                                                                                       "inputDataFieldName":  "data"
+                                                                                   }
+                                                                               ]
+                                                            },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.4,
+                      "position":  [
+                                       -416,
+                                       -1248
+                                   ],
+                      "id":  "8f6c1adc-9ec4-4bf3-9977-b01b2c40ba26",
+                      "name":  "HTTP Request",
+                      "credentials":  {
+                                          "groqApi":  {
+                                                          "id":  "Z8yV7mt6Yw2LZz5q",
+                                                          "name":  "Groq account 2"
+                                                      }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "assignments":  {
+                                                             "assignments":  [
+                                                                                 {
+                                                                                     "id":  "8b121357-5570-419b-b5a7-507a83770c37",
+                                                                                     "name":  "message",
+                                                                                     "value":  "={{ $json.text }}",
+                                                                                     "type":  "string"
+                                                                                 }
+                                                                             ]
+                                                         },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.set",
+                      "typeVersion":  3.4,
+                      "position":  [
+                                       16,
+                                       -1248
+                                   ],
+                      "id":  "b8041142-99d2-446e-9c4c-0b1b0906bcab",
+                      "name":  "set audio message"
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "loose",
+                                                                            "version":  3
+                                                                        },
+                                                            "conditions":  [
+                                                                               {
+                                                                                   "id":  "cbde8fcb-c990-4f7b-9736-9c140a61879c",
+                                                                                   "leftValue":  "={{ $(\u0027Dados\u0027).item.json[\u0027fui eu quem enviei\u0027] }}",
+                                                                                   "rightValue":  false,
+                                                                                   "operator":  {
+                                                                                                    "type":  "boolean",
+                                                                                                    "operation":  "true",
+                                                                                                    "singleValue":  true
+                                                                                                }
+                                                                               }
+                                                                           ],
+                                                            "combinator":  "and"
+                                                        },
+                                         "looseTypeValidation":  true,
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2.3,
+                      "position":  [
+                                       592,
+                                       -1392
+                                   ],
+                      "id":  "fc9d9759-0552-4d11-b736-476857d2b3b1",
+                      "name":  "If"
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "set",
+                                         "key":  "={{ $(\u0027Dados\u0027).item.json.instancia }}{{ $(\u0027Dados\u0027).item.json[\u0027numero do cliente\u0027] }} block",
+                                         "value":  "true",
+                                         "expire":  true,
+                                         "ttl":  300
+                                     },
+                      "type":  "n8n-nodes-base.redis",
+                      "typeVersion":  1,
+                      "position":  [
+                                       976,
+                                       -1312
+                                   ],
+                      "id":  "0e9a889e-69b0-471c-a35c-f87daeb3eca7",
+                      "name":  "chave bolck",
+                      "credentials":  {
+                                          "redis":  {
+                                                        "id":  "JBSGaKK99bbwdjqw",
+                                                        "name":  "Redis account 2"
+                                                    }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "mode":  "insert",
+                                         "messages":  {
+                                                          "messageValues":  [
+                                                                                {
+                                                                                    "type":  "ai",
+                                                                                    "message":  "={{ $(\u0027message\u0027).item.json.message }}"
+                                                                                }
+                                                                            ]
+                                                      }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.memoryManager",
+                      "typeVersion":  1.1,
+                      "position":  [
+                                       1728,
+                                       -1312
+                                   ],
+                      "id":  "8527c0f3-1086-45aa-a2dd-e0b6c214e643",
+                      "name":  "Chat Memory Manager"
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "get",
+                                         "propertyName":  "isBlocked",
+                                         "key":  "={{ $(\u0027Dados\u0027).item.json.instancia }}{{ $(\u0027Dados\u0027).item.json[\u0027numero do cliente\u0027] }} block",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.redis",
+                      "typeVersion":  1,
+                      "position":  [
+                                       320,
+                                       -1056
+                                   ],
+                      "id":  "b6461201-68aa-4f2e-991c-15fdf860b630",
+                      "name":  "Redis",
+                      "credentials":  {
+                                          "redis":  {
+                                                        "id":  "JBSGaKK99bbwdjqw",
+                                                        "name":  "Redis account 2"
+                                                    }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "loose",
+                                                                            "version":  3
+                                                                        },
+                                                            "conditions":  [
+                                                                               {
+                                                                                   "id":  "6459f565-3e41-4939-bb0b-831998f0a642",
+                                                                                   "leftValue":  "={{ $json.isBlocked }}",
+                                                                                   "rightValue":  "",
+                                                                                   "operator":  {
+                                                                                                    "type":  "boolean",
+                                                                                                    "operation":  "exists",
+                                                                                                    "singleValue":  true
+                                                                                                }
+                                                                               }
+                                                                           ],
+                                                            "combinator":  "and"
+                                                        },
+                                         "looseTypeValidation":  true,
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2.3,
+                      "position":  [
+                                       960,
+                                       -1056
+                                   ],
+                      "id":  "6dd5f799-1af2-4454-bdbb-026a330192ec",
+                      "name":  "If1"
+                  },
+                  {
+                      "parameters":  {
+                                         "mode":  "insert",
+                                         "messages":  {
+                                                          "messageValues":  [
+                                                                                {
+                                                                                    "type":  "user",
+                                                                                    "message":  "={{ $(\u0027message\u0027).item.json.message }}",
+                                                                                    "hideFromUI":  true
+                                                                                }
+                                                                            ]
+                                                      }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.memoryManager",
+                      "typeVersion":  1.1,
+                      "position":  [
+                                       1264,
+                                       -1072
+                                   ],
+                      "id":  "c8d0319f-d2df-41fb-be24-ff3446deed54",
+                      "name":  "Chat Memory Manager1"
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "push",
+                                         "list":  "={{ $(\u0027Dados\u0027).item.json.instancia }} {{ $(\u0027Dados\u0027).item.json[\u0027numero do cliente\u0027] }} temp",
+                                         "messageData":  "={{ $(\u0027message\u0027).item.json.message }}",
+                                         "tail":  true
+                                     },
+                      "type":  "n8n-nodes-base.redis",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -1008,
+                                       -720
+                                   ],
+                      "id":  "63332823-4ded-4e33-bd59-fbb446cfab1a",
+                      "name":  "Redis1",
+                      "credentials":  {
+                                          "redis":  {
+                                                        "id":  "JBSGaKK99bbwdjqw",
+                                                        "name":  "Redis account 2"
+                                                    }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "amount":  10
+                                     },
+                      "type":  "n8n-nodes-base.wait",
+                      "typeVersion":  1.1,
+                      "position":  [
+                                       -720,
+                                       -720
+                                   ],
+                      "id":  "52056654-d9d2-446b-9db5-f13021f6d12f",
+                      "name":  "Wait",
+                      "webhookId":  "7fbc4417-2b10-4a2d-b164-488b25361186"
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "get",
+                                         "propertyName":  "masseges",
+                                         "key":  "={{ $(\u0027Dados\u0027).item.json.instancia }} {{ $(\u0027Dados\u0027).item.json[\u0027numero do cliente\u0027] }} temp",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.redis",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -352,
+                                       -720
+                                   ],
+                      "id":  "5c58c470-17b5-496c-9b55-1293abc164c5",
+                      "name":  "Redis2",
+                      "credentials":  {
+                                          "redis":  {
+                                                        "id":  "JBSGaKK99bbwdjqw",
+                                                        "name":  "Redis account 2"
+                                                    }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "strict",
+                                                                            "version":  3
+                                                                        },
+                                                            "conditions":  [
+                                                                               {
+                                                                                   "id":  "9e5a6c2f-bd52-4e64-a48e-69c7cdff7284",
+                                                                                   "leftValue":  "={{ $json.masseges.last() }}",
+                                                                                   "rightValue":  "={{ $(\u0027message\u0027).item.json.message }}",
+                                                                                   "operator":  {
+                                                                                                    "type":  "string",
+                                                                                                    "operation":  "equals"
+                                                                                                }
+                                                                               }
+                                                                           ],
+                                                            "combinator":  "and"
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2.3,
+                      "position":  [
+                                       -80,
+                                       -720
+                                   ],
+                      "id":  "284c99ac-ed22-4ba0-9f69-652a6f7272d8",
+                      "name":  "If2"
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "delete",
+                                         "key":  "={{ $(\u0027Dados\u0027).item.json.instancia }} {{ $(\u0027Dados\u0027).item.json[\u0027numero do cliente\u0027] }} temp"
+                                     },
+                      "type":  "n8n-nodes-base.redis",
+                      "typeVersion":  1,
+                      "position":  [
+                                       256,
+                                       -736
+                                   ],
+                      "id":  "2f252a91-fd53-446f-8fe6-4f33ddbaafa7",
+                      "name":  "Redis3",
+                      "credentials":  {
+                                          "redis":  {
+                                                        "id":  "JBSGaKK99bbwdjqw",
+                                                        "name":  "Redis account 2"
+                                                    }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "assignments":  {
+                                                             "assignments":  [
+                                                                                 {
+                                                                                     "id":  "89f98fd6-4a09-4ebd-afa4-8831161157e7",
+                                                                                     "name":  "message",
+                                                                                     "value":  "={{ $(\u0027Redis2\u0027).item.json.masseges.join(\" \")}}",
+                                                                                     "type":  "string"
+                                                                                 }
+                                                                             ]
+                                                         },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.set",
+                      "typeVersion":  3.4,
+                      "position":  [
+                                       544,
+                                       -736
+                                   ],
+                      "id":  "99f91dd6-7a17-4d61-a491-94772958bb0f",
+                      "name":  "mensagem final"
+                  },
+                  {
+                      "parameters":  {
+                                         "description":  "agente que explica sobre o atacado",
+                                         "workflowId":  {
+                                                            "__rl":  true,
+                                                            "value":  "Cb1wHqJwHbqU1KBk",
+                                                            "mode":  "list",
+                                                            "cachedResultUrl":  "/workflow/Cb1wHqJwHbqU1KBk",
+                                                            "cachedResultName":  "agente atacado"
+                                                        },
+                                         "workflowInputs":  {
+                                                                "mappingMode":  "defineBelow",
+                                                                "value":  {
+                                                                              "prompt":  "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI(\u0027prompt\u0027, `mensagem para o agente`, \u0027string\u0027) }}"
+                                                                          },
+                                                                "matchingColumns":  [
+                                                                                        "prompt"
+                                                                                    ],
+                                                                "schema":  [
+                                                                               {
+                                                                                   "id":  "prompt",
+                                                                                   "displayName":  "prompt",
+                                                                                   "required":  false,
+                                                                                   "defaultMatch":  false,
+                                                                                   "display":  true,
+                                                                                   "canBeUsedToMatch":  true,
+                                                                                   "type":  "string",
+                                                                                   "removed":  false
+                                                                               }
+                                                                           ],
+                                                                "attemptToConvertTypes":  false,
+                                                                "convertFieldsToString":  false
+                                                            }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.toolWorkflow",
+                      "typeVersion":  2.2,
+                      "position":  [
+                                       1648,
+                                       -464
+                                   ],
+                      "id":  "9cc21268-002a-41b3-bfa8-87d7c5aafd89",
+                      "name":  "agente atacado"
+                  }
+              ],
+    "connections":  {
+                        "Webhook":  {
+                                        "main":  [
+                                                     [
+                                                         {
+                                                             "node":  "Dados",
+                                                             "type":  "main",
+                                                             "index":  0
+                                                         }
+                                                     ]
+                                                 ]
+                                    },
+                        "Dados":  {
+                                      "main":  [
+                                                   [
+                                                       {
+                                                           "node":  "Switch",
+                                                           "type":  "main",
+                                                           "index":  0
+                                                       }
+                                                   ]
+                                               ]
+                                  },
+                        "Redis Chat Memory":  {
+                                                  "ai_memory":  [
+                                                                    [
+                                                                        {
+                                                                            "node":  "Chat Memory Manager",
+                                                                            "type":  "ai_memory",
+                                                                            "index":  0
+                                                                        },
+                                                                        {
+                                                                            "node":  "AI Agent",
+                                                                            "type":  "ai_memory",
+                                                                            "index":  0
+                                                                        },
+                                                                        {
+                                                                            "node":  "Chat Memory Manager1",
+                                                                            "type":  "ai_memory",
+                                                                            "index":  0
+                                                                        }
+                                                                    ]
+                                                                ]
+                                              },
+                        "AI Agent":  {
+                                         "main":  [
+                                                      [
+                                                          {
+                                                              "node":  "Enviar texto",
+                                                              "type":  "main",
+                                                              "index":  0
+                                                          }
+                                                      ]
+                                                  ]
+                                     },
+                        "OpenAI Chat Model":  {
+                                                  "ai_languageModel":  [
+                                                                           [
+                                                                               {
+                                                                                   "node":  "AI Agent",
+                                                                                   "type":  "ai_languageModel",
+                                                                                   "index":  0
+                                                                               }
+                                                                           ]
+                                                                       ]
+                                              },
+                        "Switch":  {
+                                       "main":  [
+                                                    [
+                                                        {
+                                                            "node":  "Set text message",
+                                                            "type":  "main",
+                                                            "index":  0
+                                                        }
+                                                    ],
+                                                    [
+                                                        {
+                                                            "node":  "Obter m dia em base64",
+                                                            "type":  "main",
+                                                            "index":  0
+                                                        }
+                                                    ]
+                                                ]
+                                   },
+                        "Set text message":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "message",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             },
+                        "message":  {
+                                        "main":  [
+                                                     [
+                                                         {
+                                                             "node":  "If",
+                                                             "type":  "main",
+                                                             "index":  0
+                                                         }
+                                                     ]
+                                                 ]
+                                    },
+                        "Obter m dia em base64":  {
+                                                      "main":  [
+                                                                   [
+                                                                       {
+                                                                           "node":  "Convert to File",
+                                                                           "type":  "main",
+                                                                           "index":  0
+                                                                       }
+                                                                   ]
+                                                               ]
+                                                  },
+                        "Convert to File":  {
+                                                "main":  [
+                                                             [
+                                                                 {
+                                                                     "node":  "HTTP Request",
+                                                                     "type":  "main",
+                                                                     "index":  0
+                                                                 }
+                                                             ]
+                                                         ]
+                                            },
+                        "HTTP Request":  {
+                                             "main":  [
+                                                          [
+                                                              {
+                                                                  "node":  "set audio message",
+                                                                  "type":  "main",
+                                                                  "index":  0
+                                                              }
+                                                          ]
+                                                      ]
+                                         },
+                        "set audio message":  {
+                                                  "main":  [
+                                                               [
+                                                                   {
+                                                                       "node":  "message",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ]
+                                                           ]
+                                              },
+                        "If":  {
+                                   "main":  [
+                                                [
+                                                    {
+                                                        "node":  "chave bolck",
+                                                        "type":  "main",
+                                                        "index":  0
+                                                    }
+                                                ],
+                                                [
+                                                    {
+                                                        "node":  "Redis",
+                                                        "type":  "main",
+                                                        "index":  0
+                                                    }
+                                                ]
+                                            ]
+                               },
+                        "chave bolck":  {
+                                            "main":  [
+                                                         [
+                                                             {
+                                                                 "node":  "Chat Memory Manager",
+                                                                 "type":  "main",
+                                                                 "index":  0
+                                                             }
+                                                         ]
+                                                     ]
+                                        },
+                        "Redis":  {
+                                      "main":  [
+                                                   [
+                                                       {
+                                                           "node":  "If1",
+                                                           "type":  "main",
+                                                           "index":  0
+                                                       }
+                                                   ]
+                                               ]
+                                  },
+                        "Enviar texto":  {
+                                             "main":  [
+                                                          [
+
+                                                          ]
+                                                      ]
+                                         },
+                        "If1":  {
+                                    "main":  [
+                                                 [
+                                                     {
+                                                         "node":  "Chat Memory Manager1",
+                                                         "type":  "main",
+                                                         "index":  0
+                                                     }
+                                                 ],
+                                                 [
+                                                     {
+                                                         "node":  "Redis1",
+                                                         "type":  "main",
+                                                         "index":  0
+                                                     }
+                                                 ]
+                                             ]
+                                },
+                        "Redis1":  {
+                                       "main":  [
+                                                    [
+                                                        {
+                                                            "node":  "Wait",
+                                                            "type":  "main",
+                                                            "index":  0
+                                                        }
+                                                    ]
+                                                ]
+                                   },
+                        "Wait":  {
+                                     "main":  [
+                                                  [
+                                                      {
+                                                          "node":  "Redis2",
+                                                          "type":  "main",
+                                                          "index":  0
+                                                      }
+                                                  ]
+                                              ]
+                                 },
+                        "Redis2":  {
+                                       "main":  [
+                                                    [
+                                                        {
+                                                            "node":  "If2",
+                                                            "type":  "main",
+                                                            "index":  0
+                                                        }
+                                                    ]
+                                                ]
+                                   },
+                        "If2":  {
+                                    "main":  [
+                                                 [
+                                                     {
+                                                         "node":  "Redis3",
+                                                         "type":  "main",
+                                                         "index":  0
+                                                     }
+                                                 ]
+                                             ]
+                                },
+                        "Redis3":  {
+                                       "main":  [
+                                                    [
+                                                        {
+                                                            "node":  "mensagem final",
+                                                            "type":  "main",
+                                                            "index":  0
+                                                        }
+                                                    ]
+                                                ]
+                                   },
+                        "mensagem final":  {
+                                               "main":  [
+                                                            [
+                                                                {
+                                                                    "node":  "AI Agent",
+                                                                    "type":  "main",
+                                                                    "index":  0
+                                                                }
+                                                            ]
+                                                        ]
+                                           },
+                        "agente atacado":  {
+                                               "ai_tool":  [
+                                                               [
+                                                                   {
+                                                                       "node":  "AI Agent",
+                                                                       "type":  "ai_tool",
+                                                                       "index":  0
+                                                                   }
+                                                               ]
+                                                           ]
+                                           }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1",
+                     "binaryMode":  "separate",
+                     "availableInMCP":  true
+                 },
+    "staticData":  null,
+    "meta":  {
+                 "templateCredsSetupCompleted":  true
+             },
+    "pinData":  {
+
+                },
+    "versionId":  "0082d7d1-eb72-48ea-98f4-83f3d5e6cb4f",
+    "activeVersionId":  "0082d7d1-eb72-48ea-98f4-83f3d5e6cb4f",
+    "versionCounter":  561,
+    "triggerCount":  1,
+    "shared":  [
+                   {
+                       "updatedAt":  "2026-02-07T18:03:18.105Z",
+                       "createdAt":  "2026-02-07T18:03:18.105Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "WiOj3Zu6dNWAxe0-94G4Z",
+                       "projectId":  "hC28Nz16aa9e8P9J",
+                       "project":  {
+                                       "updatedAt":  "2026-02-05T07:32:30.979Z",
+                                       "createdAt":  "2026-02-05T07:31:56.782Z",
+                                       "id":  "hC28Nz16aa9e8P9J",
+                                       "name":  "Caroline Carvalho \u003ccarolineazevedo075@gmail.com\u003e",
+                                       "type":  "personal",
+                                       "icon":  null,
+                                       "description":  null,
+                                       "creatorId":  "a80f963e-05df-4350-9e73-bd9fbdc23317",
+                                       "projectRelations":  [
+                                                                {
+                                                                    "updatedAt":  "2026-02-05T07:31:56.783Z",
+                                                                    "createdAt":  "2026-02-05T07:31:56.783Z",
+                                                                    "userId":  "a80f963e-05df-4350-9e73-bd9fbdc23317",
+                                                                    "projectId":  "hC28Nz16aa9e8P9J",
+                                                                    "user":  {
+                                                                                 "updatedAt":  "2026-02-09T15:52:25.000Z",
+                                                                                 "createdAt":  "2026-02-05T07:31:56.209Z",
+                                                                                 "id":  "a80f963e-05df-4350-9e73-bd9fbdc23317",
+                                                                                 "email":  "carolineazevedo075@gmail.com",
+                                                                                 "firstName":  "Caroline",
+                                                                                 "lastName":  "Carvalho",
+                                                                                 "personalizationAnswers":  {
+                                                                                                                "version":  "v4",
+                                                                                                                "personalization_survey_submitted_at":  "2026-02-05T07:32:51.502Z",
+                                                                                                                "personalization_survey_n8n_version":  "2.6.3",
+                                                                                                                "companySize":  "\u003c20",
+                                                                                                                "companyType":  "ecommerce",
+                                                                                                                "role":  "business-owner",
+                                                                                                                "reportedSource":  "google"
+                                                                                                            },
+                                                                                 "settings":  {
+                                                                                                  "userActivated":  true,
+                                                                                                  "easyAIWorkflowOnboarded":  true,
+                                                                                                  "firstSuccessfulWorkflowId":  "gwKDRVxgdO075r0oXWB8h",
+                                                                                                  "userActivatedAt":  1770433100403
+                                                                                              },
+                                                                                 "disabled":  false,
+                                                                                 "mfaEnabled":  false,
+                                                                                 "lastActiveAt":  "2026-02-09",
+                                                                                 "isPending":  false
+                                                                             }
+                                                                }
+                                                            ]
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  {
+                          "updatedAt":  "2026-02-09T15:52:33.000Z",
+                          "createdAt":  "2026-02-09T00:40:01.591Z",
+                          "versionId":  "0082d7d1-eb72-48ea-98f4-83f3d5e6cb4f",
+                          "workflowId":  "WiOj3Zu6dNWAxe0-94G4Z",
+                          "nodes":  [
+                                        {
+                                            "parameters":  {
+                                                               "httpMethod":  "POST",
+                                                               "path":  "Agente Anne",
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.webhook",
+                                            "typeVersion":  2.1,
+                                            "position":  [
+                                                             -1008,
+                                                             -1600
+                                                         ],
+                                            "id":  "2c206ff9-425b-412a-a4d8-221c68e65d05",
+                                            "name":  "Webhook",
+                                            "webhookId":  "d5d2b648-e19a-4f22-a8be-56607a25c3b6"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "assignments":  {
+                                                                                   "assignments":  [
+                                                                                                       {
+                                                                                                           "id":  "fb5f9e6b-440c-4166-a784-320f772b100a",
+                                                                                                           "name":  "instancia",
+                                                                                                           "value":  "={{ $json.body.instance }}",
+                                                                                                           "type":  "string"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "b758fae1-a1be-4605-9785-44c0d51ecdc3",
+                                                                                                           "name":  "numero do cliente",
+                                                                                                           "value":  "={{ $json.body.data.key.remoteJid }}",
+                                                                                                           "type":  "string"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "684539f0-784b-4d51-9d1d-a85392145cf3",
+                                                                                                           "name":  "fui eu quem enviei",
+                                                                                                           "value":  "={{ $json.body.data.key.fromMe }}",
+                                                                                                           "type":  "boolean"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "a9d5c3d7-0616-476b-afaf-778523916c18",
+                                                                                                           "name":  "id",
+                                                                                                           "value":  "={{ $json.body.data.key.id }}",
+                                                                                                           "type":  "string"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "fae2c6d4-10c7-417f-b558-be2bf5347f1c",
+                                                                                                           "name":  "mensagem",
+                                                                                                           "value":  "={{ $json.body.data.message.conversation }}",
+                                                                                                           "type":  "string"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "f3bf1d2c-4dc6-4ccd-ba76-8f3a65e5bb1a",
+                                                                                                           "name":  "nome do cliente",
+                                                                                                           "value":  "={{ $json.body.data.pushName }}",
+                                                                                                           "type":  "string"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "e2850055-bdb8-4e46-9262-51b3ff15b925",
+                                                                                                           "name":  "massegeType",
+                                                                                                           "value":  "={{ $json.body.data.messageType }}",
+                                                                                                           "type":  "string"
+                                                                                                       }
+                                                                                                   ]
+                                                                               },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.set",
+                                            "typeVersion":  3.4,
+                                            "position":  [
+                                                             -688,
+                                                             -1600
+                                                         ],
+                                            "id":  "b4336b43-b4d9-4953-ae25-aa774d74c5c7",
+                                            "name":  "Dados"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "promptType":  "define",
+                                                               "text":  "=",
+                                                               "options":  {
+                                                                               "systemMessage":  "# ANE - ATENDENTE CJ RASTEIRINHAS\n\nVocê é Ane, consultora de vendas da CJ Rasteirinhas (atacado de calçados femininos).\n\n## REGRAS CRÍTICAS\n\n1. Cumprimente com nome UMA VEZ no início. Depois vá direto ao ponto.\n2. SEMPRE envie os links quando falar de produtos.\n3. Leia o histórico - não repita o que já foi dito.\n4. Zero menus numerados (1,2,3,4).\n5. Uma pergunta por vez no final.\n\n## INFORMAÇÕES BASE\n\n**Atacado:**\n- Pedido mínimo: 5 pares\n- Pode misturar modelos, cores, tamanhos\n- Pronta entrega\n- A partir de R$ 25\n\n**Frete:**\n- Calculado no checkout\n- Grátis acima de R$ 2.000\n\n**Links:**\n- Catálogo: https://cjotarasteirinhas.com.br/c/atacado/produtos/62981480687\n- Até R$30: https://cjotarasteirinhas.com.br/c/atacado/categoria/342723/62981480687\n- Havaiana Strass R$25: https://cjotarasteirinhas.com.br/c/atacado/categoria/305853/62981480687\n- Selene R$35: https://cjotarasteirinhas.com.br/c/atacado/categoria/325257/62981480687\n- Átria R$35: https://cjotarasteirinhas.com.br/c/atacado/categoria/344956/62981480687\n\n## RESPOSTAS PRONTAS\n\n**Cliente: \"Quero ver produtos\"**\nOi [Nome]! Sou a Ane da CJ 😊\n\nCatálogo: https://cjotarasteirinhas.com.br/c/atacado/produtos/62981480687\n\nCampeões:\n🥇 Havaiana Strass R$25: [link]\n🥈 Selene R$35: [link]\n\nProcura algo específico?\n\n**Cliente: \"Mais vendidos\"**\nNossos campeões:\n\n🥇 Havaiana Strass - R$25\n[link]\n\n🥈 Selene - R$35\n[link]\n\n🥉 Átria - R$35\n[link]\n\nQual combina com seu público?\n\n**Cliente: \"Mais barato\"**\nHavaiana Strass - R$25 (campeã!)\n[link]\n\nMais até R$30:\n[link]\n\nQuer começar com quantos pares?\n\n**Cliente: \"Como funciona atacado\"**\nTrabalhamos só com atacado:\n- Mínimo: 5 pares\n- Pode misturar\n- Pronta entrega\n- A partir de R$25/par\n\nVocê já trabalha com revenda?\n\n**Cliente: \"C4\" ou \"Franquia\"**\nO C4 é um site completo pronto com sua marca.\n\nDuas formas:\n- Caixa Reserva: crédito R$125, monta estoque\n- Dropshipping: sem estoque\n\nO valor vira mercadoria.\n\nDemo: https://c4franquias.com/site/vivaz\n\n**Cliente: \"Frete\"**\nCalculado no checkout pelo CEP.\n\nFrete grátis acima de R$2.000!\n\nQual o tamanho do seu pedido?\n\n## O QUE NÃO FAZER\n\n❌ Repetir \"Oi [Nome]!\" toda hora\n❌ Criar menus (1, 2, 3, 4)\n❌ Ficar perguntando sem enviar links\n❌ Repetir informações já ditas\n❌ Dar \"resumo rápido\" toda mensagem\n\n## ESTRUTURA\n\n1. Cumprimento (só primeira vez)\n2. Resposta direta + links\n3. Uma pergunta\n\nNome do cliente: {{ $(\u0027Dados\u0027).item.json[\u0027nome do cliente\u0027] }}"
+                                                                           }
+                                                           },
+                                            "type":  "@n8n/n8n-nodes-langchain.agent",
+                                            "typeVersion":  3.1,
+                                            "position":  [
+                                                             960,
+                                                             -736
+                                                         ],
+                                            "id":  "cdf62728-a0a9-4de5-9021-86bea818962e",
+                                            "name":  "AI Agent"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "sessionIdType":  "customKey",
+                                                               "sessionKey":  "={{ $(\u0027Dados\u0027).item.json[\u0027numero do cliente\u0027] }} {{ $(\u0027Dados\u0027).item.json.instancia }}",
+                                                               "sessionTTL":  86400,
+                                                               "contextWindowLength":  15
+                                                           },
+                                            "type":  "@n8n/n8n-nodes-langchain.memoryRedisChat",
+                                            "typeVersion":  1.5,
+                                            "position":  [
+                                                             1232,
+                                                             -416
+                                                         ],
+                                            "id":  "6a143490-6de4-45b9-aaed-08b24d14d1ed",
+                                            "name":  "Redis Chat Memory",
+                                            "credentials":  {
+                                                                "redis":  {
+                                                                              "id":  "JBSGaKK99bbwdjqw",
+                                                                              "name":  "Redis account 2"
+                                                                          }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "resource":  "messages-api",
+                                                               "instanceName":  "={{ $(\u0027Dados\u0027).item.json.instancia }}",
+                                                               "remoteJid":  "={{ $(\u0027Dados\u0027).item.json[\u0027numero do cliente\u0027] }}",
+                                                               "messageText":  "={{ $json.output }}",
+                                                               "options_message":  {
+                                                                                       "delay":  4000,
+                                                                                       "linkPreview":  true
+                                                                                   }
+                                                           },
+                                            "type":  "n8n-nodes-evolution-api.evolutionApi",
+                                            "typeVersion":  1,
+                                            "position":  [
+                                                             1584,
+                                                             -736
+                                                         ],
+                                            "id":  "77ed1c46-3e30-4a38-9707-2f9f050e9906",
+                                            "name":  "Enviar texto",
+                                            "credentials":  {
+                                                                "evolutionApi":  {
+                                                                                     "id":  "R4jyTtJmYGCD28i6",
+                                                                                     "name":  "Evolution account"
+                                                                                 }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "model":  {
+                                                                             "__rl":  true,
+                                                                             "mode":  "list",
+                                                                             "value":  "gpt-5-mini"
+                                                                         },
+                                                               "builtInTools":  {
+
+                                                                                },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+                                            "typeVersion":  1.3,
+                                            "position":  [
+                                                             992,
+                                                             -480
+                                                         ],
+                                            "id":  "afb72177-9c6f-4f18-b9aa-7ea8bc562d97",
+                                            "name":  "OpenAI Chat Model",
+                                            "credentials":  {
+                                                                "openAiApi":  {
+                                                                                  "id":  "io3OaLi1DUFltC74",
+                                                                                  "name":  "OpenAi account"
+                                                                              }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "rules":  {
+                                                                             "values":  [
+                                                                                            {
+                                                                                                "conditions":  {
+                                                                                                                   "options":  {
+                                                                                                                                   "caseSensitive":  true,
+                                                                                                                                   "leftValue":  "",
+                                                                                                                                   "typeValidation":  "strict",
+                                                                                                                                   "version":  3
+                                                                                                                               },
+                                                                                                                   "conditions":  [
+                                                                                                                                      {
+                                                                                                                                          "leftValue":  "={{ $json.massegeType }}",
+                                                                                                                                          "rightValue":  "conversation",
+                                                                                                                                          "operator":  {
+                                                                                                                                                           "type":  "string",
+                                                                                                                                                           "operation":  "equals"
+                                                                                                                                                       },
+                                                                                                                                          "id":  "eeaa7985-0959-40d1-9369-6d9d69e4d69d"
+                                                                                                                                      }
+                                                                                                                                  ],
+                                                                                                                   "combinator":  "and"
+                                                                                                               }
+                                                                                            },
+                                                                                            {
+                                                                                                "conditions":  {
+                                                                                                                   "options":  {
+                                                                                                                                   "caseSensitive":  true,
+                                                                                                                                   "leftValue":  "",
+                                                                                                                                   "typeValidation":  "strict",
+                                                                                                                                   "version":  3
+                                                                                                                               },
+                                                                                                                   "conditions":  [
+                                                                                                                                      {
+                                                                                                                                          "id":  "3f3e76fd-3cb8-4d60-bfd5-fdfe4a68b9d1",
+                                                                                                                                          "leftValue":  "={{ $json.massegeType }}",
+                                                                                                                                          "rightValue":  "audioMessage",
+                                                                                                                                          "operator":  {
+                                                                                                                                                           "type":  "string",
+                                                                                                                                                           "operation":  "equals"
+                                                                                                                                                       }
+                                                                                                                                      }
+                                                                                                                                  ],
+                                                                                                                   "combinator":  "and"
+                                                                                                               }
+                                                                                            }
+                                                                                        ]
+                                                                         },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.switch",
+                                            "typeVersion":  3.4,
+                                            "position":  [
+                                                             -320,
+                                                             -1600
+                                                         ],
+                                            "id":  "d54aeb13-642e-4e1d-b3af-7032da9e92d2",
+                                            "name":  "Switch"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "assignments":  {
+                                                                                   "assignments":  [
+                                                                                                       {
+                                                                                                           "id":  "0f07762f-402b-404c-a883-c7c03b6ced36",
+                                                                                                           "name":  "message",
+                                                                                                           "value":  "={{ $(\u0027Dados\u0027).item.json.mensagem }}",
+                                                                                                           "type":  "string"
+                                                                                                       }
+                                                                                                   ]
+                                                                               },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.set",
+                                            "typeVersion":  3.4,
+                                            "position":  [
+                                                             0,
+                                                             -1616
+                                                         ],
+                                            "id":  "ca8ad177-cfa8-4b6e-9b92-b6c0016d2e77",
+                                            "name":  "Set text message"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "assignments":  {
+                                                                                   "assignments":  [
+                                                                                                       {
+                                                                                                           "id":  "3e4e6816-4b0b-4af6-8bec-019fd07e8eb5",
+                                                                                                           "name":  "message",
+                                                                                                           "value":  "={{ $json.message }}",
+                                                                                                           "type":  "string"
+                                                                                                       }
+                                                                                                   ]
+                                                                               },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.set",
+                                            "typeVersion":  3.4,
+                                            "position":  [
+                                                             384,
+                                                             -1616
+                                                         ],
+                                            "id":  "5a85f273-457d-45a3-a184-a93b0903b289",
+                                            "name":  "message"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "resource":  "chat-api",
+                                                               "operation":  "get-media-base64",
+                                                               "instanceName":  "={{ $(\u0027Dados\u0027).item.json.instancia }}",
+                                                               "messageId":  "={{ $(\u0027Dados\u0027).item.json.id }}"
+                                                           },
+                                            "type":  "n8n-nodes-evolution-api.evolutionApi",
+                                            "typeVersion":  1,
+                                            "position":  [
+                                                             -960,
+                                                             -1248
+                                                         ],
+                                            "id":  "0f3c2555-8a66-43be-a484-b2fd2524bd47",
+                                            "name":  "Obter m dia em base64",
+                                            "credentials":  {
+                                                                "evolutionApi":  {
+                                                                                     "id":  "R4jyTtJmYGCD28i6",
+                                                                                     "name":  "Evolution account"
+                                                                                 }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "operation":  "toBinary",
+                                                               "sourceProperty":  "data.base64",
+                                                               "options":  {
+                                                                               "mimeType":  "audio/mpeg"
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.convertToFile",
+                                            "typeVersion":  1.1,
+                                            "position":  [
+                                                             -672,
+                                                             -1248
+                                                         ],
+                                            "id":  "8d7b6456-bc96-4961-a369-b8685b4fdec6",
+                                            "name":  "Convert to File"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "method":  "POST",
+                                                               "url":  "https://api.groq.com/openai/v1/audio/transcriptions",
+                                                               "authentication":  "predefinedCredentialType",
+                                                               "nodeCredentialType":  "groqApi",
+                                                               "sendBody":  true,
+                                                               "contentType":  "multipart-form-data",
+                                                               "bodyParameters":  {
+                                                                                      "parameters":  [
+                                                                                                         {
+                                                                                                             "name":  "model",
+                                                                                                             "value":  "whisper-large-v3-turbo"
+                                                                                                         },
+                                                                                                         {
+                                                                                                             "name":  "temperature",
+                                                                                                             "value":  "0"
+                                                                                                         },
+                                                                                                         {
+                                                                                                             "name":  "response_format",
+                                                                                                             "value":  "verbose_json"
+                                                                                                         },
+                                                                                                         {
+                                                                                                             "name":  "language",
+                                                                                                             "value":  "pt"
+                                                                                                         },
+                                                                                                         {
+                                                                                                             "parameterType":  "formBinaryData",
+                                                                                                             "name":  "file",
+                                                                                                             "inputDataFieldName":  "data"
+                                                                                                         }
+                                                                                                     ]
+                                                                                  },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.httpRequest",
+                                            "typeVersion":  4.4,
+                                            "position":  [
+                                                             -416,
+                                                             -1248
+                                                         ],
+                                            "id":  "8f6c1adc-9ec4-4bf3-9977-b01b2c40ba26",
+                                            "name":  "HTTP Request",
+                                            "credentials":  {
+                                                                "groqApi":  {
+                                                                                "id":  "Z8yV7mt6Yw2LZz5q",
+                                                                                "name":  "Groq account 2"
+                                                                            }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "assignments":  {
+                                                                                   "assignments":  [
+                                                                                                       {
+                                                                                                           "id":  "8b121357-5570-419b-b5a7-507a83770c37",
+                                                                                                           "name":  "message",
+                                                                                                           "value":  "={{ $json.text }}",
+                                                                                                           "type":  "string"
+                                                                                                       }
+                                                                                                   ]
+                                                                               },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.set",
+                                            "typeVersion":  3.4,
+                                            "position":  [
+                                                             16,
+                                                             -1248
+                                                         ],
+                                            "id":  "b8041142-99d2-446e-9c4c-0b1b0906bcab",
+                                            "name":  "set audio message"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "conditions":  {
+                                                                                  "options":  {
+                                                                                                  "caseSensitive":  true,
+                                                                                                  "leftValue":  "",
+                                                                                                  "typeValidation":  "loose",
+                                                                                                  "version":  3
+                                                                                              },
+                                                                                  "conditions":  [
+                                                                                                     {
+                                                                                                         "id":  "cbde8fcb-c990-4f7b-9736-9c140a61879c",
+                                                                                                         "leftValue":  "={{ $(\u0027Dados\u0027).item.json[\u0027fui eu quem enviei\u0027] }}",
+                                                                                                         "rightValue":  false,
+                                                                                                         "operator":  {
+                                                                                                                          "type":  "boolean",
+                                                                                                                          "operation":  "true",
+                                                                                                                          "singleValue":  true
+                                                                                                                      }
+                                                                                                     }
+                                                                                                 ],
+                                                                                  "combinator":  "and"
+                                                                              },
+                                                               "looseTypeValidation":  true,
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.if",
+                                            "typeVersion":  2.3,
+                                            "position":  [
+                                                             592,
+                                                             -1392
+                                                         ],
+                                            "id":  "fc9d9759-0552-4d11-b736-476857d2b3b1",
+                                            "name":  "If"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "operation":  "set",
+                                                               "key":  "={{ $(\u0027Dados\u0027).item.json.instancia }}{{ $(\u0027Dados\u0027).item.json[\u0027numero do cliente\u0027] }} block",
+                                                               "value":  "true",
+                                                               "expire":  true,
+                                                               "ttl":  300
+                                                           },
+                                            "type":  "n8n-nodes-base.redis",
+                                            "typeVersion":  1,
+                                            "position":  [
+                                                             976,
+                                                             -1312
+                                                         ],
+                                            "id":  "0e9a889e-69b0-471c-a35c-f87daeb3eca7",
+                                            "name":  "chave bolck",
+                                            "credentials":  {
+                                                                "redis":  {
+                                                                              "id":  "JBSGaKK99bbwdjqw",
+                                                                              "name":  "Redis account 2"
+                                                                          }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "mode":  "insert",
+                                                               "messages":  {
+                                                                                "messageValues":  [
+                                                                                                      {
+                                                                                                          "type":  "ai",
+                                                                                                          "message":  "={{ $(\u0027message\u0027).item.json.message }}"
+                                                                                                      }
+                                                                                                  ]
+                                                                            }
+                                                           },
+                                            "type":  "@n8n/n8n-nodes-langchain.memoryManager",
+                                            "typeVersion":  1.1,
+                                            "position":  [
+                                                             1728,
+                                                             -1312
+                                                         ],
+                                            "id":  "8527c0f3-1086-45aa-a2dd-e0b6c214e643",
+                                            "name":  "Chat Memory Manager"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "operation":  "get",
+                                                               "propertyName":  "isBlocked",
+                                                               "key":  "={{ $(\u0027Dados\u0027).item.json.instancia }}{{ $(\u0027Dados\u0027).item.json[\u0027numero do cliente\u0027] }} block",
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.redis",
+                                            "typeVersion":  1,
+                                            "position":  [
+                                                             320,
+                                                             -1056
+                                                         ],
+                                            "id":  "b6461201-68aa-4f2e-991c-15fdf860b630",
+                                            "name":  "Redis",
+                                            "credentials":  {
+                                                                "redis":  {
+                                                                              "id":  "JBSGaKK99bbwdjqw",
+                                                                              "name":  "Redis account 2"
+                                                                          }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "conditions":  {
+                                                                                  "options":  {
+                                                                                                  "caseSensitive":  true,
+                                                                                                  "leftValue":  "",
+                                                                                                  "typeValidation":  "loose",
+                                                                                                  "version":  3
+                                                                                              },
+                                                                                  "conditions":  [
+                                                                                                     {
+                                                                                                         "id":  "6459f565-3e41-4939-bb0b-831998f0a642",
+                                                                                                         "leftValue":  "={{ $json.isBlocked }}",
+                                                                                                         "rightValue":  "",
+                                                                                                         "operator":  {
+                                                                                                                          "type":  "boolean",
+                                                                                                                          "operation":  "exists",
+                                                                                                                          "singleValue":  true
+                                                                                                                      }
+                                                                                                     }
+                                                                                                 ],
+                                                                                  "combinator":  "and"
+                                                                              },
+                                                               "looseTypeValidation":  true,
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.if",
+                                            "typeVersion":  2.3,
+                                            "position":  [
+                                                             960,
+                                                             -1056
+                                                         ],
+                                            "id":  "6dd5f799-1af2-4454-bdbb-026a330192ec",
+                                            "name":  "If1"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "mode":  "insert",
+                                                               "messages":  {
+                                                                                "messageValues":  [
+                                                                                                      {
+                                                                                                          "type":  "user",
+                                                                                                          "message":  "={{ $(\u0027message\u0027).item.json.message }}",
+                                                                                                          "hideFromUI":  true
+                                                                                                      }
+                                                                                                  ]
+                                                                            }
+                                                           },
+                                            "type":  "@n8n/n8n-nodes-langchain.memoryManager",
+                                            "typeVersion":  1.1,
+                                            "position":  [
+                                                             1264,
+                                                             -1072
+                                                         ],
+                                            "id":  "c8d0319f-d2df-41fb-be24-ff3446deed54",
+                                            "name":  "Chat Memory Manager1"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "operation":  "push",
+                                                               "list":  "={{ $(\u0027Dados\u0027).item.json.instancia }} {{ $(\u0027Dados\u0027).item.json[\u0027numero do cliente\u0027] }} temp",
+                                                               "messageData":  "={{ $(\u0027message\u0027).item.json.message }}",
+                                                               "tail":  true
+                                                           },
+                                            "type":  "n8n-nodes-base.redis",
+                                            "typeVersion":  1,
+                                            "position":  [
+                                                             -1008,
+                                                             -720
+                                                         ],
+                                            "id":  "63332823-4ded-4e33-bd59-fbb446cfab1a",
+                                            "name":  "Redis1",
+                                            "credentials":  {
+                                                                "redis":  {
+                                                                              "id":  "JBSGaKK99bbwdjqw",
+                                                                              "name":  "Redis account 2"
+                                                                          }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "amount":  10
+                                                           },
+                                            "type":  "n8n-nodes-base.wait",
+                                            "typeVersion":  1.1,
+                                            "position":  [
+                                                             -720,
+                                                             -720
+                                                         ],
+                                            "id":  "52056654-d9d2-446b-9db5-f13021f6d12f",
+                                            "name":  "Wait",
+                                            "webhookId":  "7fbc4417-2b10-4a2d-b164-488b25361186"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "operation":  "get",
+                                                               "propertyName":  "masseges",
+                                                               "key":  "={{ $(\u0027Dados\u0027).item.json.instancia }} {{ $(\u0027Dados\u0027).item.json[\u0027numero do cliente\u0027] }} temp",
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.redis",
+                                            "typeVersion":  1,
+                                            "position":  [
+                                                             -352,
+                                                             -720
+                                                         ],
+                                            "id":  "5c58c470-17b5-496c-9b55-1293abc164c5",
+                                            "name":  "Redis2",
+                                            "credentials":  {
+                                                                "redis":  {
+                                                                              "id":  "JBSGaKK99bbwdjqw",
+                                                                              "name":  "Redis account 2"
+                                                                          }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "conditions":  {
+                                                                                  "options":  {
+                                                                                                  "caseSensitive":  true,
+                                                                                                  "leftValue":  "",
+                                                                                                  "typeValidation":  "strict",
+                                                                                                  "version":  3
+                                                                                              },
+                                                                                  "conditions":  [
+                                                                                                     {
+                                                                                                         "id":  "9e5a6c2f-bd52-4e64-a48e-69c7cdff7284",
+                                                                                                         "leftValue":  "={{ $json.masseges.last() }}",
+                                                                                                         "rightValue":  "={{ $(\u0027message\u0027).item.json.message }}",
+                                                                                                         "operator":  {
+                                                                                                                          "type":  "string",
+                                                                                                                          "operation":  "equals"
+                                                                                                                      }
+                                                                                                     }
+                                                                                                 ],
+                                                                                  "combinator":  "and"
+                                                                              },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.if",
+                                            "typeVersion":  2.3,
+                                            "position":  [
+                                                             -80,
+                                                             -720
+                                                         ],
+                                            "id":  "284c99ac-ed22-4ba0-9f69-652a6f7272d8",
+                                            "name":  "If2"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "operation":  "delete",
+                                                               "key":  "={{ $(\u0027Dados\u0027).item.json.instancia }} {{ $(\u0027Dados\u0027).item.json[\u0027numero do cliente\u0027] }} temp"
+                                                           },
+                                            "type":  "n8n-nodes-base.redis",
+                                            "typeVersion":  1,
+                                            "position":  [
+                                                             256,
+                                                             -736
+                                                         ],
+                                            "id":  "2f252a91-fd53-446f-8fe6-4f33ddbaafa7",
+                                            "name":  "Redis3",
+                                            "credentials":  {
+                                                                "redis":  {
+                                                                              "id":  "JBSGaKK99bbwdjqw",
+                                                                              "name":  "Redis account 2"
+                                                                          }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "assignments":  {
+                                                                                   "assignments":  [
+                                                                                                       {
+                                                                                                           "id":  "89f98fd6-4a09-4ebd-afa4-8831161157e7",
+                                                                                                           "name":  "message",
+                                                                                                           "value":  "={{ $(\u0027Redis2\u0027).item.json.masseges.join(\" \")}}",
+                                                                                                           "type":  "string"
+                                                                                                       }
+                                                                                                   ]
+                                                                               },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.set",
+                                            "typeVersion":  3.4,
+                                            "position":  [
+                                                             544,
+                                                             -736
+                                                         ],
+                                            "id":  "99f91dd6-7a17-4d61-a491-94772958bb0f",
+                                            "name":  "mensagem final"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "description":  "agente que explica sobre o atacado",
+                                                               "workflowId":  {
+                                                                                  "__rl":  true,
+                                                                                  "value":  "Cb1wHqJwHbqU1KBk",
+                                                                                  "mode":  "list",
+                                                                                  "cachedResultUrl":  "/workflow/Cb1wHqJwHbqU1KBk",
+                                                                                  "cachedResultName":  "agente atacado"
+                                                                              },
+                                                               "workflowInputs":  {
+                                                                                      "mappingMode":  "defineBelow",
+                                                                                      "value":  {
+                                                                                                    "prompt":  "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI(\u0027prompt\u0027, `mensagem para o agente`, \u0027string\u0027) }}"
+                                                                                                },
+                                                                                      "matchingColumns":  [
+                                                                                                              "prompt"
+                                                                                                          ],
+                                                                                      "schema":  [
+                                                                                                     {
+                                                                                                         "id":  "prompt",
+                                                                                                         "displayName":  "prompt",
+                                                                                                         "required":  false,
+                                                                                                         "defaultMatch":  false,
+                                                                                                         "display":  true,
+                                                                                                         "canBeUsedToMatch":  true,
+                                                                                                         "type":  "string",
+                                                                                                         "removed":  false
+                                                                                                     }
+                                                                                                 ],
+                                                                                      "attemptToConvertTypes":  false,
+                                                                                      "convertFieldsToString":  false
+                                                                                  }
+                                                           },
+                                            "type":  "@n8n/n8n-nodes-langchain.toolWorkflow",
+                                            "typeVersion":  2.2,
+                                            "position":  [
+                                                             1648,
+                                                             -464
+                                                         ],
+                                            "id":  "9cc21268-002a-41b3-bfa8-87d7c5aafd89",
+                                            "name":  "agente atacado"
+                                        }
+                                    ],
+                          "connections":  {
+                                              "Webhook":  {
+                                                              "main":  [
+                                                                           [
+                                                                               {
+                                                                                   "node":  "Dados",
+                                                                                   "type":  "main",
+                                                                                   "index":  0
+                                                                               }
+                                                                           ]
+                                                                       ]
+                                                          },
+                                              "Dados":  {
+                                                            "main":  [
+                                                                         [
+                                                                             {
+                                                                                 "node":  "Switch",
+                                                                                 "type":  "main",
+                                                                                 "index":  0
+                                                                             }
+                                                                         ]
+                                                                     ]
+                                                        },
+                                              "Redis Chat Memory":  {
+                                                                        "ai_memory":  [
+                                                                                          [
+                                                                                              {
+                                                                                                  "node":  "Chat Memory Manager",
+                                                                                                  "type":  "ai_memory",
+                                                                                                  "index":  0
+                                                                                              },
+                                                                                              {
+                                                                                                  "node":  "AI Agent",
+                                                                                                  "type":  "ai_memory",
+                                                                                                  "index":  0
+                                                                                              },
+                                                                                              {
+                                                                                                  "node":  "Chat Memory Manager1",
+                                                                                                  "type":  "ai_memory",
+                                                                                                  "index":  0
+                                                                                              }
+                                                                                          ]
+                                                                                      ]
+                                                                    },
+                                              "AI Agent":  {
+                                                               "main":  [
+                                                                            [
+                                                                                {
+                                                                                    "node":  "Enviar texto",
+                                                                                    "type":  "main",
+                                                                                    "index":  0
+                                                                                }
+                                                                            ]
+                                                                        ]
+                                                           },
+                                              "OpenAI Chat Model":  {
+                                                                        "ai_languageModel":  [
+                                                                                                 [
+                                                                                                     {
+                                                                                                         "node":  "AI Agent",
+                                                                                                         "type":  "ai_languageModel",
+                                                                                                         "index":  0
+                                                                                                     }
+                                                                                                 ]
+                                                                                             ]
+                                                                    },
+                                              "Switch":  {
+                                                             "main":  [
+                                                                          [
+                                                                              {
+                                                                                  "node":  "Set text message",
+                                                                                  "type":  "main",
+                                                                                  "index":  0
+                                                                              }
+                                                                          ],
+                                                                          [
+                                                                              {
+                                                                                  "node":  "Obter m dia em base64",
+                                                                                  "type":  "main",
+                                                                                  "index":  0
+                                                                              }
+                                                                          ]
+                                                                      ]
+                                                         },
+                                              "Set text message":  {
+                                                                       "main":  [
+                                                                                    [
+                                                                                        {
+                                                                                            "node":  "message",
+                                                                                            "type":  "main",
+                                                                                            "index":  0
+                                                                                        }
+                                                                                    ]
+                                                                                ]
+                                                                   },
+                                              "message":  {
+                                                              "main":  [
+                                                                           [
+                                                                               {
+                                                                                   "node":  "If",
+                                                                                   "type":  "main",
+                                                                                   "index":  0
+                                                                               }
+                                                                           ]
+                                                                       ]
+                                                          },
+                                              "Obter m dia em base64":  {
+                                                                            "main":  [
+                                                                                         [
+                                                                                             {
+                                                                                                 "node":  "Convert to File",
+                                                                                                 "type":  "main",
+                                                                                                 "index":  0
+                                                                                             }
+                                                                                         ]
+                                                                                     ]
+                                                                        },
+                                              "Convert to File":  {
+                                                                      "main":  [
+                                                                                   [
+                                                                                       {
+                                                                                           "node":  "HTTP Request",
+                                                                                           "type":  "main",
+                                                                                           "index":  0
+                                                                                       }
+                                                                                   ]
+                                                                               ]
+                                                                  },
+                                              "HTTP Request":  {
+                                                                   "main":  [
+                                                                                [
+                                                                                    {
+                                                                                        "node":  "set audio message",
+                                                                                        "type":  "main",
+                                                                                        "index":  0
+                                                                                    }
+                                                                                ]
+                                                                            ]
+                                                               },
+                                              "set audio message":  {
+                                                                        "main":  [
+                                                                                     [
+                                                                                         {
+                                                                                             "node":  "message",
+                                                                                             "type":  "main",
+                                                                                             "index":  0
+                                                                                         }
+                                                                                     ]
+                                                                                 ]
+                                                                    },
+                                              "If":  {
+                                                         "main":  [
+                                                                      [
+                                                                          {
+                                                                              "node":  "chave bolck",
+                                                                              "type":  "main",
+                                                                              "index":  0
+                                                                          }
+                                                                      ],
+                                                                      [
+                                                                          {
+                                                                              "node":  "Redis",
+                                                                              "type":  "main",
+                                                                              "index":  0
+                                                                          }
+                                                                      ]
+                                                                  ]
+                                                     },
+                                              "chave bolck":  {
+                                                                  "main":  [
+                                                                               [
+                                                                                   {
+                                                                                       "node":  "Chat Memory Manager",
+                                                                                       "type":  "main",
+                                                                                       "index":  0
+                                                                                   }
+                                                                               ]
+                                                                           ]
+                                                              },
+                                              "Redis":  {
+                                                            "main":  [
+                                                                         [
+                                                                             {
+                                                                                 "node":  "If1",
+                                                                                 "type":  "main",
+                                                                                 "index":  0
+                                                                             }
+                                                                         ]
+                                                                     ]
+                                                        },
+                                              "Enviar texto":  {
+                                                                   "main":  [
+                                                                                [
+
+                                                                                ]
+                                                                            ]
+                                                               },
+                                              "If1":  {
+                                                          "main":  [
+                                                                       [
+                                                                           {
+                                                                               "node":  "Chat Memory Manager1",
+                                                                               "type":  "main",
+                                                                               "index":  0
+                                                                           }
+                                                                       ],
+                                                                       [
+                                                                           {
+                                                                               "node":  "Redis1",
+                                                                               "type":  "main",
+                                                                               "index":  0
+                                                                           }
+                                                                       ]
+                                                                   ]
+                                                      },
+                                              "Redis1":  {
+                                                             "main":  [
+                                                                          [
+                                                                              {
+                                                                                  "node":  "Wait",
+                                                                                  "type":  "main",
+                                                                                  "index":  0
+                                                                              }
+                                                                          ]
+                                                                      ]
+                                                         },
+                                              "Wait":  {
+                                                           "main":  [
+                                                                        [
+                                                                            {
+                                                                                "node":  "Redis2",
+                                                                                "type":  "main",
+                                                                                "index":  0
+                                                                            }
+                                                                        ]
+                                                                    ]
+                                                       },
+                                              "Redis2":  {
+                                                             "main":  [
+                                                                          [
+                                                                              {
+                                                                                  "node":  "If2",
+                                                                                  "type":  "main",
+                                                                                  "index":  0
+                                                                              }
+                                                                          ]
+                                                                      ]
+                                                         },
+                                              "If2":  {
+                                                          "main":  [
+                                                                       [
+                                                                           {
+                                                                               "node":  "Redis3",
+                                                                               "type":  "main",
+                                                                               "index":  0
+                                                                           }
+                                                                       ]
+                                                                   ]
+                                                      },
+                                              "Redis3":  {
+                                                             "main":  [
+                                                                          [
+                                                                              {
+                                                                                  "node":  "mensagem final",
+                                                                                  "type":  "main",
+                                                                                  "index":  0
+                                                                              }
+                                                                          ]
+                                                                      ]
+                                                         },
+                                              "mensagem final":  {
+                                                                     "main":  [
+                                                                                  [
+                                                                                      {
+                                                                                          "node":  "AI Agent",
+                                                                                          "type":  "main",
+                                                                                          "index":  0
+                                                                                      }
+                                                                                  ]
+                                                                              ]
+                                                                 },
+                                              "agente atacado":  {
+                                                                     "ai_tool":  [
+                                                                                     [
+                                                                                         {
+                                                                                             "node":  "AI Agent",
+                                                                                             "type":  "ai_tool",
+                                                                                             "index":  0
+                                                                                         }
+                                                                                     ]
+                                                                                 ]
+                                                                 }
+                                          },
+                          "authors":  "Caroline Carvalho",
+                          "name":  "Version 0082d7d1",
+                          "description":  "",
+                          "autosaved":  true,
+                          "workflowPublishHistory":  [
+                                                         {
+                                                             "createdAt":  "2026-02-09T15:52:33.662Z",
+                                                             "id":  12,
+                                                             "workflowId":  "WiOj3Zu6dNWAxe0-94G4Z",
+                                                             "versionId":  "0082d7d1-eb72-48ea-98f4-83f3d5e6cb4f",
+                                                             "event":  "activated",
+                                                             "userId":  "a80f963e-05df-4350-9e73-bd9fbdc23317"
+                                                         }
+                                                     ]
+                      }
+}
