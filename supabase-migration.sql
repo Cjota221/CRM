@@ -133,8 +133,9 @@ BEGIN
         'crm_webhook_events', 'crm_abandoned_carts', 'crm_coupon_assignments'
     ])
     LOOP
+        EXECUTE format('DROP POLICY IF EXISTS "service_role_all_%s" ON %I', tbl, tbl);
         EXECUTE format(
-            'CREATE POLICY IF NOT EXISTS "service_role_all_%s" ON %I FOR ALL USING (auth.role() = ''service_role'')',
+            'CREATE POLICY "service_role_all_%s" ON %I FOR ALL USING (auth.role() = ''service_role'')',
             tbl, tbl
         );
     END LOOP;
