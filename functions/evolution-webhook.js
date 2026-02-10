@@ -12,6 +12,10 @@ const ORCHESTRATOR_URL = process.env.URL  // Netlify URL auto
     ? `${process.env.URL}/.netlify/functions/ai-orchestrator`
     : null;
 
+// N8N Relay — encaminha o payload original para o N8N continuar funcionando
+const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL 
+    || 'https://cjota-n8n.9eo9b2.easypanel.host/webhook-test/Agente Anne';
+
 const supabase = SUPABASE_KEY ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
 // ============================================================================
@@ -250,6 +254,15 @@ exports.handler = async (event) => {
         const payload = JSON.parse(event.body || '{}');
         
         console.log(`[EVOLUTION-WH] Evento recebido: ${payload.event || 'unknown'}`);
+
+        // 0. Relay para N8N (fire-and-forget — não bloqueia o fluxo)
+        if (N8N_WEBHOOK_URL) {
+            fetch(N8N_WEBHOOK_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: event.body
+            }).catch(err => console.error('[EVOLUTION-WH] Relay N8N falhou:', err.message));
+        }
 
         // 1. Normalizar evento
         const normalized = normalizeEvent(payload);
