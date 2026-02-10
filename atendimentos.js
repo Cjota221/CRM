@@ -3609,11 +3609,12 @@ async function sendProductToChat(idx) {
     const caption = `${greeting}Olha que linda essa opção! ✨\n\n*${nome}*\nPor apenas *R$ ${preco.toFixed(2)}*\n\nVeja mais detalhes e feche seu pedido aqui:\n${link}`;
     
     try {
-        const remoteJid = currentChatData?.remoteJid || currentChatId;
+        const remoteJid = currentChatData?.remoteJid || currentChatId || currentRemoteJid;
+        if (!remoteJid) throw new Error('Nenhum chat aberto para enviar o produto');
         const phoneNumber = remoteJid.replace('@s.whatsapp.net', '').replace('@g.us', '');
         
         // Tentar enviar com imagem primeiro
-        if (imagem && !imagem.includes('placeholder')) {
+        if (imagem && typeof imagem === 'string' && !imagem.includes('placeholder')) {
             const response = await fetch(`${API_BASE}/whatsapp/send-media`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
