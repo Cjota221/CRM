@@ -1985,6 +1985,10 @@ async function openChat(chat) {
     currentChatData = chat;
     currentClient = null;
     
+    // ★ Limpar painel CRM imediatamente para evitar dados stale
+    const _crmPanel = document.getElementById('crmDataContainer');
+    if (_crmPanel) _crmPanel.innerHTML = '<div class="flex items-center justify-center p-8 text-slate-400"><div class="animate-spin w-5 h-5 border-2 border-slate-300 border-t-blue-500 rounded-full mr-2"></div>Carregando dados...</div>';
+    
     // ====== MARCAR COMO LIDO ======
     const chatIdForRead = chat.id || chat.remoteJid;
     markChatAsRead(chatIdForRead);
@@ -2752,6 +2756,7 @@ function findAndRenderClientCRM(chatId) {
 
 /** Buscar no servidor e renderizar (usado tanto no miss quanto como fallback) */
 function _fetchAndRenderBrain(chatId, whatsappPhone, normalizedPhone, whatsappName) {
+    const _requestChatId = currentRemoteJid; // captura no momento do disparo
     fetch(`${API_BASE}/client-brain/${whatsappPhone}`)
         .then(res => res.json())
         .then(data => {
@@ -2762,16 +2767,28 @@ function _fetchAndRenderBrain(chatId, whatsappPhone, normalizedPhone, whatsappNa
                 CRMCache.set(chatId, data);
             }
             
+            // ★ GUARD: Só renderizar se o usuário ainda está no mesmo chat
+            if (currentRemoteJid !== _requestChatId) {
+                console.log('[CRM Brain] ⏩ Chat mudou, descartando renderização de', chatId);
+                return;
+            }
             _renderBrainData(data, whatsappPhone, normalizedPhone, whatsappName);
         })
         .catch(err => {
             console.error('[CRM Brain] Erro:', err);
+            if (currentRemoteJid !== _requestChatId) return;
             fallbackLocalClientSearch(chatId, whatsappPhone, normalizedPhone, whatsappName);
         });
 }
 
 /** Renderizar brainData no painel (reutiliza lógica existente) */
 function _renderBrainData(data, whatsappPhone, normalizedPhone, whatsappName) {
+    // ★ GUARD: Verificar se o telefone ainda corresponde ao chat ativo
+    const activePhone = currentRemoteJid ? currentRemoteJid.replace('@s.whatsapp.net','').replace('@lid','').replace(/\D/g,'') : '';
+    if (activePhone && whatsappPhone && !activePhone.includes(whatsappPhone.slice(-9)) && !whatsappPhone.includes(activePhone.slice(-9))) {
+        console.warn('[CRM Brain] ⚠️ Telefone diverge do chat ativo, abortando render', { whatsappPhone, activePhone });
+        return;
+    }
     if (!data.found) {
         const localResult = tryLocalClientMatch(normalizedPhone);
         if (localResult) {

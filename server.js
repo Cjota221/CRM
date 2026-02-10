@@ -236,19 +236,21 @@ function findClientByPhone(normalizedPhone) {
     });
     if (client) return client;
     
-    // ETAPA 3: Match por últimos 8 dígitos (ignora 9ºdígito completamente)
-    client = crmCache.clients.find(c => {
-        const phones = getClientPhones(c);
-        return phones.some(p => {
-            if (p.slice(-8) !== last8) return false;
-            // Confirmar DDD compatível (se ambos têm)
-            const dddSearch = normalizedPhone.length >= 10 ? normalizedPhone.substring(0, 2) : '';
-            const dddClient = p.length >= 10 ? p.substring(0, 2) : '';
-            return !dddSearch || !dddClient || dddSearch === dddClient;
+    // ETAPA 3: Match por últimos 8 dígitos (ignora 9ºdígito) — EXIGE DDD compatível
+    if (normalizedPhone.length >= 10) {
+        const dddSearch = normalizedPhone.substring(0, 2);
+        client = crmCache.clients.find(c => {
+            const phones = getClientPhones(c);
+            return phones.some(p => {
+                if (p.slice(-8) !== last8) return false;
+                // DDD obrigatório: ambos devem ter DDD e ser iguais
+                if (p.length < 10) return false;
+                return p.substring(0, 2) === dddSearch;
+            });
         });
-    });
+    }
     
-    return client;
+    return client || null;
 }
 
 /**
