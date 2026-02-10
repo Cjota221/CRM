@@ -6,6 +6,7 @@ const fetch = require('node-fetch');
 const path = require('path');
 const https = require('https');
 const crypto = require('crypto');
+const fs = require('fs');
 
 const app = express();
 const PORT = 3000;
@@ -16,8 +17,40 @@ const PORT = 3000;
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 const SESSION_MAX_AGE = 24 * 60 * 60 * 1000; // 24 horas
 
-// Armazena sessões ativas em memória { token: { user, createdAt } }
-const activeSessions = new Map();
+// ============================================================================
+// PERSISTÊNCIA EM ARQUIVO (Sessões + ChatModes sobrevivem ao restart)
+// ============================================================================
+const DATA_DIR = path.join(__dirname, '.crm-data');
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
+const CHAT_MODES_FILE = path.join(DATA_DIR, 'chat-modes.json');
+
+function loadJsonFile(filePath, fallback) {
+    try {
+        if (fs.existsSync(filePath)) {
+            return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        }
+    } catch (e) { console.warn(`[Persist] Erro ao ler ${path.basename(filePath)}:`, e.message); }
+    return fallback;
+}
+
+function saveJsonFile(filePath, data) {
+    try {
+        fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+    } catch (e) { console.warn(`[Persist] Erro ao salvar ${path.basename(filePath)}:`, e.message); }
+}
+
+// Armazena sessões ativas com persistência em arquivo
+const _savedSessions = loadJsonFile(SESSIONS_FILE, {});
+const activeSessions = new Map(Object.entries(_savedSessions));
+console.log(`[Auth] ${activeSessions.size} sessões restauradas do disco`);
+
+function persistSessions() {
+    const obj = {};
+    for (const [token, session] of activeSessions) obj[token] = session;
+    saveJsonFile(SESSIONS_FILE, obj);
+}
 
 function generateSessionToken() {
     return crypto.randomBytes(48).toString('hex');
@@ -25,11 +58,14 @@ function generateSessionToken() {
 
 function cleanExpiredSessions() {
     const now = Date.now();
+    let cleaned = 0;
     for (const [token, session] of activeSessions) {
         if (now - session.createdAt > SESSION_MAX_AGE) {
             activeSessions.delete(token);
+            cleaned++;
         }
     }
+    if (cleaned > 0) persistSessions();
 }
 // Limpa sessões expiradas a cada hora
 setInterval(cleanExpiredSessions, 60 * 60 * 1000);
@@ -401,6 +437,7 @@ app.post('/api/auth/login', async (req, res) => {
         if (localMatch) {
             const token = generateSessionToken();
             activeSessions.set(token, { user: localMatch.email, name: localMatch.name, createdAt: Date.now() });
+            persistSessions();
             res.setHeader('Set-Cookie', `crm_session=${token}; HttpOnly; Path=/; Max-Age=${SESSION_MAX_AGE / 1000}; SameSite=Lax`);
             return res.json({ success: true, message: 'Login realizado com sucesso', user: { name: localMatch.name, email: localMatch.email } });
         }
@@ -428,6 +465,7 @@ app.post('/api/auth/login', async (req, res) => {
         }
         const token = generateSessionToken();
         activeSessions.set(token, { user: user.email, name: user.name, createdAt: Date.now() });
+        persistSessions();
         res.setHeader('Set-Cookie', `crm_session=${token}; HttpOnly; Path=/; Max-Age=${SESSION_MAX_AGE / 1000}; SameSite=Lax`);
         return res.json({ success: true, message: 'Login realizado com sucesso', user: { name: user.name, email: user.email } });
     } catch (err) {
@@ -440,6 +478,7 @@ app.post('/api/auth/logout', (req, res) => {
     const cookies = parseCookies(req.headers.cookie);
     const token = cookies['crm_session'];
     if (token) activeSessions.delete(token);
+    persistSessions();
     res.setHeader('Set-Cookie', 'crm_session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax');
     return res.json({ success: true, message: 'Logout realizado' });
 });
@@ -1320,6 +1359,8 @@ function generateMockGroups() {
 // 3.2 Listar Chats + Grupos combinados
 app.get('/api/whatsapp/all-chats', async (req, res) => {
     try {
+        const limit = parseInt(req.query.limit) || 200;
+        
         // Buscar chats, contatos e grupos em paralelo
         const [chatsResponse, contactsResponse, groupsResponse] = await Promise.all([
             fetch(`${EVOLUTION_URL}/chat/findChats/${INSTANCE_NAME}`, { 
@@ -1327,7 +1368,7 @@ app.get('/api/whatsapp/all-chats', async (req, res) => {
                 headers: evolutionHeaders,
                 body: JSON.stringify({
                     where: {},
-                    options: { limit: 100, order: "DESC" }
+                    options: { limit: limit, order: "DESC" }
                 })
             }).catch(() => null),
             fetch(`${EVOLUTION_URL}/chat/findContacts/${INSTANCE_NAME}`, { 
@@ -2652,7 +2693,12 @@ app.post('/api/sync-client-name', async (req, res) => {
 
 // Armazenamento de mensagens em tempo real (em memória)
 let realtimeMessages = [];
-let chatModes = {}; // { 'jid': 'ia' | 'humano' } - controle de quem atende
+let chatModes = loadJsonFile(CHAT_MODES_FILE, {}); // Persistente: { 'jid': 'ia' | 'humano' }
+console.log(`[ChatModes] ${Object.keys(chatModes).length} modos restaurados do disco`);
+
+function persistChatModes() {
+    saveJsonFile(CHAT_MODES_FILE, chatModes);
+}
 
 // Endpoint principal: recebe webhooks da Evolution API (via N8N ou direto)
 app.post('/api/evolution/webhook', (req, res) => {
@@ -2674,15 +2720,33 @@ app.post('/api/evolution/webhook', (req, res) => {
                     const fromMe = key.fromMe || false;
                     const pushName = msg.pushName || '';
                     
-                    // Extrair texto da mensagem
+                    // Extrair texto da mensagem + preservar URLs de mídia
                     let text = '';
+                    let mediaUrl = null;
+                    let mediaType = null;
                     const message = msg.message || {};
                     if (message.conversation) text = message.conversation;
                     else if (message.extendedTextMessage?.text) text = message.extendedTextMessage.text;
-                    else if (message.imageMessage?.caption) text = message.imageMessage.caption;
-                    else if (message.videoMessage?.caption) text = message.videoMessage.caption;
-                    else if (message.documentMessage) text = '[Documento]';
-                    else if (message.audioMessage) text = '[Áudio]';
+                    else if (message.imageMessage) {
+                        text = message.imageMessage.caption || '[Imagem]';
+                        mediaUrl = message.imageMessage.url || null;
+                        mediaType = 'image';
+                    }
+                    else if (message.videoMessage) {
+                        text = message.videoMessage.caption || '[Vídeo]';
+                        mediaUrl = message.videoMessage.url || null;
+                        mediaType = 'video';
+                    }
+                    else if (message.documentMessage) {
+                        text = `[Documento] ${message.documentMessage.fileName || ''}`;
+                        mediaUrl = message.documentMessage.url || null;
+                        mediaType = 'document';
+                    }
+                    else if (message.audioMessage) {
+                        text = '[Áudio]';
+                        mediaUrl = message.audioMessage.url || null;
+                        mediaType = 'audio';
+                    }
                     else if (message.stickerMessage) text = '[Figurinha]';
                     else if (message.contactMessage) text = '[Contato]';
                     else if (message.locationMessage) text = '[Localização]';
@@ -2693,6 +2757,8 @@ app.post('/api/evolution/webhook', (req, res) => {
                         fromMe,
                         pushName,
                         text,
+                        mediaUrl,
+                        mediaType,
                         timestamp: msg.messageTimestamp || Math.floor(Date.now() / 1000),
                         receivedAt: new Date().toISOString(),
                         isGroup: jid.includes('@g.us'),
@@ -2732,6 +2798,7 @@ app.post('/api/evolution/webhook', (req, res) => {
                 const jid = payload.data?.jid || payload.jid;
                 if (jid) {
                     chatModes[jid] = 'humano';
+                    persistChatModes();
                     console.log(`[TRANSFER] Chat ${jid} transferido da IA para atendente humano`);
                 }
                 break;
@@ -2743,6 +2810,7 @@ app.post('/api/evolution/webhook', (req, res) => {
                 const jid = payload.data?.jid || payload.jid;
                 if (jid) {
                     chatModes[jid] = 'ia';
+                    persistChatModes();
                     console.log(`[TRANSFER] Chat ${jid} devolvido para IA`);
                 }
                 break;
@@ -2790,6 +2858,7 @@ app.post('/api/evolution/chat-mode/:jid', (req, res) => {
         return res.status(400).json({ error: 'Mode deve ser "ia" ou "humano"' });
     }
     chatModes[jid] = mode;
+    persistChatModes();
     console.log(`[CHAT MODE] ${jid} → ${mode}`);
     res.json({ success: true, jid, mode });
 });

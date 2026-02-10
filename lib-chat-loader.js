@@ -24,6 +24,9 @@ class ChatLoadingSystem {
         this._picMax = 5;          // Máximo simultâneo
         this._picCache = new Set(); // JIDs já buscados nesta sessão
         
+        // Cache persistente de URLs de fotos (localStorage)
+        this._picUrlCache = this._loadPicCache();
+        
         // Cache de mensagens em memória (hot-cache sobre o IndexedDB)
         this._messagesCache = new Map(); // remoteJid -> { messages, timestamp, hash }
         this._MSG_CACHE_TTL = 60000; // 60s (IDB é persistente, memory cache é atalho)
@@ -451,6 +454,15 @@ class ChatLoadingSystem {
         
         const targetJid = cleanPhone.startsWith('55') ? `${cleanPhone}@s.whatsapp.net` : `55${cleanPhone}@s.whatsapp.net`;
         
+        // Verificar cache persistente primeiro (evita fetch da API)
+        const cached = this._picUrlCache[targetJid];
+        if (cached && cached.url && (Date.now() - cached.ts < 24 * 60 * 60 * 1000)) {
+            chat.profilePicUrl = cached.url;
+            this._updateAvatarInDOM(chat, cached.url);
+            this._picCache.add(targetJid);
+            return;
+        }
+        
         // Deduplicar: não buscar o mesmo JID duas vezes
         if (this._picCache.has(targetJid)) return;
         this._picCache.add(targetJid);
@@ -484,21 +496,57 @@ class ChatLoadingSystem {
             
             if (data.profilePicUrl) {
                 chat.profilePicUrl = data.profilePicUrl;
-                const chatKey = createChatKey(chat.remoteJid || chat.id);
-                const chatEl = document.querySelector(`[data-chat-key="${chatKey}"]`);
-                if (chatEl) {
-                    const avatarContainer = chatEl.querySelector('.flex-shrink-0');
-                    if (avatarContainer) {
-                        const initial = (chat.displayName || '?').charAt(0).toUpperCase();
-                        const gradient = this.getAvatarGradient(initial);
-                        avatarContainer.innerHTML = `<img src="${data.profilePicUrl}" class="w-12 h-12 rounded-full object-cover" onerror="this.outerHTML='<div class=\\'w-12 h-12 rounded-full ${gradient} flex items-center justify-center text-white font-bold\\'>${initial}</div>'">`;
-                    }
-                }
+                this._updateAvatarInDOM(chat, data.profilePicUrl);
+                // Salvar no cache persistente
+                this._picUrlCache[targetJid] = { url: data.profilePicUrl, ts: Date.now() };
+                this._savePicCache();
             }
         } catch (e) {
             // Silenciar erro - foto é opcional
         }
         resolve();
+    }
+    
+    /** Atualizar avatar no DOM */
+    _updateAvatarInDOM(chat, picUrl) {
+        const chatKey = createChatKey(chat.remoteJid || chat.id);
+        const chatEl = document.querySelector(`[data-chat-key="${chatKey}"]`);
+        if (chatEl) {
+            const avatarContainer = chatEl.querySelector('.flex-shrink-0');
+            if (avatarContainer) {
+                const initial = (chat.displayName || '?').charAt(0).toUpperCase();
+                const gradient = this.getAvatarGradient(initial);
+                avatarContainer.innerHTML = `<img src="${picUrl}" class="w-12 h-12 rounded-full object-cover" onerror="this.outerHTML='<div class=\\'w-12 h-12 rounded-full ${gradient} flex items-center justify-center text-white font-bold\\'>${initial}</div>'">`;
+            }
+        }
+    }
+    
+    /** Carregar cache de fotos do localStorage */
+    _loadPicCache() {
+        try {
+            const raw = localStorage.getItem('crm_profile_pics');
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                // Limpar entradas expiradas (>24h)
+                const now = Date.now();
+                const cleaned = {};
+                for (const [k, v] of Object.entries(parsed)) {
+                    if (v.ts && (now - v.ts < 24 * 60 * 60 * 1000)) cleaned[k] = v;
+                }
+                return cleaned;
+            }
+        } catch(e) {}
+        return {};
+    }
+    
+    /** Salvar cache de fotos (debounced) */
+    _savePicCache() {
+        if (this._picSaveTimer) clearTimeout(this._picSaveTimer);
+        this._picSaveTimer = setTimeout(() => {
+            try {
+                localStorage.setItem('crm_profile_pics', JSON.stringify(this._picUrlCache));
+            } catch(e) {}
+        }, 2000);
     }
     
     /**

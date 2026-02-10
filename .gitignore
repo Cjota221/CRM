@@ -1,2 +1,8 @@
 # Local Netlify folder
 .netlify
+
+# CRM persistent data (sessions, chatModes - contains secrets)
+.crm-data/
+
+# Environment variables
+.env

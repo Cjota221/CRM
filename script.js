@@ -16,6 +16,19 @@ function escapeHtml(unsafe) {
         .replace(/'/g, "&#039;");
 }
 
+/**
+ * Formata telefone para wa.me sem duplicar DDI 55
+ * @param {string} raw - Telefone bruto
+ * @returns {string} Telefone com DDI 55 para wa.me
+ */
+function safeWaPhone(raw) {
+    if (!raw) return '';
+    const cleaned = String(raw).replace(/\D/g, '');
+    if (cleaned.startsWith('55') && cleaned.length >= 12) return cleaned;
+    if (cleaned.length === 10 || cleaned.length === 11) return '55' + cleaned;
+    return cleaned;
+}
+
 function showToast(message, type = 'info', duration = 3000) {
     const container = document.getElementById('toast-container');
     const toast = document.createElement('div');
@@ -2035,7 +2048,7 @@ function setupClientCardListeners() {
         btn.addEventListener('click', () => {
             const phone = btn.dataset.phone?.replace(/\D/g, '');
             if (phone) {
-                window.open(`https://wa.me/55${phone}`, '_blank');
+                window.open(`https://wa.me/${safeWaPhone(phone)}`, '_blank');
             } else {
                 showToast('Cliente não possui telefone cadastrado.', 'error');
             }
@@ -2172,7 +2185,7 @@ function viewClientDetails(clientId) {
         <!-- Ações Rápidas -->
         <div class="flex gap-2 mb-4">
             ${client.phone ? `
-                <a href="https://wa.me/55${client.phone.replace(/\\D/g, '')}" target="_blank" 
+                <a href="https://wa.me/${safeWaPhone(client.phone)}" target="_blank" 
                    class="flex-1 bg-green-600 hover:bg-green-700 text-white text-center py-2 px-4 rounded-lg font-medium">
                     <i class="fab fa-whatsapp mr-2"></i>Enviar WhatsApp
                 </a>
@@ -2221,7 +2234,7 @@ function viewClientDetails(clientId) {
             <div>
                 <strong class="text-gray-600 block"><i class="fas fa-phone fa-fw mr-2 text-gray-400"></i>Telefone:</strong>
                 ${escapeHtml(client.phone || 'N/A')}
-                ${client.phone ? `<a href="https://wa.me/55${client.phone.replace(/\D/g, '')}" target="_blank" class="ml-2 text-green-600 hover:text-green-700"><i class="fab fa-whatsapp"></i></a>` : ''}
+                ${client.phone ? `<a href="https://wa.me/${safeWaPhone(client.phone)}" target="_blank" class="ml-2 text-green-600 hover:text-green-700"><i class="fab fa-whatsapp"></i></a>` : ''}
             </div>
             <div>
                 <strong class="text-gray-600 block"><i class="fas fa-id-card fa-fw mr-2 text-gray-400"></i>CPF/CNPJ:</strong>
@@ -2578,7 +2591,7 @@ function viewOrderDetails(orderId) {
                         <p>
                             ${escapeHtml(fullClient?.phone || order.clientPhone || 'N/A')}
                             ${(fullClient?.phone || order.clientPhone) ? 
-                                `<a href="https://wa.me/55${(fullClient?.phone || order.clientPhone).replace(/\\D/g, '')}" target="_blank" class="ml-2 text-green-600"><i class="fab fa-whatsapp"></i></a>` : ''}
+                                `<a href="https://wa.me/${safeWaPhone(fullClient?.phone || order.clientPhone)}" target="_blank" class="ml-2 text-green-600"><i class="fab fa-whatsapp"></i></a>` : ''}
                         </p>
                     </div>
                     <div>
@@ -4083,7 +4096,7 @@ function generateClientCoupon(clientId) {
     const msg = `Olá ${client.name.split(' ')[0]}! 🎉\n\nPreparei um cupom EXCLUSIVO pra você:\n\n🎟️ Código: *${code}*\n💰 Desconto: *${discount}%*\n📅 Válido por 30 dias\n\nAproveite! 😊`;
     
     if (client.phone) {
-        window.open(`https://wa.me/55${client.phone.replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+        window.open(`https://wa.me/${safeWaPhone(client.phone)}?text=${encodeURIComponent(msg)}`, '_blank');
         showToast(`Cupom ${code} criado e WhatsApp aberto!`, 'success');
     } else {
         // Copiar código para clipboard
@@ -4673,7 +4686,7 @@ const CouponManager = {
         const client = Storage.getClients().find(c => c.id == clientId);
         if (!client?.phone) { showToast('Sem telefone', 'error'); return; }
         const msg = `Olá ${client.name}! Você ainda não usou seu cupom: ${couponCode}`;
-        window.open(`https://wa.me/55${client.phone.replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+        window.open(`https://wa.me/${safeWaPhone(client.phone)}?text=${encodeURIComponent(msg)}`, '_blank');
     }
 };
 window.CouponManager = CouponManager;
@@ -4927,7 +4940,7 @@ Exemplo de resposta:
             if (!client.phone) continue;
             let m = msg.replace(/{nome}/g, client.name?.split(' ')[0] || '').replace(/{cupom}/g, coupon);
             if (coupon) CouponManager.assignCoupon(client.id, coupon, client.name);
-            window.open(`https://wa.me/55${client.phone.replace(/\D/g, '')}?text=${encodeURIComponent(m)}`, '_blank');
+            window.open(`https://wa.me/${safeWaPhone(client.phone)}?text=${encodeURIComponent(m)}`, '_blank');
             sent++;
             await new Promise(r => setTimeout(r, 500));
         }
@@ -5427,7 +5440,7 @@ const AIVigilante = {
         
         const firstName = client.name?.split(' ')[0] || 'amiga';
         const msg = `Oi ${firstName}! 💕\n\nSentimos MUITO sua falta aqui na CJOTA!\n\nPreparei um cupom EXCLUSIVO pra você: *${code}*\n\nÉ só usar no próximo pedido! 🎁\n\nPosso te ajudar com algo?`;
-        window.open(`https://wa.me/55${client.phone.replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+        window.open(`https://wa.me/${safeWaPhone(client.phone)}?text=${encodeURIComponent(msg)}`, '_blank');
         showToast(`Cupom ${code} enviado para ${firstName}!`, 'success');
     },
     
@@ -5438,7 +5451,7 @@ const AIVigilante = {
         
         const firstName = client.name?.split(' ')[0] || 'amiga';
         const msg = `Oi ${firstName}! Tudo bem? 😊\n\nPassando pra avisar que chegaram NOVIDADES lindas aqui!\n\nQuer dar uma olhadinha? Posso te mandar as fotos! 📸`;
-        window.open(`https://wa.me/55${client.phone.replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+        window.open(`https://wa.me/${safeWaPhone(client.phone)}?text=${encodeURIComponent(msg)}`, '_blank');
     },
     
     // ========== EXPORTAÇÕES ==========

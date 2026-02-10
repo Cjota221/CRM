@@ -382,6 +382,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         snoozedChats = JSON.parse(localStorage.getItem('crm_snoozed') || '{}');
         clientNotes = JSON.parse(localStorage.getItem('crm_client_notes') || '{}');
         scheduledMessages = JSON.parse(localStorage.getItem('crm_scheduled') || '[]');
+        // Recarregar clientes do localStorage imediatamente (allClients em memória)
+        try {
+            const freshClients = JSON.parse(localStorage.getItem('crm_clients') || '[]');
+            if (freshClients.length > 0) {
+                allClients = freshClients;
+                console.log(`[Atendimento] allClients atualizado: ${allClients.length} clientes`);
+            }
+        } catch(e) {}
         loadCRMData();
     });
 
@@ -3436,7 +3444,7 @@ function renderProductList(products) {
 }
 
 function renderProductListView(products, container) {
-    container.innerHTML = products.slice(0, 60).map((p, idx) => {
+    container.innerHTML = products.map((p, idx) => {
         const preco = parseFloat(p.preco || 0);
         const imagem = p.imagem || 'https://via.placeholder.com/60x60?text=Sem+Foto';
         const nome = p.nome || 'Produto sem nome';
@@ -3497,7 +3505,7 @@ function renderProductListView(products, container) {
 }
 
 function renderProductGrid(products, container) {
-    container.innerHTML = '<div class="grid grid-cols-3 gap-3">' + products.slice(0, 60).map((p, idx) => {
+    container.innerHTML = '<div class="grid grid-cols-3 gap-3">' + products.map((p, idx) => {
         const preco = parseFloat(p.preco || 0);
         const imagem = p.imagem || 'https://via.placeholder.com/150x150?text=Sem+Foto';
         const nome = p.nome || 'Produto sem nome';
