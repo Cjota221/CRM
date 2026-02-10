@@ -5018,15 +5018,17 @@ function changePlaybackSpeed(audioId) {
 // ============================================================================
 // SISTEMA DE CAMPANHAS
 // ============================================================================
+// ============================================================================
+// MOTOR DE DISPAROS VEXX — Blocos de Campanha + Envio Rápido
+// ============================================================================
+
 let allCampaigns = JSON.parse(localStorage.getItem('crm_campaigns') || '[]');
 let selectedAudience = null;
-let campaignImageBase64 = null;
 let currentCampaignFilter = 'all';
-let selectedCampaignType = 'text';
-let mediaLibraryItems = [];
-let selectedMediaId = null;
-let uploadedMediaBase64 = null;
-let uploadedMediaMime = null;
+let campaignBlocks = []; // Array de blocos de ações
+let blockCounter = 0;
+let savedScripts = JSON.parse(localStorage.getItem('crm_scripts') || '[]');
+
 
 // Alternar entre Views
 function switchView(view) {
@@ -5137,20 +5139,13 @@ async function loadCampaignData() {
 
 function selectAudience(type) {
     selectedAudience = type;
-    
-    document.querySelectorAll('.audience-btn').forEach(btn => {
-        btn.classList.remove('border-primary-500', 'bg-primary-50');
-        btn.classList.add('border-slate-200');
-    });
-    
-    const selected = document.querySelector(`[data-audience="${type}"]`);
-    if (selected) {
-        selected.classList.add('border-primary-500', 'bg-primary-50');
-        selected.classList.remove('border-slate-200');
-    }
-    
     document.getElementById('groupSelector').classList.toggle('hidden', type !== 'group');
     updateCampaignSummary();
+}
+
+function selectAudienceFromSelect(type) {
+    selectAudience(type);
+    if (type) loadCampaignData();
 }
 
 function toggleAllGroups() {
@@ -5179,66 +5174,821 @@ function toggleSchedule() {
     document.getElementById('scheduleOptions').classList.toggle('hidden', !enabled);
 }
 
-function insertCampaignVar(varName) {
-    const textarea = document.getElementById('campaignMessage');
-    const start = textarea.selectionStart;
-    const text = textarea.value;
-    textarea.value = text.slice(0, start) + `{{${varName}}}` + text.slice(start);
-    textarea.focus();
+function copyVar(v) {
+    navigator.clipboard.writeText(v).then(() => {
+        // Brief toast
+        const t = document.createElement('div');
+        t.className = 'fixed bottom-4 right-4 bg-slate-800 text-white text-xs px-3 py-2 rounded-lg z-[100]';
+        t.textContent = `Copiado: ${v}`;
+        document.body.appendChild(t);
+        setTimeout(() => t.remove(), 1500);
+    });
 }
 
-function previewCampaignImage(event) {
+function updateCampaignSummary() {
+    const el = document.getElementById('campaignSummary');
+    if (!el) return;
+    const blockCount = campaignBlocks.length;
+    if (!selectedAudience || blockCount === 0) {
+        el.textContent = 'Monte a sequência e selecione o público';
+        return;
+    }
+    let count = 0;
+    if (selectedAudience === 'all') count = allClients.length;
+    else if (selectedAudience === 'group') count = getSelectedGroups().length;
+    else if (selectedAudience === 'inactive') {
+        const nd = Date.now() - (90 * 24 * 60 * 60 * 1000);
+        count = allClients.filter(c => { const o = (allOrders||[]).filter(x=>x.cliente_id==c.id).sort((a,b)=>new Date(b.data)-new Date(a.data)); return o.length===0||new Date(o[0].data).getTime()<nd; }).length;
+    } else if (selectedAudience === 'vip') {
+        count = allClients.filter(c => { const o = (allOrders||[]).filter(x=>x.cliente_id==c.id); const t = o.reduce((s,x)=>s+parseFloat(x.total||0),0); return o.length>0&&t/o.length>=500; }).length;
+    }
+    const batchSize = parseInt(document.getElementById('batchSize')?.value || '15');
+    const interval = parseInt(document.getElementById('batchInterval')?.value || '20');
+    const batches = Math.ceil(count / batchSize);
+    const totalMin = batches * interval;
+    el.textContent = `${blockCount} ações × ${count} destinatários • ~${Math.floor(totalMin/60)}h${totalMin%60}min`;
+    const countEl = document.getElementById('blockCount');
+    if (countEl) countEl.textContent = `${blockCount} ${blockCount === 1 ? 'ação' : 'ações'}`;
+}
+
+// ============================================================================
+// BLOCOS DE CAMPANHA — Motor de Ações Empilháveis
+// ============================================================================
+
+const BLOCK_TYPES = {
+    text:     { icon: 'type',         color: 'blue',   label: 'Texto' },
+    image:    { icon: 'image',        color: 'green',  label: 'Imagem' },
+    video:    { icon: 'video',        color: 'red',    label: 'Vídeo' },
+    audio:    { icon: 'mic',          color: 'orange', label: 'Áudio PTT' },
+    document: { icon: 'file-text',    color: 'slate',  label: 'Documento' },
+    poll:     { icon: 'bar-chart-3',  color: 'purple', label: 'Enquete' },
+    sticker:  { icon: 'smile',        color: 'yellow', label: 'Figurinha' },
+    product:  { icon: 'shopping-bag', color: 'pink',   label: 'Produto' },
+    pix:      { icon: 'qr-code',      color: 'teal',   label: 'Link PIX' }
+};
+
+function toggleBlockMenu() {
+    const menu = document.getElementById('blockMenu');
+    if (menu) menu.classList.toggle('hidden');
+}
+
+function addBlock(type, containerId = 'campaignBlocks') {
+    const id = `block_${++blockCounter}`;
+    const bt = BLOCK_TYPES[type] || BLOCK_TYPES.text;
+    
+    const block = { id, type, delay: 3, data: {} };
+    
+    if (containerId === 'campaignBlocks') {
+        campaignBlocks.push(block);
+    }
+    
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    
+    const div = document.createElement('div');
+    div.id = id;
+    div.className = `block-item border-2 border-${bt.color}-200 bg-${bt.color}-50 rounded-xl p-3 relative group`;
+    div.setAttribute('data-block-type', type);
+    div.setAttribute('draggable', 'true');
+    div.ondragstart = (e) => e.dataTransfer.setData('text/plain', id);
+    div.ondragover = (e) => { e.preventDefault(); div.classList.add('border-indigo-500'); };
+    div.ondragleave = () => div.classList.remove('border-indigo-500');
+    div.ondrop = (e) => { e.preventDefault(); div.classList.remove('border-indigo-500'); reorderBlock(e.dataTransfer.getData('text/plain'), id, containerId); };
+    
+    let innerHtml = `
+        <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2">
+                <span class="text-xs font-bold text-${bt.color}-600 bg-${bt.color}-100 px-2 py-0.5 rounded">#${container.children.length + 1}</span>
+                <i data-lucide="${bt.icon}" class="w-4 h-4 text-${bt.color}-500"></i>
+                <span class="text-sm font-medium text-slate-700">${bt.label}</span>
+            </div>
+            <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button onclick="moveBlock('${id}','up','${containerId}')" class="p-1 hover:bg-white rounded" title="Mover para cima"><i data-lucide="chevron-up" class="w-3 h-3"></i></button>
+                <button onclick="moveBlock('${id}','down','${containerId}')" class="p-1 hover:bg-white rounded" title="Mover para baixo"><i data-lucide="chevron-down" class="w-3 h-3"></i></button>
+                <button onclick="removeBlock('${id}','${containerId}')" class="p-1 hover:bg-red-100 rounded text-red-500" title="Remover"><i data-lucide="trash-2" class="w-3 h-3"></i></button>
+            </div>
+        </div>`;
+    
+    // Conteúdo específico por tipo
+    switch (type) {
+        case 'text':
+            innerHtml += `
+                <textarea id="${id}_text" rows="3" placeholder="Digite a mensagem... Use {{nome}}, {{cupom}}, etc." class="input resize-none text-sm w-full" oninput="updateBlockData('${id}','text',this.value)"></textarea>`;
+            break;
+        case 'image':
+            innerHtml += `
+                <textarea id="${id}_caption" rows="2" placeholder="Legenda da imagem (opcional)" class="input resize-none text-sm w-full mb-2" oninput="updateBlockData('${id}','caption',this.value)"></textarea>
+                <input type="file" id="${id}_file" accept="image/*" class="input text-xs" onchange="handleBlockFile('${id}',event,'image')">
+                <div id="${id}_preview" class="hidden mt-2"><img class="w-16 h-16 object-cover rounded" id="${id}_thumb"></div>`;
+            break;
+        case 'video':
+            innerHtml += `
+                <textarea id="${id}_caption" rows="2" placeholder="Legenda do vídeo (opcional)" class="input resize-none text-sm w-full mb-2" oninput="updateBlockData('${id}','caption',this.value)"></textarea>
+                <input type="file" id="${id}_file" accept="video/mp4,video/3gpp" class="input text-xs" onchange="handleBlockFile('${id}',event,'video')">`;
+            break;
+        case 'audio':
+            innerHtml += `
+                <input type="file" id="${id}_file" accept="audio/ogg,audio/mp3,audio/mpeg,audio/opus" class="input text-xs" onchange="handleBlockFile('${id}',event,'audio')">
+                <div id="${id}_preview" class="hidden mt-2"><audio controls class="w-full h-8" id="${id}_audio"></audio></div>
+                <p class="text-[10px] text-slate-400 mt-1">Será enviado como PTT (mensagem de voz)</p>`;
+            break;
+        case 'document':
+            innerHtml += `
+                <input type="file" id="${id}_file" accept=".pdf,.doc,.docx,.xls,.xlsx,.zip" class="input text-xs" onchange="handleBlockFile('${id}',event,'document')">
+                <input type="text" id="${id}_filename" placeholder="Nome do arquivo (ex: catalogo.pdf)" class="input text-xs mt-2" oninput="updateBlockData('${id}','fileName',this.value)">`;
+            break;
+        case 'poll':
+            innerHtml += `
+                <input type="text" id="${id}_title" placeholder="Pergunta da enquete" class="input text-sm w-full mb-2" oninput="updateBlockData('${id}','pollTitle',this.value)">
+                <div id="${id}_options" class="space-y-1">
+                    <input type="text" class="block-poll-opt input text-xs" data-block="${id}" placeholder="Opção 1">
+                    <input type="text" class="block-poll-opt input text-xs" data-block="${id}" placeholder="Opção 2">
+                </div>
+                <button onclick="addBlockPollOption('${id}')" class="mt-1 text-[10px] text-purple-600 font-medium">+ opção</button>
+                <select id="${id}_selectable" class="input text-xs mt-1 w-24" oninput="updateBlockData('${id}','selectableCount',parseInt(this.value))">
+                    <option value="1">1 escolha</option><option value="2">2</option><option value="3">3</option><option value="0">Livre</option>
+                </select>`;
+            break;
+        case 'sticker':
+            innerHtml += `
+                <input type="file" id="${id}_file" accept="image/webp,image/png" class="input text-xs" onchange="handleBlockFile('${id}',event,'sticker')">
+                <textarea id="${id}_text" rows="1" placeholder="Texto acompanhando (opcional)" class="input resize-none text-xs w-full mt-2" oninput="updateBlockData('${id}','text',this.value)"></textarea>`;
+            break;
+        case 'product':
+            innerHtml += `
+                <select id="${id}_product" class="input text-sm w-full" onchange="selectBlockProduct('${id}',this.value)">
+                    <option value="">Selecione um produto...</option>
+                    ${(allProducts || []).map(p => `<option value="${p.id}" data-img="${p.imagem||p.image||''}" data-price="${p.preco||p.price||0}">${escapeHtml(p.nome||p.name||'Sem nome')} — R$ ${(p.preco||p.price||0).toFixed(2)}</option>`).join('')}
+                </select>
+                <div id="${id}_productPreview" class="hidden mt-2 flex items-center gap-3 p-2 bg-white rounded-lg border">
+                    <img id="${id}_productImg" class="w-12 h-12 object-cover rounded">
+                    <div>
+                        <p id="${id}_productName" class="text-sm font-medium text-slate-700"></p>
+                        <p id="${id}_productPrice" class="text-xs text-emerald-600"></p>
+                    </div>
+                </div>
+                <textarea id="${id}_text" rows="2" placeholder="Texto complementar (ex: Disponível no atacado!)" class="input resize-none text-xs w-full mt-2" oninput="updateBlockData('${id}','text',this.value)"></textarea>`;
+            break;
+        case 'pix':
+            innerHtml += `
+                <input type="text" id="${id}_text" placeholder="Chave PIX ou link do carrinho" class="input text-sm w-full" oninput="updateBlockData('${id}','text',this.value)">
+                <textarea id="${id}_msg" rows="2" placeholder="Mensagem de acompanhamento" class="input resize-none text-xs w-full mt-2" oninput="updateBlockData('${id}','message',this.value)"></textarea>`;
+            break;
+    }
+    
+    // Delay entre blocos (configurável)
+    innerHtml += `
+        <div class="flex items-center gap-2 mt-2 pt-2 border-t border-${bt.color}-200">
+            <i data-lucide="clock" class="w-3 h-3 text-slate-400"></i>
+            <label class="text-[10px] text-slate-500">Esperar</label>
+            <input type="number" id="${id}_delay" value="3" min="1" max="120" class="w-14 text-xs text-center border rounded px-1 py-0.5" oninput="updateBlockData('${id}','delay',parseInt(this.value))">
+            <label class="text-[10px] text-slate-500">seg antes de enviar</label>
+        </div>`;
+    
+    div.innerHTML = innerHtml;
+    container.appendChild(div);
+    
+    // Fecha menu
+    const menu = document.getElementById('blockMenu');
+    if (menu) menu.classList.add('hidden');
+    
+    lucide.createIcons();
+    updateCampaignSummary();
+    renumberBlocks(containerId);
+}
+
+function updateBlockData(blockId, key, value) {
+    const block = campaignBlocks.find(b => b.id === blockId);
+    if (block) {
+        if (key === 'delay') block.delay = value;
+        else block.data[key] = value;
+    }
+}
+
+function handleBlockFile(blockId, event, mediaType) {
     const file = event.target.files[0];
     if (!file) return;
-    
     const reader = new FileReader();
     reader.onload = (e) => {
-        campaignImageBase64 = e.target.result;
-        document.getElementById('campaignImageThumb').src = e.target.result;
-        document.getElementById('campaignImagePreview').classList.remove('hidden');
+        const block = campaignBlocks.find(b => b.id === blockId);
+        if (block) {
+            block.data.base64 = e.target.result;
+            block.data.mimetype = file.type;
+            block.data.fileName = file.name;
+        }
+        // Preview
+        const preview = document.getElementById(`${blockId}_preview`);
+        if (mediaType === 'image' && preview) {
+            preview.classList.remove('hidden');
+            const thumb = document.getElementById(`${blockId}_thumb`);
+            if (thumb) thumb.src = e.target.result;
+        } else if (mediaType === 'audio' && preview) {
+            preview.classList.remove('hidden');
+            const audio = document.getElementById(`${blockId}_audio`);
+            if (audio) audio.src = e.target.result;
+        }
     };
     reader.readAsDataURL(file);
 }
 
-function removeCampaignImage() {
-    campaignImageBase64 = null;
-    document.getElementById('campaignImage').value = '';
-    document.getElementById('campaignImagePreview').classList.add('hidden');
+function addBlockPollOption(blockId) {
+    const container = document.getElementById(`${blockId}_options`);
+    if (!container) return;
+    const count = container.querySelectorAll('.block-poll-opt').length;
+    if (count >= 12) return;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'block-poll-opt input text-xs';
+    input.dataset.block = blockId;
+    input.placeholder = `Opção ${count + 1}`;
+    container.appendChild(input);
 }
 
-function updateCampaignSummary() {
-    if (!selectedAudience) return;
+function selectBlockProduct(blockId, productId) {
+    const product = (allProducts || []).find(p => String(p.id) === String(productId));
+    const block = campaignBlocks.find(b => b.id === blockId);
+    const preview = document.getElementById(`${blockId}_productPreview`);
     
-    let count = 0;
-    if (selectedAudience === 'all') count = allClients.length;
-    else if (selectedAudience === 'group') {
-        const selected = getSelectedGroups();
-        if (selected.length === 0) {
-            document.getElementById('campaignSummary').textContent = 'Selecione pelo menos 1 grupo';
-            return;
+    if (product && block) {
+        block.data.productId = product.id;
+        block.data.productName = product.nome || product.name;
+        block.data.productPrice = product.preco || product.price;
+        block.data.productImage = product.imagem || product.image;
+        block.data.productLink = product.link || '';
+        
+        if (preview) {
+            preview.classList.remove('hidden');
+            document.getElementById(`${blockId}_productImg`).src = product.imagem || product.image || '';
+            document.getElementById(`${blockId}_productName`).textContent = product.nome || product.name;
+            document.getElementById(`${blockId}_productPrice`).textContent = `R$ ${(product.preco || product.price || 0).toFixed(2)}`;
         }
-        document.getElementById('campaignSummary').textContent = `${selected.length} grupo${selected.length > 1 ? 's' : ''} selecionado${selected.length > 1 ? 's' : ''} • ${selected.length} mensagen${selected.length > 1 ? 's' : ''}`;
+    }
+}
+
+function moveBlock(blockId, direction, containerId = 'campaignBlocks') {
+    const arr = containerId === 'campaignBlocks' ? campaignBlocks : null;
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    
+    const el = document.getElementById(blockId);
+    if (!el) return;
+    
+    if (direction === 'up' && el.previousElementSibling) {
+        container.insertBefore(el, el.previousElementSibling);
+        if (arr) {
+            const idx = arr.findIndex(b => b.id === blockId);
+            if (idx > 0) [arr[idx - 1], arr[idx]] = [arr[idx], arr[idx - 1]];
+        }
+    } else if (direction === 'down' && el.nextElementSibling) {
+        container.insertBefore(el.nextElementSibling, el);
+        if (arr) {
+            const idx = arr.findIndex(b => b.id === blockId);
+            if (idx < arr.length - 1) [arr[idx], arr[idx + 1]] = [arr[idx + 1], arr[idx]];
+        }
+    }
+    renumberBlocks(containerId);
+}
+
+function reorderBlock(draggedId, targetId, containerId) {
+    const container = document.getElementById(containerId);
+    const dragged = document.getElementById(draggedId);
+    const target = document.getElementById(targetId);
+    if (!container || !dragged || !target || draggedId === targetId) return;
+    container.insertBefore(dragged, target);
+    // Reorder array
+    if (containerId === 'campaignBlocks') {
+        const oldIdx = campaignBlocks.findIndex(b => b.id === draggedId);
+        const [moved] = campaignBlocks.splice(oldIdx, 1);
+        const newIdx = campaignBlocks.findIndex(b => b.id === targetId);
+        campaignBlocks.splice(newIdx, 0, moved);
+    }
+    renumberBlocks(containerId);
+}
+
+function removeBlock(blockId, containerId = 'campaignBlocks') {
+    document.getElementById(blockId)?.remove();
+    if (containerId === 'campaignBlocks') {
+        campaignBlocks = campaignBlocks.filter(b => b.id !== blockId);
+    }
+    renumberBlocks(containerId);
+    updateCampaignSummary();
+}
+
+function renumberBlocks(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    Array.from(container.children).forEach((el, i) => {
+        const badge = el.querySelector('span.text-xs.font-bold');
+        if (badge) badge.textContent = `#${i + 1}`;
+    });
+}
+
+// Coletar dados dos blocos do DOM (para poll options que são inputs dinâmicos)
+function collectBlocksData(containerId = 'campaignBlocks') {
+    const container = document.getElementById(containerId);
+    if (!container) return [];
+    
+    return Array.from(container.children).map(el => {
+        const blockId = el.id;
+        const type = el.getAttribute('data-block-type');
+        const delayInput = document.getElementById(`${blockId}_delay`);
+        const delay = delayInput ? parseInt(delayInput.value) || 3 : 3;
+        const data = {};
+        
+        // Coletar texto
+        const textEl = document.getElementById(`${blockId}_text`);
+        if (textEl) data.text = textEl.value;
+        
+        // Coletar caption
+        const captionEl = document.getElementById(`${blockId}_caption`);
+        if (captionEl) data.caption = captionEl.value;
+        
+        // Coletar base64 do block in-memory
+        const memBlock = campaignBlocks.find(b => b.id === blockId);
+        if (memBlock?.data?.base64) {
+            data.base64 = memBlock.data.base64;
+            data.mimetype = memBlock.data.mimetype;
+            data.fileName = memBlock.data.fileName;
+        }
+        
+        // Coletar poll
+        if (type === 'poll') {
+            const titleEl = document.getElementById(`${blockId}_title`);
+            data.pollTitle = titleEl ? titleEl.value : '';
+            data.pollOptions = Array.from(document.querySelectorAll(`.block-poll-opt[data-block="${blockId}"]`))
+                .map(el => el.value.trim()).filter(v => v);
+            const selEl = document.getElementById(`${blockId}_selectable`);
+            data.selectableCount = selEl ? parseInt(selEl.value) : 1;
+        }
+        
+        // Coletar produto
+        if (type === 'product' && memBlock?.data?.productId) {
+            Object.assign(data, {
+                productId: memBlock.data.productId,
+                productName: memBlock.data.productName,
+                productPrice: memBlock.data.productPrice,
+                productImage: memBlock.data.productImage,
+                productLink: memBlock.data.productLink
+            });
+        }
+        
+        // PIX msg
+        const msgEl = document.getElementById(`${blockId}_msg`);
+        if (msgEl) data.message = msgEl.value;
+        
+        // Filename
+        const fnEl = document.getElementById(`${blockId}_filename`);
+        if (fnEl) data.fileName = fnEl.value || data.fileName;
+        
+        return { id: blockId, type, delay, data };
+    });
+}
+
+// ============================================================================
+// SCRIPTS — Salvar / Carregar sequências reutilizáveis
+// ============================================================================
+
+function saveAsScript() {
+    const blocks = collectBlocksData('campaignBlocks');
+    if (blocks.length === 0) return alert('Adicione pelo menos uma ação');
+    
+    const name = prompt('Nome do script (ex: "Lançamento Rasteirinhas"):');
+    if (!name) return;
+    
+    // Remover base64 dos blocos para não sobrecarregar localStorage
+    const lightBlocks = blocks.map(b => {
+        const d = { ...b.data };
+        delete d.base64; // Muito grande para localStorage
+        return { ...b, data: d };
+    });
+    
+    const script = {
+        id: Date.now(),
+        name,
+        blocks: lightBlocks,
+        createdAt: Date.now()
+    };
+    
+    savedScripts.push(script);
+    localStorage.setItem('crm_scripts', JSON.stringify(savedScripts));
+    alert(`Script "${name}" salvo com ${blocks.length} ações!`);
+}
+
+function openLoadScript() {
+    document.getElementById('loadScriptModal').classList.remove('hidden');
+    renderScriptsList();
+    lucide.createIcons();
+}
+
+function closeLoadScript() {
+    document.getElementById('loadScriptModal').classList.add('hidden');
+}
+
+function renderScriptsList() {
+    const container = document.getElementById('scriptsList');
+    if (!container) return;
+    
+    if (savedScripts.length === 0) {
+        container.innerHTML = '<p class="text-sm text-slate-400 text-center py-6">Nenhum script salvo</p>';
         return;
     }
-    else {
-        const el = document.getElementById(`count${selectedAudience.charAt(0).toUpperCase() + selectedAudience.slice(1)}`);
-        count = el ? parseInt(el.textContent) || 0 : 0;
+    
+    container.innerHTML = savedScripts.map(s => `
+        <div class="flex items-center justify-between p-3 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors">
+            <div>
+                <p class="text-sm font-medium text-slate-700">${escapeHtml(s.name)}</p>
+                <p class="text-xs text-slate-400">${s.blocks.length} ações • ${new Date(s.createdAt).toLocaleDateString('pt-BR')}</p>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="loadScript(${s.id})" class="text-xs px-3 py-1.5 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 font-medium">Carregar</button>
+                <button onclick="deleteScript(${s.id})" class="text-xs px-2 py-1.5 text-red-500 hover:bg-red-50 rounded-lg">
+                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                </button>
+            </div>
+        </div>
+    `).join('');
+    
+    lucide.createIcons();
+}
+
+function loadScript(scriptId) {
+    const script = savedScripts.find(s => s.id === scriptId);
+    if (!script) return;
+    
+    // Limpar blocos atuais
+    campaignBlocks = [];
+    blockCounter = 0;
+    const container = document.getElementById('campaignBlocks');
+    if (container) container.innerHTML = '';
+    
+    // Recriar blocos do script
+    script.blocks.forEach(b => {
+        addBlock(b.type, 'campaignBlocks');
+        const block = campaignBlocks[campaignBlocks.length - 1];
+        
+        // Restaurar dados
+        setTimeout(() => {
+            const textEl = document.getElementById(`${block.id}_text`);
+            if (textEl && b.data.text) textEl.value = b.data.text;
+            
+            const captionEl = document.getElementById(`${block.id}_caption`);
+            if (captionEl && b.data.caption) captionEl.value = b.data.caption;
+            
+            const titleEl = document.getElementById(`${block.id}_title`);
+            if (titleEl && b.data.pollTitle) titleEl.value = b.data.pollTitle;
+            
+            const delayEl = document.getElementById(`${block.id}_delay`);
+            if (delayEl) delayEl.value = b.delay || 3;
+            
+            const msgEl = document.getElementById(`${block.id}_msg`);
+            if (msgEl && b.data.message) msgEl.value = b.data.message;
+            
+            // Restaurar opções de poll
+            if (b.type === 'poll' && b.data.pollOptions) {
+                const optContainer = document.getElementById(`${block.id}_options`);
+                if (optContainer) {
+                    optContainer.innerHTML = '';
+                    b.data.pollOptions.forEach((opt, i) => {
+                        const inp = document.createElement('input');
+                        inp.type = 'text';
+                        inp.className = 'block-poll-opt input text-xs';
+                        inp.dataset.block = block.id;
+                        inp.placeholder = `Opção ${i + 1}`;
+                        inp.value = opt;
+                        optContainer.appendChild(inp);
+                    });
+                }
+            }
+            
+            block.data = { ...b.data };
+            block.delay = b.delay || 3;
+        }, 50);
+    });
+    
+    closeLoadScript();
+    updateCampaignSummary();
+}
+
+function deleteScript(scriptId) {
+    if (!confirm('Excluir este script?')) return;
+    savedScripts = savedScripts.filter(s => s.id !== scriptId);
+    localStorage.setItem('crm_scripts', JSON.stringify(savedScripts));
+    renderScriptsList();
+}
+
+// ============================================================================
+// ENVIO RÁPIDO — Sequência para chat individual
+// ============================================================================
+
+function openQuickSend() {
+    if (!currentRemoteJid) return alert('Abra um chat primeiro');
+    
+    const modal = document.getElementById('quickSendModal');
+    if (!modal) return;
+    
+    modal.classList.remove('hidden');
+    
+    // Mostrar destino
+    const targetEl = document.getElementById('quickSendTarget');
+    if (targetEl) targetEl.textContent = `Para: ${currentChatName || currentRemoteJid}`;
+    
+    // Renderizar scripts salvos
+    const scriptsEl = document.getElementById('quickSendScripts');
+    if (scriptsEl) {
+        if (savedScripts.length === 0) {
+            scriptsEl.innerHTML = '<p class="text-xs text-slate-400">Nenhum script salvo. Crie um em Campanhas.</p>';
+        } else {
+            scriptsEl.innerHTML = savedScripts.map(s => `
+                <button onclick="loadQuickSendScript(${s.id})" class="text-xs px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 border border-indigo-200 font-medium">
+                    ${escapeHtml(s.name)} (${s.blocks.length})
+                </button>
+            `).join('');
+        }
     }
     
-    const batchSize = parseInt(document.getElementById('batchSize').value);
-    const interval = parseInt(document.getElementById('batchInterval').value);
+    // Limpar blocos
+    const blocksEl = document.getElementById('quickSendBlocks');
+    if (blocksEl) blocksEl.innerHTML = '';
     
-    const batches = Math.ceil(count / batchSize);
-    const totalMinutes = batches * interval;
-    const hours = Math.floor(totalMinutes / 60);
-    const mins = totalMinutes % 60;
-    
-    document.getElementById('campaignSummary').textContent = 
-        `${count} contatos • ${batches} lotes • ~${hours}h${mins}min para completar`;
+    lucide.createIcons();
 }
+
+function closeQuickSend() {
+    document.getElementById('quickSendModal')?.classList.add('hidden');
+}
+
+function loadQuickSendScript(scriptId) {
+    const script = savedScripts.find(s => s.id === scriptId);
+    if (!script) return;
+    
+    const container = document.getElementById('quickSendBlocks');
+    if (!container) return;
+    container.innerHTML = '';
+    
+    script.blocks.forEach(b => {
+        addBlock(b.type, 'quickSendBlocks');
+        // Preencher dados (simples - texto e delays)
+        setTimeout(() => {
+            const lastEl = container.lastElementChild;
+            if (!lastEl) return;
+            const bid = lastEl.id;
+            const textEl = document.getElementById(`${bid}_text`);
+            if (textEl && b.data.text) textEl.value = b.data.text;
+            const captionEl = document.getElementById(`${bid}_caption`);
+            if (captionEl && b.data.caption) captionEl.value = b.data.caption;
+            const titleEl = document.getElementById(`${bid}_title`);
+            if (titleEl && b.data.pollTitle) titleEl.value = b.data.pollTitle;
+            const msgEl = document.getElementById(`${bid}_msg`);
+            if (msgEl && b.data.message) msgEl.value = b.data.message;
+            const delayEl = document.getElementById(`${bid}_delay`);
+            if (delayEl) delayEl.value = b.delay || 3;
+            if (b.type === 'poll' && b.data.pollOptions) {
+                const optContainer = document.getElementById(`${bid}_options`);
+                if (optContainer) {
+                    optContainer.innerHTML = '';
+                    b.data.pollOptions.forEach((opt, i) => {
+                        const inp = document.createElement('input');
+                        inp.type = 'text'; inp.className = 'block-poll-opt input text-xs';
+                        inp.dataset.block = bid; inp.placeholder = `Opção ${i + 1}`; inp.value = opt;
+                        optContainer.appendChild(inp);
+                    });
+                }
+            }
+        }, 50);
+    });
+}
+
+async function executeQuickSend() {
+    const blocks = collectBlocksData('quickSendBlocks');
+    if (blocks.length === 0) return alert('Adicione pelo menos uma ação');
+    if (!currentRemoteJid) return alert('Nenhum chat aberto');
+    
+    const simulate = document.getElementById('quickSendSimulate')?.checked;
+    const phone = currentRemoteJid;
+    
+    closeQuickSend();
+    
+    // Processar blocos em sequência
+    for (let i = 0; i < blocks.length; i++) {
+        const block = blocks[i];
+        const contact = { 
+            name: currentChatName || 'Cliente', 
+            phone: phone 
+        };
+        
+        try {
+            if (simulate) await sendPresence(phone, block.type === 'audio' ? 'recording' : 'composing');
+            await new Promise(r => setTimeout(r, (block.delay || 3) * 1000));
+            if (simulate) await sendPresence(phone, 'paused');
+            
+            await executeBlock(block, contact);
+            
+        } catch(e) {
+            console.error(`[QuickSend] Erro no bloco ${i + 1}:`, e);
+        }
+    }
+    
+    // Recarregar mensagens
+    if (typeof loadMessages === 'function') loadMessages(phone);
+}
+
+// ============================================================================
+// EXECUTAR BLOCO — Motor unificado de envio
+// ============================================================================
+
+function injectVariables(text, contact) {
+    if (!text) return text;
+    const client = allClients.find(c => {
+        const cPhone = (c.telefone || c.celular || '').replace(/\D/g, '');
+        const contactPhone = (contact.phone || '').replace(/\D/g, '');
+        return cPhone && contactPhone && (cPhone.endsWith(contactPhone.slice(-9)) || contactPhone.endsWith(cPhone.slice(-9)));
+    });
+    
+    const lastOrder = client ? (allOrders || []).filter(o => o.cliente_id == client.id).sort((a,b) => new Date(b.data) - new Date(a.data))[0] : null;
+    
+    return text
+        .replace(/\{\{nome\}\}/gi, contact.name || client?.nome || 'Cliente')
+        .replace(/\{\{nome_cliente\}\}/gi, contact.name || client?.nome || 'Cliente')
+        .replace(/\{\{cidade\}\}/gi, client?.cidade || client?.city || '')
+        .replace(/\{\{telefone\}\}/gi, contact.phone || '')
+        .replace(/\{\{cupom\}\}/gi, client?.cupom || 'VEXX10')
+        .replace(/\{\{link_carrinho\}\}/gi, client?.link_carrinho || '')
+        .replace(/\{\{ultimo_pedido\}\}/gi, lastOrder ? `#${lastOrder.codigo || lastOrder.id} (R$ ${parseFloat(lastOrder.total||0).toFixed(2)})` : 'nenhum');
+}
+
+async function sendPresence(remoteJid, type = 'composing') {
+    try {
+        await fetch(`${API_BASE}/whatsapp/send-presence`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ remoteJid, presence: type })
+        });
+    } catch(e) {
+        console.warn('[Presence]', e.message);
+    }
+}
+
+async function executeBlock(block, contact) {
+    const phone = contact.phone.includes('@') ? contact.phone : contact.phone.replace(/\D/g, '');
+    const data = block.data || {};
+    
+    switch (block.type) {
+        case 'text': {
+            const text = injectVariables(data.text || '', contact);
+            if (!text) return;
+            await fetch(`${API_BASE}/whatsapp/send-message`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ number: phone, text })
+            });
+            break;
+        }
+        case 'image': {
+            const caption = injectVariables(data.caption || '', contact);
+            await fetch(`${API_BASE}/whatsapp/send-media`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    number: phone,
+                    mediaType: 'image',
+                    media: data.base64,
+                    caption
+                })
+            });
+            break;
+        }
+        case 'video': {
+            const caption = injectVariables(data.caption || '', contact);
+            await fetch(`${API_BASE}/whatsapp/send-media`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    number: phone,
+                    mediaType: 'video',
+                    media: data.base64,
+                    caption
+                })
+            });
+            break;
+        }
+        case 'audio': {
+            await fetch(`${API_BASE}/whatsapp/send-media`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    number: phone,
+                    mediaType: 'audio',
+                    media: data.base64,
+                    encoding: true
+                })
+            });
+            break;
+        }
+        case 'document': {
+            await fetch(`${API_BASE}/whatsapp/send-media`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    number: phone,
+                    mediaType: 'document',
+                    media: data.base64,
+                    fileName: data.fileName || 'arquivo'
+                })
+            });
+            break;
+        }
+        case 'poll': {
+            const title = injectVariables(data.pollTitle || '', contact);
+            const options = data.pollOptions || [];
+            if (options.length < 2) return;
+            await fetch(`${API_BASE}/whatsapp/send-poll`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    number: phone,
+                    title,
+                    options,
+                    selectableCount: data.selectableCount || 1
+                })
+            });
+            break;
+        }
+        case 'sticker': {
+            await fetch(`${API_BASE}/whatsapp/send-media`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    number: phone,
+                    mediaType: 'sticker',
+                    media: data.base64
+                })
+            });
+            // Texto acompanhando
+            if (data.text) {
+                await new Promise(r => setTimeout(r, 1500));
+                const text = injectVariables(data.text, contact);
+                await fetch(`${API_BASE}/whatsapp/send-message`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ number: phone, text })
+                });
+            }
+            break;
+        }
+        case 'product': {
+            // Envia imagem do produto + texto descritivo
+            const pName = data.productName || '';
+            const pPrice = data.productPrice || 0;
+            const pImg = data.productImage || '';
+            let text = injectVariables(data.text || '', contact);
+            const productMsg = `*${pName}*\nR$ ${parseFloat(pPrice).toFixed(2)}${data.productLink ? '\n' + data.productLink : ''}${text ? '\n\n' + text : ''}`;
+            
+            if (pImg) {
+                await fetch(`${API_BASE}/whatsapp/send-media`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        number: phone,
+                        mediaType: 'image',
+                        media: pImg,
+                        caption: productMsg
+                    })
+                });
+            } else {
+                await fetch(`${API_BASE}/whatsapp/send-message`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ number: phone, text: productMsg })
+                });
+            }
+            break;
+        }
+        case 'pix': {
+            let msg = injectVariables(data.message || '', contact);
+            const pixText = data.text || '';
+            const fullMsg = msg ? `${msg}\n\n${pixText}` : pixText;
+            if (fullMsg) {
+                await fetch(`${API_BASE}/whatsapp/send-message`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ number: phone, text: fullMsg })
+                });
+            }
+            break;
+        }
+    }
+}
+
+// ============================================================================
+// OPEN / CLOSE / SAVE CAMPAIGN
+// ============================================================================
 
 function openNewCampaign() {
     document.getElementById('newCampaignModal').classList.remove('hidden');
+    campaignBlocks = [];
+    blockCounter = 0;
+    const container = document.getElementById('campaignBlocks');
+    if (container) container.innerHTML = '';
     loadCampaignData();
     lucide.createIcons();
 }
@@ -5246,139 +5996,101 @@ function openNewCampaign() {
 function closeNewCampaign() {
     document.getElementById('newCampaignModal').classList.add('hidden');
     document.getElementById('campaignName').value = '';
-    document.getElementById('campaignMessage').value = '';
     selectedAudience = null;
-    campaignImageBase64 = null;
-    document.querySelectorAll('.audience-btn').forEach(btn => {
-        btn.classList.remove('border-primary-500', 'bg-primary-50');
-        btn.classList.add('border-slate-200');
-    });
+    const sel = document.getElementById('campaignAudienceSelect');
+    if (sel) sel.value = '';
+    campaignBlocks = [];
+    blockCounter = 0;
+    const container = document.getElementById('campaignBlocks');
+    if (container) container.innerHTML = '';
     document.getElementById('groupSelector').classList.add('hidden');
     document.querySelectorAll('.group-checkbox').forEach(cb => cb.checked = false);
     updateSelectedGroupsCount();
-    
-    // Reset VEXX 2.0 fields
-    selectedCampaignType = 'text';
-    selectedMediaId = null;
-    uploadedMediaBase64 = null;
-    uploadedMediaMime = null;
-    selectCampaignType('text');
-    const pollContainer = document.getElementById('pollOptionsContainer');
-    if (pollContainer) {
-        pollContainer.innerHTML = `
-            <div class="flex items-center gap-2">
-                <input type="text" class="poll-option input text-sm flex-1" placeholder="Opção 1">
-                <button onclick="removePollOption(this)" class="text-red-400 hover:text-red-600 p-1" title="Remover">✕</button>
-            </div>
-            <div class="flex items-center gap-2">
-                <input type="text" class="poll-option input text-sm flex-1" placeholder="Opção 2">
-                <button onclick="removePollOption(this)" class="text-red-400 hover:text-red-600 p-1" title="Remover">✕</button>
-            </div>
-        `;
-    }
-    const mediaUploadPreview = document.getElementById('mediaUploadPreview');
-    if (mediaUploadPreview) mediaUploadPreview.classList.add('hidden');
-    const mediaUploadFile = document.getElementById('mediaUploadFile');
-    if (mediaUploadFile) mediaUploadFile.value = '';
 }
 
 async function saveCampaign() {
-    const name = document.getElementById('campaignName').value.trim();
-    const message = document.getElementById('campaignMessage').value.trim();
+    const name = document.getElementById('campaignName')?.value.trim();
+    if (!name) return alert('Dê um nome à campanha');
+    if (!selectedAudience) return alert('Selecione o público alvo');
     
-    // Validação baseada no tipo
-    if (!name || !selectedAudience) {
-        return alert('Preencha nome e selecione o público alvo');
-    }
+    const blocks = collectBlocksData('campaignBlocks');
+    if (blocks.length === 0) return alert('Adicione pelo menos uma ação na sequência');
     
-    if (selectedCampaignType === 'poll') {
-        const pollTitle = document.getElementById('pollTitle')?.value.trim();
-        const pollOptions = getPollOptions();
-        if (!pollTitle) return alert('Preencha a pergunta da enquete');
-        if (pollOptions.length < 2) return alert('Adicione pelo menos 2 opções na enquete');
-    } else if (selectedCampaignType === 'audio' || selectedCampaignType === 'sticker') {
-        if (!selectedMediaId && !uploadedMediaBase64) {
-            return alert('Selecione uma mídia da biblioteca ou faça upload de um arquivo');
+    // Validar blocos
+    for (let i = 0; i < blocks.length; i++) {
+        const b = blocks[i];
+        if (b.type === 'text' && !b.data.text) return alert(`Bloco #${i+1} (Texto): escreva a mensagem`);
+        if (b.type === 'poll') {
+            if (!b.data.pollTitle) return alert(`Bloco #${i+1} (Enquete): preencha a pergunta`);
+            if (!b.data.pollOptions || b.data.pollOptions.length < 2) return alert(`Bloco #${i+1} (Enquete): mínimo 2 opções`);
         }
-    } else {
-        if (!message) return alert('Digite a mensagem');
+        if (['image','video','audio','document','sticker'].includes(b.type) && !b.data.base64) {
+            return alert(`Bloco #${i+1} (${BLOCK_TYPES[b.type]?.label}): selecione o arquivo`);
+        }
     }
     
-    const scheduled = document.getElementById('scheduleEnabled').checked;
+    const scheduled = document.getElementById('scheduleEnabled')?.checked;
     let scheduleTime = null;
-    
     if (scheduled) {
-        const date = document.getElementById('scheduleDate').value;
-        const time = document.getElementById('scheduleTime').value;
-        if (!date || !time) return alert('Selecione data e hora para agendamento');
+        const date = document.getElementById('scheduleDate')?.value;
+        const time = document.getElementById('scheduleTime')?.value;
+        if (!date || !time) return alert('Selecione data e hora');
         scheduleTime = new Date(`${date}T${time}`).getTime();
     }
     
-    // Construir lista de contatos baseado no público
+    // Construir lista de contatos
     let contacts = [];
     if (selectedAudience === 'all') {
         contacts = allClients.map(c => ({ id: c.id, name: c.nome, phone: c.telefone || c.celular }));
     } else if (selectedAudience === 'inactive') {
-        const ninetyDaysAgo = Date.now() - (90 * 24 * 60 * 60 * 1000);
+        const nd = Date.now() - (90 * 24 * 60 * 60 * 1000);
         contacts = allClients.filter(c => {
-            const clientOrders = (allOrders || []).filter(o => o.cliente_id == c.id).sort((a,b) => new Date(b.data) - new Date(a.data));
-            if (clientOrders.length === 0) return true;
-            return new Date(clientOrders[0].data).getTime() < ninetyDaysAgo;
+            const o = (allOrders || []).filter(x => x.cliente_id == c.id).sort((a,b) => new Date(b.data) - new Date(a.data));
+            return o.length === 0 || new Date(o[0].data).getTime() < nd;
         }).map(c => ({ id: c.id, name: c.nome, phone: c.telefone || c.celular }));
     } else if (selectedAudience === 'vip') {
         contacts = allClients.filter(c => {
-            const clientOrders = (allOrders || []).filter(o => o.cliente_id == c.id);
-            const total = clientOrders.reduce((sum, o) => sum + parseFloat(o.total || 0), 0);
-            const avg = clientOrders.length > 0 ? total / clientOrders.length : 0;
-            return avg >= 500;
+            const o = (allOrders || []).filter(x => x.cliente_id == c.id);
+            const t = o.reduce((s, x) => s + parseFloat(x.total || 0), 0);
+            return o.length > 0 && t / o.length >= 500;
         }).map(c => ({ id: c.id, name: c.nome, phone: c.telefone || c.celular }));
     } else if (selectedAudience === 'group') {
-        // Para grupos: enviar mensagem para cada grupo selecionado
-        const selectedGroups = getSelectedGroups();
-        if (selectedGroups.length === 0) return alert('Selecione pelo menos um grupo');
-        contacts = selectedGroups.map(g => ({ id: g.jid, name: g.name, phone: g.jid }));
+        const groups = getSelectedGroups();
+        if (groups.length === 0) return alert('Selecione pelo menos um grupo');
+        contacts = groups.map(g => ({ id: g.jid, name: g.name, phone: g.jid }));
     }
+    
+    if (contacts.length === 0) return alert('Nenhum contato encontrado para este público');
     
     const campaign = {
         id: Date.now(),
         name,
-        message,
-        image: campaignImageBase64,
-        campaignType: selectedCampaignType,
-        pollTitle: selectedCampaignType === 'poll' ? (document.getElementById('pollTitle')?.value.trim() || '') : null,
-        pollOptions: selectedCampaignType === 'poll' ? getPollOptions() : null,
-        pollSelectableCount: selectedCampaignType === 'poll' ? parseInt(document.getElementById('pollSelectableCount')?.value || '1') : null,
-        mediaId: selectedMediaId,
-        mediaBase64: uploadedMediaBase64,
-        mediaMime: uploadedMediaMime,
+        blocks, // Sequência de ações!
         audience: selectedAudience,
         targetGroups: selectedAudience === 'group' ? getSelectedGroups().map(g => g.jid) : [],
-        batchSize: parseInt(document.getElementById('batchSize').value),
-        batchInterval: parseInt(document.getElementById('batchInterval').value),
+        batchSize: parseInt(document.getElementById('batchSize')?.value || '15'),
+        batchInterval: parseInt(document.getElementById('batchInterval')?.value || '20'),
         messageDelay: parseInt(document.getElementById('messageDelay')?.value || '5'),
+        simulatePresence: document.getElementById('simulatePresence')?.checked ?? true,
         scheduledFor: scheduleTime,
         status: scheduled ? 'scheduled' : 'running',
         createdAt: Date.now(),
         sent: 0,
         failed: 0,
         total: contacts.length,
-        contacts: contacts,
+        contacts,
         currentBatch: 0,
         lastBatchAt: null
     };
     
     allCampaigns.push(campaign);
     saveCampaigns();
-    
     closeNewCampaign();
     renderCampaigns();
     updateCampaignStats();
     
-    if (!scheduled) {
-        startCampaign(campaign.id);
-    }
-    
-    alert(scheduled ? 'Campanha agendada com sucesso!' : 'Campanha iniciada!');
+    if (!scheduled) startCampaign(campaign.id);
+    alert(scheduled ? 'Campanha agendada!' : `Campanha iniciada! ${blocks.length} ações × ${contacts.length} destinatários`);
 }
 
 function renderCampaigns() {
@@ -5386,7 +6098,6 @@ function renderCampaigns() {
     if (!container) return;
     
     let filtered = allCampaigns;
-    
     if (currentCampaignFilter !== 'all') {
         filtered = allCampaigns.filter(c => c.status === currentCampaignFilter);
     }
@@ -5399,47 +6110,32 @@ function renderCampaigns() {
                 </div>
                 <p class="text-slate-500 font-medium">Nenhuma campanha ${currentCampaignFilter !== 'all' ? 'neste status' : 'criada'}</p>
                 <button onclick="openNewCampaign()" class="btn btn-primary mt-4">
-                    <i data-lucide="plus" class="w-4 h-4"></i>
-                    Nova Campanha
+                    <i data-lucide="plus" class="w-4 h-4"></i> Nova Campanha
                 </button>
-            </div>
-        `;
+            </div>`;
         lucide.createIcons();
         return;
     }
     
     container.innerHTML = filtered.map(c => {
         const progress = c.total > 0 ? (c.sent / c.total * 100).toFixed(0) : 0;
-        const statusColors = {
-            scheduled: 'bg-amber-100 text-amber-700',
-            running: 'bg-blue-100 text-blue-700',
-            completed: 'bg-emerald-100 text-emerald-700',
-            paused: 'bg-slate-100 text-slate-700'
-        };
-        const statusLabels = {
-            scheduled: 'Agendada',
-            running: 'Em Andamento',
-            completed: 'Concluída',
-            paused: 'Pausada'
-        };
+        const statusColors = { scheduled: 'bg-amber-100 text-amber-700', running: 'bg-blue-100 text-blue-700', completed: 'bg-emerald-100 text-emerald-700', paused: 'bg-slate-100 text-slate-700' };
+        const statusLabels = { scheduled: 'Agendada', running: 'Em Andamento', completed: 'Concluída', paused: 'Pausada' };
+        const blockInfo = c.blocks ? `${c.blocks.length} ações` : (c.campaignType || 'texto');
         
         return `
             <div class="card p-5">
-                <div class="flex justify-between items-start mb-4">
+                <div class="flex justify-between items-start mb-3">
                     <div>
                         <h3 class="font-semibold text-slate-800">${escapeHtml(c.name)}</h3>
-                        <p class="text-xs text-slate-500 mt-1">Criada em ${new Date(c.createdAt).toLocaleDateString('pt-BR')}</p>
+                        <p class="text-xs text-slate-500 mt-0.5">${new Date(c.createdAt).toLocaleDateString('pt-BR')} • ${blockInfo}</p>
                     </div>
                     <span class="badge ${statusColors[c.status]}">${statusLabels[c.status]}</span>
                 </div>
-                
-                <p class="text-sm text-slate-600 mb-4 line-clamp-2">${escapeHtml(c.message)}</p>
-                
-                <div class="flex items-center gap-4 mb-4">
+                <div class="flex items-center gap-4 mb-3">
                     <div class="flex-1">
                         <div class="flex justify-between text-xs text-slate-500 mb-1">
-                            <span>${c.sent}/${c.total} enviadas</span>
-                            <span>${progress}%</span>
+                            <span>${c.sent}/${c.total}</span><span>${progress}%</span>
                         </div>
                         <div class="h-2 rounded-full bg-slate-200 overflow-hidden">
                             <div class="h-full bg-emerald-500 rounded-full transition-all" style="width: ${progress}%"></div>
@@ -5447,47 +6143,23 @@ function renderCampaigns() {
                     </div>
                     ${c.failed > 0 ? `<span class="text-xs text-red-500">${c.failed} falhas</span>` : ''}
                 </div>
-                
-                <div class="flex justify-between items-center">
-                    ${c.scheduledFor ? `<span class="text-xs text-slate-500"><i data-lucide="clock" class="w-3 h-3 inline mr-1"></i>${new Date(c.scheduledFor).toLocaleString('pt-BR')}</span>` : '<span></span>'}
-                    <div class="flex gap-2">
-                        ${c.status === 'running' ? `
-                            <button onclick="pauseCampaign(${c.id})" class="btn btn-secondary text-xs py-1.5 px-3">
-                                <i data-lucide="pause" class="w-3 h-3"></i> Pausar
-                            </button>
-                        ` : ''}
-                        ${c.status === 'paused' ? `
-                            <button onclick="resumeCampaign(${c.id})" class="btn btn-success text-xs py-1.5 px-3">
-                                <i data-lucide="play" class="w-3 h-3"></i> Retomar
-                            </button>
-                        ` : ''}
-                        ${c.status === 'scheduled' ? `
-                            <button onclick="startCampaign(${c.id})" class="btn btn-success text-xs py-1.5 px-3">
-                                <i data-lucide="play" class="w-3 h-3"></i> Iniciar
-                            </button>
-                        ` : ''}
-                        <button onclick="deleteCampaign(${c.id})" class="btn btn-danger text-xs py-1.5 px-3">
-                            <i data-lucide="trash-2" class="w-3 h-3"></i>
-                        </button>
-                    </div>
+                <div class="flex justify-end gap-2">
+                    ${c.status === 'running' ? `<button onclick="pauseCampaign(${c.id})" class="btn btn-secondary text-xs py-1.5 px-3"><i data-lucide="pause" class="w-3 h-3"></i> Pausar</button>` : ''}
+                    ${c.status === 'paused' ? `<button onclick="resumeCampaign(${c.id})" class="btn btn-primary text-xs py-1.5 px-3"><i data-lucide="play" class="w-3 h-3"></i> Retomar</button>` : ''}
+                    ${c.status === 'scheduled' ? `<button onclick="startCampaign(${c.id})" class="btn btn-primary text-xs py-1.5 px-3"><i data-lucide="play" class="w-3 h-3"></i> Iniciar</button>` : ''}
+                    <button onclick="deleteCampaign(${c.id})" class="btn btn-danger text-xs py-1.5 px-3"><i data-lucide="trash-2" class="w-3 h-3"></i></button>
                 </div>
-            </div>
-        `;
+            </div>`;
     }).join('');
-    
     lucide.createIcons();
 }
 
 function updateCampaignStats() {
     const today = new Date().toDateString();
-    const sentToday = allCampaigns
-        .filter(c => c.status === 'completed' && new Date(c.createdAt).toDateString() === today)
-        .reduce((sum, c) => sum + c.sent, 0);
-    
+    const sentToday = allCampaigns.filter(c => c.status === 'completed' && new Date(c.createdAt).toDateString() === today).reduce((sum, c) => sum + c.sent, 0);
     const el1 = document.getElementById('statSentToday');
     const el2 = document.getElementById('statScheduled');
     const el3 = document.getElementById('statRunning');
-    
     if (el1) el1.textContent = sentToday;
     if (el2) el2.textContent = allCampaigns.filter(c => c.status === 'scheduled').length;
     if (el3) el3.textContent = allCampaigns.filter(c => c.status === 'running').length;
@@ -5495,40 +6167,33 @@ function updateCampaignStats() {
 
 function filterCampaigns(filter) {
     currentCampaignFilter = filter;
-    
     ['campFilterAll', 'campFilterScheduled', 'campFilterRunning', 'campFilterCompleted', 'campFilterPaused'].forEach(id => {
         const btn = document.getElementById(id);
         if (!btn) return;
-        
-        const filterName = id.replace('campFilter', '').toLowerCase();
-        if (filterName === filter || (filter === 'all' && id === 'campFilterAll')) {
-            btn.classList.add('bg-slate-100', 'text-slate-700');
-            btn.classList.remove('text-slate-500');
+        const fn = id.replace('campFilter', '').toLowerCase();
+        if (fn === filter || (filter === 'all' && id === 'campFilterAll')) {
+            btn.classList.add('bg-slate-100', 'text-slate-700'); btn.classList.remove('text-slate-500');
         } else {
-            btn.classList.remove('bg-slate-100', 'text-slate-700');
-            btn.classList.add('text-slate-500');
+            btn.classList.remove('bg-slate-100', 'text-slate-700'); btn.classList.add('text-slate-500');
         }
     });
-    
     renderCampaigns();
-}
-
-function searchCampaigns(query) {
-    // Implementar se necessário
 }
 
 async function startCampaign(id) {
     const campaign = allCampaigns.find(c => c.id === id);
     if (!campaign) return;
-    
     campaign.status = 'running';
     campaign.lastBatchAt = Date.now();
     saveCampaigns();
     renderCampaigns();
     updateCampaignStats();
-    
     processCampaignBatch(id);
 }
+
+// ============================================================================
+// PROCESSADOR DE CAMPANHA — Motor de blocos em sequência
+// ============================================================================
 
 async function processCampaignBatch(id) {
     const campaign = allCampaigns.find(c => c.id === id);
@@ -5537,161 +6202,80 @@ async function processCampaignBatch(id) {
     const startIdx = campaign.sent;
     const endIdx = Math.min(startIdx + campaign.batchSize, campaign.total);
     const batch = campaign.contacts.slice(startIdx, endIdx);
+    const blocks = campaign.blocks || [];
+    const simulate = campaign.simulatePresence !== false;
     
     for (const contact of batch) {
-        if (!contact.phone) {
-            campaign.failed++;
-            continue;
-        }
+        if (!contact.phone) { campaign.failed++; continue; }
         
         try {
-            let text = (campaign.message || '').replace(/\{\{nome\}\}/gi, contact.name || 'Cliente');
+            const phone = contact.phone.includes('@g.us') ? contact.phone : contact.phone.replace(/\D/g, '');
+            const contactObj = { ...contact, phone };
             
-            // Para grupos (@g.us), enviar o JID como está; para contatos, limpar o telefone
-            const phone = contact.phone.includes('@g.us') 
-                ? contact.phone 
-                : contact.phone.replace(/\D/g, '');
-            
-            const cType = campaign.campaignType || 'text';
-            
-            switch (cType) {
-                case 'poll': {
-                    // Enviar enquete
-                    await fetch(`${API_BASE}/whatsapp/send-poll`, {
+            // Se tem blocos (nova arquitetura), executar sequência
+            if (blocks.length > 0) {
+                for (let i = 0; i < blocks.length; i++) {
+                    const block = blocks[i];
+                    
+                    // Simular presença
+                    if (simulate) {
+                        const presenceType = block.type === 'audio' ? 'recording' : 'composing';
+                        await sendPresence(phone, presenceType);
+                    }
+                    
+                    // Delay entre blocos
+                    const blockDelay = (block.delay || 3) * 1000;
+                    await new Promise(r => setTimeout(r, blockDelay));
+                    
+                    if (simulate) await sendPresence(phone, 'paused');
+                    
+                    // Executar bloco
+                    await executeBlock(block, contactObj);
+                    
+                    // Pequeno intervalo entre blocos da mesma mensagem
+                    if (i < blocks.length - 1) {
+                        await new Promise(r => setTimeout(r, 1000 + Math.random() * 1000));
+                    }
+                }
+            } else {
+                // Fallback: campanha legada (sem blocos) — compatibilidade
+                const text = injectVariables(campaign.message || '', contact);
+                if (campaign.image) {
+                    await fetch(`${API_BASE}/whatsapp/send-media`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            number: phone,
-                            name: campaign.pollTitle,
-                            values: campaign.pollOptions,
-                            selectableCount: campaign.pollSelectableCount || 1
-                        })
+                        body: JSON.stringify({ number: phone, mediaType: 'image', media: campaign.image, caption: text })
                     });
-                    break;
-                }
-                case 'audio': {
-                    // Enviar áudio PTT
-                    let audioBase64 = campaign.mediaBase64;
-                    if (campaign.mediaId && !audioBase64) {
-                        // Buscar da biblioteca
-                        const mediaItem = mediaLibraryItems.find(m => m.id === campaign.mediaId);
-                        if (mediaItem) audioBase64 = mediaItem.base64 || mediaItem.url;
-                    }
-                    if (audioBase64) {
-                        await fetch(`${API_BASE}/whatsapp/send-audio`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                number: phone,
-                                audio: audioBase64,
-                                encoding: true
-                            })
-                        });
-                    }
-                    break;
-                }
-                case 'sticker': {
-                    // Enviar figurinha + texto opcional
-                    let stickerBase64 = campaign.mediaBase64;
-                    if (campaign.mediaId && !stickerBase64) {
-                        const mediaItem = mediaLibraryItems.find(m => m.id === campaign.mediaId);
-                        if (mediaItem) stickerBase64 = mediaItem.base64 || mediaItem.url;
-                    }
-                    if (stickerBase64) {
-                        await fetch(`${API_BASE}/whatsapp/send-media`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                number: phone,
-                                mediaType: 'sticker',
-                                media: stickerBase64
-                            })
-                        });
-                    }
-                    // Texto complementar se houver
-                    if (text) {
-                        await new Promise(r => setTimeout(r, 1500));
-                        await fetch(`${API_BASE}/whatsapp/send-message`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ number: phone, text })
-                        });
-                    }
-                    break;
-                }
-                case 'image': {
-                    if (campaign.image) {
-                        await fetch(`${API_BASE}/whatsapp/send-media`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                number: phone,
-                                mediaType: 'image',
-                                media: campaign.image,
-                                caption: text
-                            })
-                        });
-                    } else {
-                        // Fallback para texto se não tem imagem
-                        await fetch(`${API_BASE}/whatsapp/send-message`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ number: phone, text })
-                        });
-                    }
-                    break;
-                }
-                default: {
-                    // Texto puro
-                    if (campaign.image) {
-                        await fetch(`${API_BASE}/whatsapp/send-media`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                number: phone,
-                                mediaType: 'image',
-                                media: campaign.image,
-                                caption: text
-                            })
-                        });
-                    } else {
-                        await fetch(`${API_BASE}/whatsapp/send-message`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ number: phone, text })
-                        });
-                    }
+                } else if (text) {
+                    await fetch(`${API_BASE}/whatsapp/send-message`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ number: phone, text })
+                    });
                 }
             }
             
             campaign.sent++;
             
-            // Anti-ban inteligente: delay com jitter + cooldown progressivo
+            // Anti-ban inteligente
             const msgIndex = campaign.sent;
             let baseDelay = (campaign.messageDelay || 5) * 1000;
-            // Aumento progressivo
             if (msgIndex > 100) baseDelay *= 1.6;
             else if (msgIndex > 50) baseDelay *= 1.3;
             const jitter = baseDelay * 0.6;
             let delay = baseDelay + (Math.random() * jitter * 2 - jitter);
-            // Cooldown a cada 15 mensagens
-            if (msgIndex > 0 && msgIndex % 15 === 0) {
-                delay += 30000 + Math.random() * 30000; // 30-60s extra
-            }
+            if (msgIndex > 0 && msgIndex % 15 === 0) delay += 30000 + Math.random() * 30000;
             await new Promise(r => setTimeout(r, Math.max(delay, 2000)));
             
         } catch (e) {
-            console.error('Erro ao enviar:', e);
+            console.error('[Campaign] Erro ao enviar:', e);
             campaign.failed++;
         }
     }
     
     campaign.currentBatch++;
     campaign.lastBatchAt = Date.now();
-    
-    if (campaign.sent >= campaign.total) {
-        campaign.status = 'completed';
-    }
+    if (campaign.sent >= campaign.total) campaign.status = 'completed';
     
     saveCampaigns();
     renderCampaigns();
@@ -5704,178 +6288,39 @@ async function processCampaignBatch(id) {
 
 function pauseCampaign(id) {
     const campaign = allCampaigns.find(c => c.id === id);
-    if (campaign) {
-        campaign.status = 'paused';
-        saveCampaigns();
-        renderCampaigns();
-        updateCampaignStats();
-    }
+    if (campaign) { campaign.status = 'paused'; saveCampaigns(); renderCampaigns(); updateCampaignStats(); }
 }
 
-function resumeCampaign(id) {
-    startCampaign(id);
-}
+function resumeCampaign(id) { startCampaign(id); }
 
 function deleteCampaign(id) {
     if (!confirm('Excluir esta campanha?')) return;
     allCampaigns = allCampaigns.filter(c => c.id !== id);
-    saveCampaigns();
-    renderCampaigns();
-    updateCampaignStats();
+    saveCampaigns(); renderCampaigns(); updateCampaignStats();
 }
 
 function saveCampaigns() {
-    localStorage.setItem('crm_campaigns', JSON.stringify(allCampaigns));
+    // Limpar base64 dos blocos antes de salvar (muito grande para localStorage)
+    const cleaned = allCampaigns.map(c => {
+        if (!c.blocks) return c;
+        return { ...c, blocks: c.blocks.map(b => {
+            const d = { ...b.data };
+            delete d.base64; // Muito grande
+            return { ...b, data: d };
+        })};
+    });
+    try {
+        localStorage.setItem('crm_campaigns', JSON.stringify(cleaned));
+    } catch(e) {
+        console.warn('[Campaign] localStorage cheio, limpando campanhas antigas');
+        const recent = cleaned.slice(-5);
+        localStorage.setItem('crm_campaigns', JSON.stringify(recent));
+    }
     scheduleCloudSave();
 }
 
 function openImportFromGroup() {
-    alert('Funcionalidade em desenvolvimento: Importar contatos de grupos do WhatsApp');
-}
-
-// ============================================================================
-// VEXX 2.0 — Campanhas: Tipo, Enquete, Biblioteca de Mídias
-// ============================================================================
-
-function selectCampaignType(type) {
-    selectedCampaignType = type;
-    
-    // Atualizar botões
-    document.querySelectorAll('.camp-type-btn').forEach(btn => {
-        btn.classList.remove('border-emerald-500', 'bg-emerald-50', 'text-emerald-700');
-        btn.classList.add('border-slate-200', 'text-slate-600');
-    });
-    const active = document.getElementById(`campType_${type}`);
-    if (active) {
-        active.classList.add('border-emerald-500', 'bg-emerald-50', 'text-emerald-700');
-        active.classList.remove('border-slate-200', 'text-slate-600');
-    }
-    
-    // Toggle seções condicionais
-    const sectionImage = document.getElementById('sectionImage');
-    const sectionPoll = document.getElementById('sectionPoll');
-    const sectionMedia = document.getElementById('sectionMediaLibrary');
-    const sectionMsg = document.getElementById('campaignMessage');
-    
-    if (sectionImage) sectionImage.classList.toggle('hidden', type !== 'text' && type !== 'image');
-    if (sectionPoll) sectionPoll.classList.toggle('hidden', type !== 'poll');
-    if (sectionMedia) sectionMedia.classList.toggle('hidden', type !== 'audio' && type !== 'sticker');
-    if (sectionMsg) {
-        // Mensagem é obrigatória para text/image, opcional para poll, oculta para audio
-        const msgContainer = sectionMsg.closest('div');
-        if (type === 'audio') {
-            if (msgContainer) msgContainer.classList.add('hidden');
-        } else {
-            if (msgContainer) msgContainer.classList.remove('hidden');
-        }
-    }
-    
-    // Carregar biblioteca de mídias se necessário
-    if (type === 'audio' || type === 'sticker') {
-        loadMediaLibrary(type === 'audio' ? 'audio' : 'sticker');
-    }
-    
-    lucide.createIcons();
-}
-
-// --- Enquete ---
-function addPollOption() {
-    const container = document.getElementById('pollOptionsContainer');
-    const count = container.querySelectorAll('.poll-option').length;
-    if (count >= 12) return alert('Máximo 12 opções');
-    
-    const div = document.createElement('div');
-    div.className = 'flex items-center gap-2';
-    div.innerHTML = `
-        <input type="text" class="poll-option input text-sm flex-1" placeholder="Opção ${count + 1}">
-        <button onclick="removePollOption(this)" class="text-red-400 hover:text-red-600 p-1" title="Remover">✕</button>
-    `;
-    container.appendChild(div);
-}
-
-function removePollOption(btn) {
-    const container = document.getElementById('pollOptionsContainer');
-    if (container.querySelectorAll('.poll-option').length <= 2) return alert('Mínimo 2 opções');
-    btn.closest('.flex').remove();
-}
-
-function getPollOptions() {
-    return Array.from(document.querySelectorAll('.poll-option'))
-        .map(el => el.value.trim())
-        .filter(v => v.length > 0);
-}
-
-// --- Biblioteca de Mídias ---
-async function loadMediaLibrary(filterType) {
-    try {
-        const res = await fetch(`${API_BASE}/media-library`);
-        if (res.ok) {
-            mediaLibraryItems = await res.json();
-        } else {
-            mediaLibraryItems = [];
-        }
-    } catch(e) {
-        console.warn('[MediaLibrary] Erro ao carregar:', e);
-        mediaLibraryItems = [];
-    }
-    renderMediaLibrary(filterType);
-}
-
-function renderMediaLibrary(filterType) {
-    const grid = document.getElementById('mediaLibraryGrid');
-    if (!grid) return;
-    
-    const filtered = filterType ? mediaLibraryItems.filter(m => m.tipo === filterType) : mediaLibraryItems;
-    
-    if (filtered.length === 0) {
-        grid.innerHTML = `<p class="text-sm text-slate-400 col-span-3">Nenhuma mídia ${filterType || ''} na biblioteca. Faça upload abaixo.</p>`;
-        return;
-    }
-    
-    grid.innerHTML = filtered.map(m => `
-        <div onclick="selectMedia('${m.id}')" class="cursor-pointer p-2 rounded-lg border-2 transition-all ${selectedMediaId === m.id ? 'border-cyan-500 bg-cyan-100' : 'border-slate-200 hover:border-cyan-300 bg-white'}">
-            <div class="flex items-center gap-2">
-                <i data-lucide="${m.tipo === 'audio' ? 'mic' : m.tipo === 'image' ? 'image' : 'smile'}" class="w-4 h-4 text-slate-500"></i>
-                <span class="text-xs text-slate-700 truncate">${escapeHtml(m.nome)}</span>
-            </div>
-            <p class="text-[10px] text-slate-400 mt-1">${m.tipo} • ${m.uso_count || 0}x usado</p>
-        </div>
-    `).join('');
-    
-    lucide.createIcons();
-}
-
-function selectMedia(id) {
-    selectedMediaId = selectedMediaId === id ? null : id;
-    uploadedMediaBase64 = null; // Desselecionar upload se escolheu da biblioteca
-    renderMediaLibrary(selectedCampaignType === 'audio' ? 'audio' : 'sticker');
-}
-
-function previewMediaUpload(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    
-    selectedMediaId = null; // Desselecionar da biblioteca se fez upload
-    
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        uploadedMediaBase64 = e.target.result;
-        uploadedMediaMime = file.type;
-        
-        const preview = document.getElementById('mediaUploadPreview');
-        const audio = document.getElementById('mediaUploadAudio');
-        const nameEl = document.getElementById('mediaUploadName');
-        
-        if (preview) preview.classList.remove('hidden');
-        if (audio && file.type.startsWith('audio/')) {
-            audio.src = e.target.result;
-            audio.classList.remove('hidden');
-        } else if (audio) {
-            audio.classList.add('hidden');
-        }
-        if (nameEl) nameEl.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
-    };
-    reader.readAsDataURL(file);
+    alert('Funcionalidade em desenvolvimento');
 }
 
 // ============================================================================

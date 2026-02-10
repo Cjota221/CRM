@@ -1919,6 +1919,45 @@ app.post('/api/whatsapp/mark-read', async (req, res) => {
 });
 
 // ============================================================================
+// ROTA SEND PRESENCE (Digitando / Gravando / Parado)
+// ============================================================================
+
+app.post('/api/whatsapp/send-presence', async (req, res) => {
+    try {
+        const { remoteJid, presence } = req.body;
+        if (!remoteJid || !presence) {
+            return res.status(400).json({ ok: false, error: 'remoteJid e presence são obrigatórios' });
+        }
+        
+        const validPresences = ['composing', 'recording', 'paused'];
+        if (!validPresences.includes(presence)) {
+            return res.status(400).json({ ok: false, error: `presence deve ser: ${validPresences.join(', ')}` });
+        }
+        
+        // Formatar JID se necessário
+        let jid = remoteJid;
+        if (!jid.includes('@')) {
+            jid = jid.replace(/\D/g, '') + '@s.whatsapp.net';
+        }
+        
+        const response = await fetch(`${EVOLUTION_URL}/chat/sendPresence/${INSTANCE_NAME}`, {
+            method: 'POST',
+            headers: evolutionHeaders,
+            body: JSON.stringify({ remoteJid: jid, presence })
+        });
+        
+        let result = {};
+        try { result = await response.json(); } catch(e) { result = { status: response.status }; }
+        
+        console.log(`[SEND-PRESENCE] ${jid} → ${presence}`);
+        res.json({ ok: true, result });
+    } catch (error) {
+        console.error('[SEND-PRESENCE] Erro:', error.message);
+        res.json({ ok: false, error: error.message });
+    }
+});
+
+// ============================================================================
 // ROTA SUPABASE SYNC (Proxy para a função Netlify ou local)
 // ============================================================================
 const { createClient } = require('@supabase/supabase-js');
