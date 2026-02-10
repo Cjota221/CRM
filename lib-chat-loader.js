@@ -1,5 +1,12 @@
 // ============================================================================
-// CHAT LOADING SYSTEM - Carregamento profissional de chats com groups
+// CHAT LOADING SYSTEM - Delta Sync com IndexedDB
+// ============================================================================
+// Fluxo:
+//   1. Renderiza instantaneamente do IndexedDB (0ms first paint)
+//   2. Fetch da API em background
+//   3. Diff: identifica apenas chats que mudaram
+//   4. Enriquece SOMENTE os chats alterados
+//   5. Merge no IndexedDB e re-renderiza
 // ============================================================================
 
 class ChatLoadingSystem {
@@ -17,13 +24,13 @@ class ChatLoadingSystem {
         this._picMax = 5;          // Máximo simultâneo
         this._picCache = new Set(); // JIDs já buscados nesta sessão
         
-        // Cache de mensagens em memória (evitar re-fetch ao trocar entre chats)
+        // Cache de mensagens em memória (hot-cache sobre o IndexedDB)
         this._messagesCache = new Map(); // remoteJid -> { messages, timestamp, hash }
-        this._MSG_CACHE_TTL = 30000; // 30s de validade
+        this._MSG_CACHE_TTL = 60000; // 60s (IDB é persistente, memory cache é atalho)
     }
     
     /**
-     * Buscar mensagens do cache ou da API
+     * Buscar mensagens do cache (memória → IDB fallback)
      * Retorna do cache instantaneamente se disponível e válido
      */
     getCachedMessages(remoteJid) {
@@ -33,22 +40,57 @@ class ChatLoadingSystem {
         return cached.messages;
     }
     
+    /**
+     * Buscar mensagens do IndexedDB (async — para carregamento inicial)
+     */
+    async getCachedMessagesAsync(remoteJid) {
+        // 1. Tentar memória primeiro (sync)
+        const memCached = this.getCachedMessages(remoteJid);
+        if (memCached) return memCached;
+        
+        // 2. Tentar IndexedDB
+        if (window.ChatDB) {
+            try {
+                const idbMessages = await window.ChatDB.getMessages(remoteJid);
+                if (idbMessages && idbMessages.length > 0) {
+                    // Promover para memory cache
+                    this.setCachedMessages(remoteJid, idbMessages);
+                    return idbMessages;
+                }
+            } catch (e) {
+                console.warn('[ChatLoader] Erro ao ler IDB messages:', e);
+            }
+        }
+        return null;
+    }
+    
     setCachedMessages(remoteJid, messages, hash) {
         this._messagesCache.set(remoteJid, {
             messages,
             timestamp: Date.now(),
             hash: hash || ''
         });
-        // Limitar cache a 20 chats
-        if (this._messagesCache.size > 20) {
+        // Limitar memory cache a 30 chats
+        if (this._messagesCache.size > 30) {
             const oldest = this._messagesCache.keys().next().value;
             this._messagesCache.delete(oldest);
+        }
+        
+        // Persistir no IndexedDB em background (fire-and-forget)
+        if (window.ChatDB && messages.length > 0) {
+            window.ChatDB.saveMessages(remoteJid, messages).catch(() => {});
         }
     }
     
     /**
-     * Carregar TODOS os chats (incluindo grupos)
-     * Executa o auto-match em paralelo
+     * Carregar TODOS os chats — Delta Sync com IndexedDB
+     * 
+     * FLUXO:
+     *   Passo 1: Renderizar instantaneamente do IndexedDB (cached paint)
+     *   Passo 2: Fetch 100 chats mais recentes da API
+     *   Passo 3: Diff — quais mudaram vs IDB?
+     *   Passo 4: Enriquecer SOMENTE os chats alterados
+     *   Passo 5: Merge no IDB + re-renderizar
      */
     async loadAllChats(forceRefresh = false) {
         // Evitar reload muito rápido
@@ -64,88 +106,134 @@ class ChatLoadingSystem {
         }
         
         this.isLoading = true;
+        let renderedFromCache = false;
         
-        // ======== STALE-WHILE-REVALIDATE ========
-        // Renderizar do cache instantaneamente enquanto busca dados frescos
-        let usedCache = false;
+        // ======== PASSO 1: Renderizar do IndexedDB instantaneamente ========
+        let idbChats = [];
         try {
-            const cached = sessionStorage.getItem('crm_chats_cache');
-            if (cached && !forceRefresh) {
-                const parsed = JSON.parse(cached);
-                if (parsed.chats && parsed.chats.length > 0 && (now - parsed.timestamp) < 300000) { // 5 min de validade
-                    console.log(`[ChatLoader] ⚡ Cache hit! Renderizando ${parsed.chats.length} chats do cache`);
-                    this.allChats = parsed.chats;
+            if (window.ChatDB) {
+                idbChats = await window.ChatDB.getChats();
+                if (idbChats.length > 0 && !forceRefresh) {
+                    console.log(`[ChatLoader] ⚡ IDB hit! ${idbChats.length} chats do IndexedDB`);
+                    this.allChats = idbChats;
                     this.loadingCache = this.allChats;
                     this.applyFilter(this.currentFilter);
                     this.renderChatsList();
-                    usedCache = true;
-                    // NÃO retornar — continuar para revalidar em background
+                    renderedFromCache = true;
                 }
             }
         } catch (e) {
-            console.warn('[ChatLoader] Cache inválido, ignorando');
+            console.warn('[ChatLoader] IDB read falhou:', e.message);
         }
         
-        if (!usedCache) {
+        // Fallback: tentar sessionStorage se IDB vazio
+        if (!renderedFromCache) {
+            try {
+                const cached = sessionStorage.getItem('crm_chats_cache');
+                if (cached && !forceRefresh) {
+                    const parsed = JSON.parse(cached);
+                    if (parsed.chats?.length > 0 && (now - parsed.timestamp) < 300000) {
+                        console.log(`[ChatLoader] ⚡ Session hit! ${parsed.chats.length} chats`);
+                        this.allChats = parsed.chats;
+                        this.loadingCache = this.allChats;
+                        this.applyFilter(this.currentFilter);
+                        this.renderChatsList();
+                        renderedFromCache = true;
+                    }
+                }
+            } catch (e) {}
+        }
+        
+        if (!renderedFromCache) {
             this.showLoadingIndicator(true);
         }
         
         try {
-            console.log('[ChatLoader] Buscando chats frescos da API...');
+            console.log('[ChatLoader] 🔄 Buscando chats frescos da API...');
+            const t0 = performance.now();
             
-            // 1. Buscar chats brutos da API
+            // ======== PASSO 2: Fetch chats brutos da API ========
             const rawChats = await this.fetchRawChats();
-            console.log(`[ChatLoader] Recebidos ${rawChats.length} chats brutos`);
+            console.log(`[ChatLoader] Recebidos ${rawChats.length} chats brutos (${(performance.now()-t0).toFixed(0)}ms)`);
             
-            // 2. Separar grupos de contatos (usando window.isGroupJid)
+            // Separar grupos de contatos
             const isGroup = window.isGroupJid || ((jid) => jid && String(jid).includes('@g.us'));
             const groups = rawChats.filter(c => isGroup(c.remoteJid || c.id));
             const contacts = rawChats.filter(c => !isGroup(c.remoteJid || c.id));
             
-            console.log(`[ChatLoader] ${contacts.length} contatos, ${groups.length} grupos`);
-            
-            // 3. Enriquecer — O proxy já retorna nomes, usar enrichment leve
+            // ======== PASSO 3: Delta Sync — identifying changes ========
+            let enrichedContacts, enrichedGroups;
             const dl = window.dataLayer || dataLayer;
-            const enrichedContacts = await dl.enrichChats(contacts);
-            const enrichedGroups = await dl.enrichChats(groups);
             
-            // 4. Mesclar e ordenar por última mensagem
+            if (idbChats.length > 0 && !forceRefresh && window.ChatDB) {
+                // DELTA: Só enriquecer chats que mudaram
+                const { changed: changedContacts, unchanged: unchangedContacts } = window.ChatDB.diffChats(idbChats.filter(c => !c.isGroup), contacts);
+                const { changed: changedGroups, unchanged: unchangedGroups } = window.ChatDB.diffChats(idbChats.filter(c => c.isGroup), groups);
+                
+                console.log(`[ChatLoader] 🔍 Delta: ${changedContacts.length} contatos mudaram, ${unchangedContacts.length} inalterados`);
+                console.log(`[ChatLoader] 🔍 Delta: ${changedGroups.length} grupos mudaram, ${unchangedGroups.length} inalterados`);
+                
+                // ======== PASSO 4: Enriquecer SOMENTE os chats alterados ========
+                const t1 = performance.now();
+                const newlyEnriched = changedContacts.length > 0 ? await dl.enrichChats(changedContacts) : [];
+                const newlyEnrichedGroups = changedGroups.length > 0 ? await dl.enrichChats(changedGroups) : [];
+                
+                enrichedContacts = [...newlyEnriched, ...unchangedContacts];
+                enrichedGroups = [...newlyEnrichedGroups, ...unchangedGroups];
+                
+                const enrichTime = performance.now() - t1;
+                console.log(`[ChatLoader] ⚡ Delta enrich: ${changedContacts.length + changedGroups.length} chats em ${enrichTime.toFixed(0)}ms (poupados: ${unchangedContacts.length + unchangedGroups.length})`);
+            } else {
+                // FULL: Primeira vez ou forceRefresh — enriquecer tudo
+                console.log(`[ChatLoader] 🔄 Full enrich: ${contacts.length} contatos, ${groups.length} grupos`);
+                enrichedContacts = await dl.enrichChats(contacts);
+                enrichedGroups = await dl.enrichChats(groups);
+            }
+            
+            // ======== PASSO 5: Merge, salvar IDB, re-renderizar ========
             this.allChats = [
                 ...enrichedContacts,
                 ...enrichedGroups
             ].sort((a, b) => {
                 const timeA = (a.lastMessage?.messageTimestamp || 0) * 1000;
                 const timeB = (b.lastMessage?.messageTimestamp || 0) * 1000;
-                return timeB - timeA; // Mais recentes primeiro
+                return timeB - timeA;
             });
             
             this.loadingCache = this.allChats;
             this.lastLoadTime = now;
             
-            // 5. Salvar no cache para próximo reload
+            // Salvar no IndexedDB (persistente)
+            if (window.ChatDB) {
+                window.ChatDB.saveChats(this.allChats).catch(e => console.warn('[ChatLoader] IDB save err:', e));
+                window.ChatDB.setLastSyncTimestamp(now).catch(() => {});
+            }
+            
+            // Salvar no sessionStorage (fallback rápido)
             try {
                 sessionStorage.setItem('crm_chats_cache', JSON.stringify({
                     chats: this.allChats,
                     timestamp: now
                 }));
-            } catch (e) {
-                console.warn('[ChatLoader] Erro ao salvar cache:', e.message);
-            }
+            } catch (e) {}
             
-            console.log(`[ChatLoader] ✅ ${this.allChats.length} chats carregados e enriquecidos`);
+            const totalTime = performance.now() - t0;
+            console.log(`[ChatLoader] ✅ ${this.allChats.length} chats carregados em ${totalTime.toFixed(0)}ms`);
             
-            // 6. Re-renderizar com dados frescos (se mudou)
-            if (usedCache) {
-                this.applyFilter(this.currentFilter);
-                this.renderChatsList();
-                console.log('[ChatLoader] 🔄 Lista atualizada com dados frescos');
+            // Re-renderizar com dados frescos
+            this.applyFilter(this.currentFilter);
+            this.renderChatsList();
+            
+            // Limpeza periódica de mensagens antigas (fire-and-forget)
+            if (window.ChatDB && Math.random() < 0.1) { // 10% das vezes
+                window.ChatDB.pruneOldMessages(30).catch(() => {});
             }
             
             return this.allChats;
             
         } catch (error) {
             console.error('[ChatLoader] Erro:', error);
-            if (!usedCache) {
+            if (!renderedFromCache) {
                 this.showLoadingError(error.message);
             }
             return this.allChats; // Retornar cache se disponível

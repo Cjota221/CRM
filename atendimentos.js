@@ -1199,19 +1199,30 @@ async function loadMessages(remoteJid, isUpdate = false) {
         currentRemoteJid = remoteJid;
     }
     
-    // ======== CACHE DE MENSAGENS ========
-    // Se é troca de chat (não update), tentar cache primeiro
+    // ======== CACHE DE MENSAGENS (Memória → IDB → API) ========
     if (!isUpdate && window.chatLoader) {
-        const cached = window.chatLoader.getCachedMessages(remoteJid);
-        if (cached && cached.length > 0) {
-            console.log(`[⚡ Cache] ${cached.length} mensagens do cache para ${remoteJid}`);
-            renderMessagesFromData(remoteJid, cached, false);
+        // 1. Tentar memory cache (sync, ~0ms)
+        const memCached = window.chatLoader.getCachedMessages(remoteJid);
+        if (memCached && memCached.length > 0) {
+            console.log(`[⚡ MemCache] ${memCached.length} mensagens para ${remoteJid}`);
+            renderMessagesFromData(remoteJid, memCached, false);
+            // Revalidar em background
+            fetchAndRenderMessages(remoteJid, true);
+            return;
+        }
+        
+        // 2. Tentar IndexedDB (async, ~5-20ms)
+        const idbCached = await window.chatLoader.getCachedMessagesAsync(remoteJid);
+        if (idbCached && idbCached.length > 0) {
+            console.log(`[⚡ IDB] ${idbCached.length} mensagens do IndexedDB para ${remoteJid}`);
+            renderMessagesFromData(remoteJid, idbCached, false);
             // Revalidar em background
             fetchAndRenderMessages(remoteJid, true);
             return;
         }
     }
     
+    // 3. Sem cache — fetch da API com loading indicator
     await fetchAndRenderMessages(remoteJid, isUpdate);
 }
 
