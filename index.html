@@ -45,16 +45,21 @@
 
         /* ====== DARK MODE ====== */
         .dark body, html.dark body { background-color: #0f172a; color: #e2e8f0; }
-        .dark .bg-slate-50, .dark .bg-white { background-color: #1e293b !important; }
+        /* Hierarquia: bg-slate-50 = #0f172a (escuro) < cards/sections = #1e293b < bg-slate-100 = #334155 */
+        .dark .bg-white { background-color: #1e293b !important; }
+        .dark .bg-slate-50 { background-color: #0f172a !important; }
         .dark .bg-slate-100 { background-color: #334155 !important; }
         .dark .border-slate-100, .dark .border-slate-50 { border-color: #334155 !important; }
         .dark .border-slate-200 { border-color: #475569 !important; }
         .dark .text-slate-800, .dark .text-slate-700 { color: #f1f5f9 !important; }
         .dark .text-slate-600 { color: #cbd5e1 !important; }
         .dark .text-slate-500 { color: #94a3b8 !important; }
-        .dark .text-slate-400 { color: #64748b !important; }
+        .dark .text-slate-400 { color: #8b9ab8 !important; }
         .dark .text-slate-300 { color: #94a3b8 !important; }
         .dark .card, .dark .metric-card { background-color: #1e293b !important; border-color: #334155 !important; }
+        .dark .metric-value { color: #f1f5f9 !important; }
+        .dark .metric-label { color: #94a3b8 !important; }
+        .dark .metric-sublabel { color: #64748b !important; }
         .dark .input { background-color: #0f172a; border-color: #334155; color: #e2e8f0; }
         .dark .input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
         .dark .nav-item { color: #94a3b8; }
@@ -65,21 +70,39 @@
         .dark .modal-overlay, .dark .modal-bg { background-color: rgba(0,0,0,0.7); }
         .dark .toast-notification { background-color: #1e293b; color: #e2e8f0; border-color: #334155; }
         .dark .shadow-sm { box-shadow: 0 1px 3px rgb(0 0 0 / 0.3) !important; }
-        .dark .hover\:bg-slate-50:hover { background-color: #334155 !important; }
+        .dark .hover\:bg-slate-50:hover { background-color: #1e293b !important; }
         .dark .hover\:bg-slate-100:hover { background-color: #475569 !important; }
         .dark .divide-slate-50 > :not(:first-child) { border-color: #334155 !important; }
         .dark .divide-x > :not(:first-child) { border-color: #334155 !important; }
-        .dark .bg-red-50, .dark .bg-red-50\/40 { background-color: rgba(239,68,68,0.1) !important; }
-        .dark .bg-amber-50, .dark .bg-amber-50\/40 { background-color: rgba(245,158,11,0.1) !important; }
-        .dark .bg-emerald-50 { background-color: rgba(16,185,129,0.1) !important; }
-        .dark .bg-purple-50, .dark .bg-purple-50\/40 { background-color: rgba(139,92,246,0.1) !important; }
-        .dark .bg-violet-50 { background-color: rgba(139,92,246,0.1) !important; }
+        .dark .bg-red-50, .dark .bg-red-50\/40 { background-color: rgba(239,68,68,0.12) !important; }
+        .dark .bg-amber-50, .dark .bg-amber-50\/40 { background-color: rgba(245,158,11,0.12) !important; }
+        .dark .bg-emerald-50 { background-color: rgba(16,185,129,0.12) !important; }
+        .dark .bg-purple-50, .dark .bg-purple-50\/40 { background-color: rgba(139,92,246,0.12) !important; }
+        .dark .bg-violet-50 { background-color: rgba(139,92,246,0.12) !important; }
         .dark table th { background-color: #1e293b; color: #94a3b8; }
-        .dark table td { border-color: #334155; }
+        .dark table td { border-color: #334155; color: #cbd5e1; }
         .dark table tr:hover { background-color: #1e293b; }
         ::-webkit-scrollbar-thumb { background: #475569; }
         .dark ::-webkit-scrollbar-thumb { background: #475569; }
         .dark ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+        /* Dark mode: badges */
+        .dark .badge-success { background-color: rgba(5,150,105,0.15); color: #34d399; }
+        .dark .badge-warning { background-color: rgba(217,119,6,0.15); color: #fbbf24; }
+        .dark .badge-danger { background-color: rgba(220,38,38,0.15); color: #f87171; }
+        .dark .badge-info { background-color: rgba(37,99,235,0.15); color: #60a5fa; }
+        .dark .badge-neutral { background-color: #334155; color: #94a3b8; }
+        .dark .status-ativo { background-color: rgba(5,150,105,0.15); color: #34d399; }
+        .dark .status-risco { background-color: rgba(217,119,6,0.15); color: #fbbf24; }
+        .dark .status-inativo { background-color: rgba(220,38,38,0.15); color: #f87171; }
+        .dark .status-sem-historico { background-color: rgba(37,99,235,0.15); color: #60a5fa; }
+
+        /* Dark mode: info cards & extras */
+        .dark .bg-blue-50 { background-color: rgba(59,130,246,0.1) !important; }
+        .dark .border-blue-100 { border-color: rgba(59,130,246,0.2) !important; }
+        .dark .text-blue-800, .dark .text-blue-700 { color: #93c5fd !important; }
+        .dark .text-blue-600 { color: #60a5fa !important; }
+        .dark select option { background-color: #1e293b; color: #e2e8f0; }
         
         .badge { padding: 0.375rem 0.75rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 500; letter-spacing: 0.025em; }
         .badge-success { background-color: #ecfdf5; color: #059669; }
@@ -196,11 +219,12 @@
         /* KPI Dashboard Cards (tom mais escuro que branco puro) */
         .kpi-card-dash { background: #f0f1f5; border: 1px solid #e0e3eb; }
         .kpi-card-dash:hover { box-shadow: 0 4px 12px rgb(0 0 0 / 0.06); transform: translateY(-1px); }
-        .dark .kpi-card-dash { background: #1e293b; border-color: #334155; }
+        .dark .kpi-card-dash { background: #1e293b; border-color: #334155; box-shadow: 0 1px 4px rgb(0 0 0 / 0.3); }
+        .dark .kpi-card-dash:hover { box-shadow: 0 4px 16px rgb(0 0 0 / 0.4); border-color: #475569; }
 
         /* Section containers dasher */
         .section-dash { background: #f4f5f9; border: 1px solid #e0e3eb; }
-        .dark .section-dash { background: #1e293b; border-color: #334155; }
+        .dark .section-dash { background: #1e293b; border-color: #334155; box-shadow: 0 1px 4px rgb(0 0 0 / 0.3); }
 
         /* Dark mode toggle */
         .dark-mode-toggle { width: 44px; height: 24px; border-radius: 12px; background: #e2e8f0; position: relative; cursor: pointer; transition: background 0.3s; border: none; padding: 0; }
