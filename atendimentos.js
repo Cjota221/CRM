@@ -113,6 +113,31 @@ let audioElement = null;
 const API_BASE = '/api';
 
 // ============================================================================
+// INTERCEPTOR DE SESSÃO EXPIRADA (401)
+// ============================================================================
+// Substitui o fetch nativo para detectar 401 e redirecionar ao login
+const _originalFetch = window.fetch;
+let _redirectingToLogin = false;
+window.fetch = async function(...args) {
+    const response = await _originalFetch.apply(this, args);
+    if (response.status === 401 && !_redirectingToLogin) {
+        const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
+        // Só interceptar chamadas à nossa API, não externas
+        if (url.startsWith('/api/') || url.startsWith(API_BASE)) {
+            _redirectingToLogin = true;
+            console.warn('[Auth] Sessão expirada — redirecionando ao login');
+            if (typeof showToast === 'function') {
+                showToast('Sessão expirada. Fazendo login novamente...', 'warning');
+            }
+            setTimeout(() => {
+                window.location.href = '/login.html?redirect=' + encodeURIComponent(window.location.pathname);
+            }, 1500);
+        }
+    }
+    return response;
+};
+
+// ============================================================================
 // FUNÇÕES DE TELEFONE - Usar lib-data-layer.js (centralizado)
 // ============================================================================
 // NOTA: As funções principais (normalizePhone, extractPhoneFromJid) estão em lib-data-layer.js

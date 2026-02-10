@@ -15,7 +15,7 @@ const PORT = 3000;
 // SISTEMA DE AUTENTICAÇÃO
 // ============================================================================
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
-const SESSION_MAX_AGE = 24 * 60 * 60 * 1000; // 24 horas
+const SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 dias
 
 // ============================================================================
 // PERSISTÊNCIA EM ARQUIVO (Sessões + ChatModes sobrevivem ao restart)
@@ -89,6 +89,10 @@ function isAuthenticated(req) {
     if (Date.now() - session.createdAt > SESSION_MAX_AGE) {
         activeSessions.delete(token);
         return false;
+    }
+    // Sliding window: renovar timestamp a cada uso (max 1x por minuto)
+    if (Date.now() - session.createdAt > 60000) {
+        session.createdAt = Date.now();
     }
     return true;
 }
