@@ -6,7 +6,8 @@
     <title>Anny BI - Dashboard de Inteligência | CRM CJOTA</title>
     <link rel="icon" type="image/png" href="/V.png">
     <script>fetch('/api/auth/check').then(r=>r.json()).then(d=>{if(!d.authenticated)window.location.href='/login.html?redirect='+encodeURIComponent(window.location.pathname)}).catch(()=>{});</script>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+    <!-- TODO: Migrar para Tailwind CLI build em produção -->
     <script>
         tailwind.config = {
             theme: {
@@ -468,9 +469,7 @@
         expandedSections: {},
         SHOW_LIMIT: 5,
 
-        API_URL: (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-            ? '/api/anny/dashboard'
-            : '/.netlify/functions/anny-ai?action=dashboard',
+        API_URL: '/api/anny/dashboard',
 
         async load() {
             try {
@@ -649,9 +648,7 @@
         selectedClients: [],
         isProcessing: false,
 
-        API_URL: (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-            ? '/api/anny'
-            : '/.netlify/functions/anny-ai',
+        API_URL: '/api/anny',
 
         init() {
             this.loadChatHistory();
@@ -809,9 +806,7 @@
             btn.innerHTML = '<i data-lucide="loader" class="w-3 h-3 animate-spin"></i> Gerando...';
             lucide.createIcons();
             try {
-                const url = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-                    ? '/api/anny/generate-campaign-message'
-                    : '/.netlify/functions/anny-ai?action=generate-campaign';
+                const url = '/api/anny/generate-campaign-message';
                 const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ daysInactive: avgDays, tone, couponName: coupon || null, clientCount: this.selectedClients.length, context: this.selectedClients.length + ' clientes, ' + avgDays + 'd inativos' })
                 });
