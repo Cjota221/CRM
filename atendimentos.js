@@ -95,6 +95,167 @@ let clientNotes = JSON.parse(localStorage.getItem('crm_client_notes') || '{}'); 
 // Sistema de Agendamento
 let scheduledMessages = JSON.parse(localStorage.getItem('crm_scheduled') || '[]');
 
+// ============================================================================
+// SISTEMA DE MENSAGENS NÃO LIDAS (Tracking Local)
+// ============================================================================
+// Armazena timestamp de quando cada chat foi lido pela última vez
+// { chatId: { readAt: timestamp, unreadCountOverride: 0|null } }
+let _readTimestamps = JSON.parse(localStorage.getItem('crm_read_timestamps') || '{}');
+// Contadores locais de não-lidas (incrementados via socket, resetados ao abrir)
+let _localUnreadCounts = {};
+
+/**
+ * Obter contagem real de não-lidas para um chat.
+ * Combina: unreadCount da API + incrementos locais via socket - lidos pelo usuário.
+ */
+function getEffectiveUnreadCount(chat) {
+    const chatId = chat.id || chat.remoteJid;
+    if (!chatId) return 0;
+    
+    // Se há override local (usuário abriu o chat), usar zero
+    const readInfo = _readTimestamps[chatId];
+    if (readInfo && readInfo.readAt) {
+        // Se o último timestamp de leitura é mais recente que a última msg, está lido
+        const lastMsgTime = getLastMessageTimestamp(chat);
+        if (readInfo.readAt >= lastMsgTime) {
+            // Chat lido — mas pode ter msgs novas via socket depois
+            return _localUnreadCounts[chatId] || 0;
+        }
+    }
+    
+    // Se há contador local (incrementado via socket), priorizar
+    if (typeof _localUnreadCounts[chatId] === 'number') {
+        return _localUnreadCounts[chatId];
+    }
+    
+    // Fallback: unreadCount original da API
+    return chat.unreadCount || 0;
+}
+
+/**
+ * Extrair timestamp da última mensagem de um chat
+ */
+function getLastMessageTimestamp(chat) {
+    if (!chat) return 0;
+    const ts = chat.lastMessage?.messageTimestamp;
+    if (!ts) return chat.timestamp || 0;
+    return ts > 1e12 ? ts : ts * 1000; // Normalizar para ms
+}
+
+/**
+ * Marcar um chat como lido (local + API)
+ */
+function markChatAsRead(chatId) {
+    if (!chatId) return;
+    
+    console.log(`[UNREAD] Marcando como lido: ${chatId}`);
+    
+    // 1. Salvar timestamp local
+    _readTimestamps[chatId] = { readAt: Date.now() };
+    localStorage.setItem('crm_read_timestamps', JSON.stringify(_readTimestamps));
+    
+    // 2. Zerar contador local
+    _localUnreadCounts[chatId] = 0;
+    
+    // 3. Atualizar no array allChats
+    const chatInArray = allChats.find(c => (c.id || c.remoteJid) === chatId);
+    if (chatInArray) {
+        chatInArray.unreadCount = 0;
+        chatInArray._markedReadAt = Date.now();
+    }
+    
+    // 4. Remover badge do DOM
+    const chatItem = document.querySelector(`[data-chat-id="${chatId}"]`) 
+                  || document.querySelector(`[data-chat-key="${chatId}"]`);
+    if (chatItem) {
+        // Remover badge
+        const badges = chatItem.querySelectorAll('.unread-badge, .bg-emerald-500.text-white.text-xs.rounded-full');
+        badges.forEach(b => b.remove());
+        // Remover fundo verde
+        chatItem.classList.remove('bg-green-50/30');
+        // Remover negrito do nome
+        const nameEl = chatItem.querySelector('.font-bold.text-slate-900');
+        if (nameEl) {
+            nameEl.classList.remove('font-bold', 'text-slate-900');
+            nameEl.classList.add('font-medium', 'text-slate-700');
+        }
+        // Remover destaque do preview
+        const previewEl = chatItem.querySelector('.text-slate-600.font-medium');
+        if (previewEl) {
+            previewEl.classList.remove('text-slate-600', 'font-medium');
+            previewEl.classList.add('text-slate-500');
+        }
+    }
+    
+    // 5. Atualizar contadores dos filtros
+    updateFilterCounts();
+    
+    // 6. Chamar API para marcar como lido no WhatsApp (best-effort, não bloqueia)
+    fetch(`${API_BASE}/whatsapp/mark-read`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ remoteJid: chatId })
+    }).catch(err => console.warn('[UNREAD] Erro ao marcar como lido na API:', err.message));
+}
+
+/**
+ * Incrementar contador de não-lidas para um chat (quando chega msg via socket)
+ */
+function incrementUnreadCount(chatId) {
+    if (!chatId) return;
+    
+    // Incrementar contador local
+    _localUnreadCounts[chatId] = (_localUnreadCounts[chatId] || 0) + 1;
+    
+    // Atualizar no array allChats
+    const chatInArray = allChats.find(c => (c.id || c.remoteJid) === chatId);
+    if (chatInArray) {
+        chatInArray.unreadCount = (chatInArray.unreadCount || 0) + 1;
+    }
+    
+    // Atualizar contadores dos filtros
+    updateFilterCounts();
+}
+
+/**
+ * Ao re-carregar a lista da API, preservar os estados de leitura local.
+ * Chamado após loadChats() ou refreshChatListBackground().
+ */
+function applyLocalReadStates(chats) {
+    if (!Array.isArray(chats)) return chats;
+    
+    const now = Date.now();
+    // Limpar leituras antigas (> 24h) para não acumular
+    for (const [chatId, info] of Object.entries(_readTimestamps)) {
+        if (info.readAt && (now - info.readAt) > 24 * 60 * 60 * 1000) {
+            delete _readTimestamps[chatId];
+        }
+    }
+    
+    chats.forEach(chat => {
+        const chatId = chat.id || chat.remoteJid;
+        const readInfo = _readTimestamps[chatId];
+        
+        if (readInfo && readInfo.readAt) {
+            const lastMsgTime = getLastMessageTimestamp(chat);
+            
+            if (readInfo.readAt >= lastMsgTime) {
+                // Chat foi lido após a última mensagem — zerar unread
+                chat.unreadCount = _localUnreadCounts[chatId] || 0;
+            } else {
+                // Chegou msg nova depois da leitura — manter contagem da API
+                // mas adicionar incrementos locais se houver
+                if (typeof _localUnreadCounts[chatId] === 'number' && _localUnreadCounts[chatId] > (chat.unreadCount || 0)) {
+                    chat.unreadCount = _localUnreadCounts[chatId];
+                }
+            }
+        }
+    });
+    
+    localStorage.setItem('crm_read_timestamps', JSON.stringify(_readTimestamps));
+    return chats;
+}
+
 // Estado da conexão
 let connectionState = {
     status: 'unknown',
@@ -196,7 +357,11 @@ function initSocket() {
         // Se a mensagem é do chat aberto, renderizar instantaneamente
         if (currentRemoteJid && msg.jid === currentRemoteJid) {
             appendRealtimeMessage(msg);
+            // Chat ativo — marcar como lido automaticamente
+            markChatAsRead(msg.jid);
         } else if (!msg.fromMe) {
+            // Mensagem em outro chat — incrementar contador de não-lidas
+            incrementUnreadCount(msg.jid);
             // Notificação visual de nova mensagem em outro chat
             showNewMessageNotification(msg);
         }
@@ -1260,6 +1425,9 @@ async function loadChats() {
         // Armazenar para filtros
         allChats = Array.isArray(chats) ? chats : [];
         
+        // Aplicar estados de leitura local (preservar o que o usuário já leu)
+        applyLocalReadStates(allChats);
+        
         renderChatsList(allChats);
         updateFilterCounts(); // Atualizar contadores das abas
         lucide.createIcons();
@@ -1293,8 +1461,8 @@ function renderChatsList(chats) {
     if (currentFilter === 'chats') {
         filteredChats = filteredChats.filter(c => !c.isGroup);
     } else if (currentFilter === 'unread') {
-        // Não Lidos: unreadCount > 0
-        filteredChats = filteredChats.filter(c => c.unreadCount > 0);
+        // Não Lidos: usar contagem efetiva (respeita leitura local)
+        filteredChats = filteredChats.filter(c => getEffectiveUnreadCount(c) > 0);
     } else if (currentFilter === 'waiting') {
         // Aguardando Resposta: última msg do cliente há > 4h
         const fourHoursAgo = Date.now() - (4 * 60 * 60 * 1000);
@@ -1484,8 +1652,9 @@ function _renderNextPage(listEl) {
         }
         
         const div = document.createElement('div');
-        const hasUnread = chat.unreadCount > 0;
-        div.className = `flex items-center gap-3 p-3 border-b hover:bg-slate-50 cursor-pointer transition-colors ${hasUnread ? 'bg-green-50/30' : ''}`;
+        const effectiveUnread = getEffectiveUnreadCount(chat);
+        const hasUnread = effectiveUnread > 0;
+        div.className = `flex items-center gap-3 p-3 border-b hover:bg-slate-50 cursor-pointer transition-colors ${hasUnread ? 'bg-emerald-50/50 border-l-3 border-l-emerald-500' : ''}`;
         
         // CRÍTICO: Garantir que remoteJid e id estejam sempre definidos
         if (!chat.remoteJid) {
@@ -1518,7 +1687,7 @@ function _renderNextPage(listEl) {
         // Indicador de mensagem não lida com bolinha verde
         const unreadBadge = hasUnread
             ? `<div class="flex flex-col items-center gap-1">
-                 <span class="bg-emerald-500 text-white text-xs rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5 font-medium">${chat.unreadCount}</span>
+                 <span class="unread-badge bg-emerald-500 text-white text-xs rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5 font-medium">${effectiveUnread}</span>
                </div>` 
             : '';
         
@@ -1599,6 +1768,10 @@ async function openChat(chat) {
     currentChatId = chat.id;
     currentChatData = chat;
     currentClient = null;
+    
+    // ====== MARCAR COMO LIDO ======
+    const chatIdForRead = chat.id || chat.remoteJid;
+    markChatAsRead(chatIdForRead);
     
     // Extrair e normalizar o remoteJid para este chat
     const remoteJidParam = chat.remoteJid || chat.id;
@@ -5418,7 +5591,7 @@ function initScheduledMessages() {
 function updateFilterCounts() {
     const counts = {
         all: allChats.length,
-        unread: allChats.filter(c => c.unreadCount > 0).length,
+        unread: allChats.filter(c => getEffectiveUnreadCount(c) > 0).length,
         waiting: allChats.filter(c => {
             const lastMsg = c.lastMessage;
             if (!lastMsg) return false;
@@ -5560,5 +5733,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Expor funções globalmente para o lib-chat-loader.js
     window.openChat = openChat;
     window.loadChats = loadChats;
-    console.log('✅ Funções expostas globalmente: openChat, loadChats');
+    window.renderChatsList = renderChatsList;
+    window.applyLocalReadStates = applyLocalReadStates;
+    window.getEffectiveUnreadCount = getEffectiveUnreadCount;
+    window.markChatAsRead = markChatAsRead;
+    console.log('✅ Funções expostas globalmente: openChat, loadChats, markChatAsRead');
 });

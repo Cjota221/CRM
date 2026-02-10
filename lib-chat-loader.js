@@ -300,6 +300,10 @@ class ChatLoadingSystem {
             // Sincronizar allChats global para o filtro funcionar
             if (typeof window.allChats !== 'undefined') {
                 window.allChats = this.allChats;
+                // Aplicar estados de leitura local (preservar o que o usuário já leu)
+                if (typeof window.applyLocalReadStates === 'function') {
+                    window.applyLocalReadStates(window.allChats);
+                }
             }
             window.renderChatsList(this.filteredChats);
             return;

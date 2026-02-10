@@ -1860,6 +1860,66 @@ app.get('/api/whatsapp/media/:messageId', async (req, res) => {
 });
 
 // ============================================================================
+// MARCAR MENSAGENS COMO LIDAS (Evolution API)
+// ============================================================================
+app.post('/api/whatsapp/mark-read', async (req, res) => {
+    try {
+        const { remoteJid } = req.body;
+        if (!remoteJid) {
+            return res.status(400).json({ error: 'remoteJid é obrigatório' });
+        }
+        
+        console.log(`[MARK-READ] Marcando como lido: ${remoteJid}`);
+        
+        // Evolution API v2: POST /chat/markMessageAsRead/{instance}
+        const response = await fetch(`${EVOLUTION_URL}/chat/markMessageAsRead/${INSTANCE_NAME}`, {
+            method: 'POST',
+            headers: evolutionHeaders,
+            body: JSON.stringify({
+                readMessages: [{ remoteJid }]
+            })
+        });
+        
+        let result = {};
+        try { result = await response.json(); } catch(e) { result = { status: response.status }; }
+        
+        // Também tentar sendPresence (marca como "lido" no WhatsApp)
+        try {
+            await fetch(`${EVOLUTION_URL}/chat/sendPresence/${INSTANCE_NAME}`, {
+                method: 'POST',
+                headers: evolutionHeaders,
+                body: JSON.stringify({
+                    remoteJid,
+                    presence: 'composing'
+                })
+            });
+            // Parar composing depois de 500ms
+            setTimeout(async () => {
+                try {
+                    await fetch(`${EVOLUTION_URL}/chat/sendPresence/${INSTANCE_NAME}`, {
+                        method: 'POST',
+                        headers: evolutionHeaders,
+                        body: JSON.stringify({
+                            remoteJid,
+                            presence: 'paused'
+                        })
+                    });
+                } catch(e) {}
+            }, 500);
+        } catch(e) {
+            console.warn('[MARK-READ] Erro no sendPresence:', e.message);
+        }
+        
+        console.log(`[MARK-READ] Resultado: ${JSON.stringify(result)}`);
+        res.json({ ok: true, result });
+    } catch (error) {
+        console.error('[MARK-READ] Erro:', error.message);
+        // Não falhar — marcar como lido é best-effort
+        res.json({ ok: false, error: error.message });
+    }
+});
+
+// ============================================================================
 // ROTA SUPABASE SYNC (Proxy para a função Netlify ou local)
 // ============================================================================
 const { createClient } = require('@supabase/supabase-js');
