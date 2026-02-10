@@ -20,10 +20,55 @@ const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL
 const supabase = SUPABASE_KEY ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
 // ============================================================================
+// LID RESOLVER — Buscar número real de contatos @lid (anúncios Meta)
+// ============================================================================
+const EVOLUTION_URL = process.env.EVOLUTION_URL || 'https://evolution-api.cjota.site';
+const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'EB6B5AB56A35-43C4-B590-1188166D4E7A';
+
+async function resolvePhoneFromLid(lidJid, instanceName) {
+    if (!lidJid || !lidJid.includes('@lid')) return '';
+    try {
+        console.log(`[LID Resolver] Buscando número real para: ${lidJid}`);
+        const response = await fetch(
+            `${EVOLUTION_URL}/chat/findContacts/${instanceName}`,
+            {
+                method: 'POST',
+                headers: { 'apikey': EVOLUTION_API_KEY, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ where: { id: lidJid } })
+            }
+        );
+        if (!response.ok) {
+            console.warn(`[LID Resolver] HTTP ${response.status}`);
+            return '';
+        }
+        const data = await response.json();
+        const contacts = Array.isArray(data) ? data : (data.data || []);
+        if (contacts.length === 0) {
+            console.warn(`[LID Resolver] Nenhum contato para ${lidJid}`);
+            return '';
+        }
+        const contact = contacts[0];
+        let realPhone = '';
+        if (contact.id && !contact.id.includes('@lid')) {
+            realPhone = contact.id.replace('@s.whatsapp.net', '').replace(/\D/g, '');
+        } else if (contact.notify && /\d{10,}/.test(contact.notify)) {
+            realPhone = contact.notify.replace(/\D/g, '');
+        }
+        if (realPhone) {
+            console.log(`[LID Resolver] ✅ Número real: ${lidJid} → ${realPhone}`);
+        }
+        return realPhone;
+    } catch (error) {
+        console.error(`[LID Resolver] Erro:`, error.message);
+        return '';
+    }
+}
+
+// ============================================================================
 // NORMALIZAÇÃO DE EVENTOS
 // ============================================================================
 
-function normalizeEvent(payload) {
+async function normalizeEvent(payload) {
     // Evolution API envia diferentes formatos dependendo do evento
     const event = payload.event || payload.apiType || 'unknown';
     const instance = payload.instance || payload.instanceName || '';
@@ -73,16 +118,43 @@ function normalizeEvent(payload) {
                 || messageContent.documentWithCaptionMessage?.message?.documentMessage?.caption
                 || '';
 
+            // Resolver número: @lid precisa de lookup especial
+            const isLid = (key.remoteJid || '').includes('@lid');
+            let phoneNumber = '';
+            let phoneNormalized = '';
+            let phoneDDI = '';
+
+            if (isLid) {
+                console.log(`[Webhook] 🔍 Detectado @lid: ${key.remoteJid}`);
+                const realPhone = await resolvePhoneFromLid(key.remoteJid, instance);
+                if (realPhone) {
+                    phoneNumber = PhoneNormalizer.normalize(realPhone);
+                    phoneNormalized = PhoneNormalizer.canonical(realPhone);
+                    phoneDDI = PhoneNormalizer.withDDI(realPhone);
+                    console.log(`[Webhook] ✅ Número real resolvido: ${phoneNumber}`);
+                } else {
+                    console.warn(`[Webhook] ⚠️ Não resolveu @lid, usando JID como fallback`);
+                    phoneNumber = key.remoteJid;
+                    phoneNormalized = '';
+                    phoneDDI = '';
+                }
+            } else {
+                phoneNumber = PhoneNormalizer.normalize(key.remoteJid || '');
+                phoneNormalized = PhoneNormalizer.canonical(key.remoteJid || '');
+                phoneDDI = PhoneNormalizer.withDDI(key.remoteJid || '');
+            }
+
             origem = {
-                numero: PhoneNormalizer.normalize((key.remoteJid || '')),
-                numero_ddi: PhoneNormalizer.withDDI((key.remoteJid || '')),
-                phone_normalized: PhoneNormalizer.canonical((key.remoteJid || '')),
+                numero: phoneNumber,
+                numero_ddi: phoneDDI,
+                phone_normalized: phoneNormalized,
                 jid: key.remoteJid || '',
                 nome: msg.pushName || data.pushName || '',
                 plataforma: 'whatsapp',
                 instancia: instance,
                 is_from_me: isFromMe,
-                is_group: (key.remoteJid || '').includes('@g.us')
+                is_group: (key.remoteJid || '').includes('@g.us'),
+                is_lid: isLid
             };
 
             conteudo = {
@@ -273,7 +345,7 @@ exports.handler = async (event) => {
         }
 
         // 1. Normalizar evento
-        const normalized = normalizeEvent(payload);
+        const normalized = await normalizeEvent(payload);
         
         // Ignorar mensagens enviadas por nós mesmos e eventos de protocolo
         if (normalized.origem.is_from_me || normalized.tipo === 'protocolo') {

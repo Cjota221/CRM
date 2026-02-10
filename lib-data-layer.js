@@ -15,27 +15,32 @@ function normalizePhone(raw) {
     // 1. Converter para string
     let str = String(raw);
     
-    // 2. Remover sufixos de JID do WhatsApp primeiro
+    // 2. CRÍTICO: @lid são IDs internos do Meta, NÃO contêm telefone real
+    if (str.includes('@lid')) {
+        console.warn('[normalizePhone] ⚠️ JID @lid detectado — não contém telefone real:', str);
+        return '';
+    }
+    
+    // 3. Remover sufixos de JID do WhatsApp
     str = str
         .replace(/@s\.whatsapp\.net/gi, '')
         .replace(/@c\.us/gi, '')
-        .replace(/@g\.us/gi, '')
-        .replace(/@lid/gi, '');
+        .replace(/@g\.us/gi, '');
     
-    // 3. Remover tudo que não é dígito
+    // 4. Remover tudo que não é dígito
     let cleaned = str.replace(/\D/g, '');
     
-    // 4. Se começar com 55 (DDI do Brasil) e tiver 12+ dígitos, remover DDI
+    // 5. Se começar com 55 (DDI do Brasil) e tiver 12+ dígitos, remover DDI
     if (cleaned.startsWith('55') && cleaned.length >= 12) {
         cleaned = cleaned.substring(2);
     }
     
-    // 5. Se ficou com mais de 11 dígitos, pegar últimos 11 (número principal)
+    // 6. Se ficou com mais de 11 dígitos, pegar últimos 11 (número principal)
     if (cleaned.length > 11) {
         cleaned = cleaned.slice(-11);
     }
     
-    // 6. Retornar número limpo - sempre retornar, mesmo se curto
+    // 7. Retornar número limpo
     return cleaned;
 }
 

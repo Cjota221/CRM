@@ -18,22 +18,24 @@
         if (!raw) return '';
         let str = String(raw);
 
-        // 1. Remover sufixos de JID do WhatsApp
+        // 1. CRÍTICO: @lid são IDs internos do Meta, NÃO contêm telefone real
+        if (str.includes('@lid')) return '';
+
+        // 2. Remover sufixos de JID do WhatsApp
         str = str
             .replace(/@s\.whatsapp\.net/gi, '')
             .replace(/@c\.us/gi, '')
-            .replace(/@g\.us/gi, '')
-            .replace(/@lid/gi, '');
+            .replace(/@g\.us/gi, '');
 
-        // 2. Remover tudo que não é dígito
+        // 3. Remover tudo que não é dígito
         let cleaned = str.replace(/\D/g, '');
 
-        // 3. Remover DDI 55 se presente (>=12 dígitos = DDI + DDD + número)
+        // 4. Remover DDI 55 se presente (>=12 dígitos = DDI + DDD + número)
         if (cleaned.startsWith('55') && cleaned.length >= 12) {
             cleaned = cleaned.substring(2);
         }
 
-        // 4. Se ficou com mais de 11 dígitos, pegar últimos 11
+        // 5. Se ficou com mais de 11 dígitos, pegar últimos 11
         if (cleaned.length > 11) {
             cleaned = cleaned.slice(-11);
         }
