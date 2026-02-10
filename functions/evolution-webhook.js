@@ -5,6 +5,7 @@
 
 const { createClient } = require('@supabase/supabase-js');
 const fetch = require('node-fetch');
+const PhoneNormalizer = require('../core/phone-normalizer');
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://qmyeyiujmcdjzvcqkyoc.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -73,7 +74,9 @@ function normalizeEvent(payload) {
                 || '';
 
             origem = {
-                numero: (key.remoteJid || '').replace('@s.whatsapp.net', '').replace('@g.us', ''),
+                numero: PhoneNormalizer.normalize((key.remoteJid || '')),
+                numero_ddi: PhoneNormalizer.withDDI((key.remoteJid || '')),
+                phone_normalized: PhoneNormalizer.canonical((key.remoteJid || '')),
                 jid: key.remoteJid || '',
                 nome: msg.pushName || data.pushName || '',
                 plataforma: 'whatsapp',
@@ -118,7 +121,8 @@ function normalizeEvent(payload) {
             tipo = 'status_mensagem';
             const updateData = Array.isArray(data) ? data[0] : data;
             origem = {
-                numero: (updateData?.key?.remoteJid || '').replace('@s.whatsapp.net', ''),
+                numero: PhoneNormalizer.normalize((updateData?.key?.remoteJid || '')),
+                phone_normalized: PhoneNormalizer.canonical((updateData?.key?.remoteJid || '')),
                 jid: updateData?.key?.remoteJid || '',
                 plataforma: 'whatsapp',
                 instancia: instance
@@ -138,7 +142,8 @@ function normalizeEvent(payload) {
         case 'PRESENCE_UPDATE': {
             tipo = data.status === 'composing' ? 'cliente_digitando' : 'cliente_online';
             origem = {
-                numero: (data.id || '').replace('@s.whatsapp.net', ''),
+                numero: PhoneNormalizer.normalize((data.id || '')),
+                phone_normalized: PhoneNormalizer.canonical((data.id || '')),
                 jid: data.id || '',
                 plataforma: 'whatsapp',
                 instancia: instance
@@ -201,16 +206,19 @@ async function enrichWithContext(normalized) {
 
     try {
         const telefone = normalized.origem.numero;
+        const phoneNorm = normalized.origem.phone_normalized || PhoneNormalizer.canonical(telefone);
+        const phoneVariations = PhoneNormalizer.variations(telefone);
 
         // Buscar perfil do cliente + sessão ativa em paralelo
+        // Tentar primeiro por phone_normalized (index), fallback para variações
         const [perfilRes, sessaoRes] = await Promise.all([
             supabase.from('clientes_perfil')
                 .select('id,nome,tier,tags,ticket_medio,total_gasto,total_pedidos,ultima_compra,nivel_engajamento')
-                .eq('telefone', telefone)
+                .or(`phone_normalized.eq.${phoneNorm},telefone.in.(${phoneVariations.join(',')})`)
                 .maybeSingle(),
             supabase.from('sessoes_ativas')
                 .select('id,agente_atual,contexto_ativo,mensagens')
-                .eq('cliente_telefone', telefone)
+                .or(`cliente_telefone.in.(${phoneVariations.join(',')})`)
                 .eq('status', 'ativa')
                 .maybeSingle()
         ]);

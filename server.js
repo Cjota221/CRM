@@ -9,6 +9,7 @@ const https = require('https');
 const crypto = require('crypto');
 const fs = require('fs');
 const { Server: SocketIO } = require('socket.io');
+const PhoneNormalizer = require('./core/phone-normalizer');
 
 const app = express();
 const server = http.createServer(app);
@@ -181,34 +182,15 @@ let crmCacheLoading = false; // Evitar requisições duplicadas
  * @returns {string} Número limpo (ex: "94984121802")
  */
 function normalizePhoneServer(raw) {
-    if (!raw) return '';
-    let cleaned = String(raw).replace(/\D/g, '');
-    // Remover DDI 55 apenas se o número tiver 12+ dígitos (DDI + DDD + número)
-    if (cleaned.startsWith('55') && cleaned.length >= 12) {
-        cleaned = cleaned.substring(2);
-    }
-    // Se ainda ficou com mais de 11, pegar últimos 11
-    if (cleaned.length > 11) {
-        cleaned = cleaned.slice(-11);
-    }
-    return cleaned;
+    return PhoneNormalizer.normalize(raw);
 }
 
 /**
  * Garantir que o número tenha DDI 55 (Brasil) para envio via Evolution API
- * Recebe número normalizado (sem DDI) e retorna com DDI
+ * Delega para PhoneNormalizer.withDDI()
  */
 function ensureDDI55(phone) {
-    if (!phone) return '';
-    const cleaned = String(phone).replace(/\D/g, '');
-    // Se já começa com 55 e tem 12+ dígitos, já tem DDI
-    if (cleaned.startsWith('55') && cleaned.length >= 12) return cleaned;
-    // Se tem 10-11 dígitos (DDD + número), adicionar 55
-    if (cleaned.length >= 10 && cleaned.length <= 11) return '55' + cleaned;
-    // Se tem 12-13 dígitos e começa com 55, já é válido
-    if (cleaned.length >= 12) return cleaned;
-    // Fallback: adicionar 55
-    return '55' + cleaned;
+    return PhoneNormalizer.withDDI(phone);
 }
 
 /**

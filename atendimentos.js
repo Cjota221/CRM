@@ -2,6 +2,75 @@
 // INICIALIZAÇÃO DO SISTEMA - Nova Arquitetura Profissional
 // ============================================================================
 
+// ============================================================================
+// CRM_MediaViewer — Lightbox inline para imagens + download de documentos
+// Substitui TODOS os window.open() de mídia por experiência inline
+// ============================================================================
+const CRM_MediaViewer = {
+    _overlay: null,
+
+    /** Abrir imagem em lightbox fullscreen */
+    open(url) {
+        if (!url) return;
+        this._ensureOverlay();
+        this._overlay.innerHTML = `
+            <div style="position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.9);display:flex;align-items:center;justify-content:center;cursor:zoom-out" onclick="CRM_MediaViewer.close()">
+                <img src="${url}" style="max-width:92vw;max-height:90vh;object-fit:contain;border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,.5)" onclick="event.stopPropagation()" />
+                <button style="position:absolute;top:16px;right:16px;background:rgba(255,255,255,.15);border:none;color:#fff;font-size:24px;width:40px;height:40px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)" onclick="CRM_MediaViewer.close()">✕</button>
+                <a href="${url}" download style="position:absolute;bottom:20px;right:20px;background:rgba(255,255,255,.15);border:none;color:#fff;font-size:14px;padding:8px 16px;border-radius:8px;cursor:pointer;text-decoration:none;backdrop-filter:blur(4px)" onclick="event.stopPropagation()">⬇ Baixar</a>
+            </div>`;
+        this._overlay.style.display = 'block';
+        document.addEventListener('keydown', this._escHandler);
+    },
+
+    /** Download direto de documento */
+    download(url, filename) {
+        if (!url) return;
+        const a = document.createElement('a');
+        a.href = url; a.download = filename || 'documento'; a.target = '_blank';
+        a.rel = 'noopener'; document.body.appendChild(a); a.click();
+        setTimeout(() => a.remove(), 100);
+    },
+
+    close() {
+        if (CRM_MediaViewer._overlay) CRM_MediaViewer._overlay.style.display = 'none';
+        document.removeEventListener('keydown', CRM_MediaViewer._escHandler);
+    },
+
+    _escHandler(e) { if (e.key === 'Escape') CRM_MediaViewer.close(); },
+
+    _ensureOverlay() {
+        if (!this._overlay) {
+            this._overlay = document.createElement('div');
+            this._overlay.id = 'crm-media-overlay';
+            this._overlay.style.display = 'none';
+            document.body.appendChild(this._overlay);
+        }
+    }
+};
+window.CRM_MediaViewer = CRM_MediaViewer;
+
+// ============================================================================
+// INTERCEPTOR: Bloqueia window.open residual (segurança)
+// ============================================================================
+(function() {
+    const _origOpen = window.open;
+    window.open = function(url, target, features) {
+        // Se for URL de mídia (imagem/documento), redirecionar para lightbox
+        if (url && typeof url === 'string') {
+            const ext = url.split('?')[0].split('.').pop().toLowerCase();
+            if (['jpg','jpeg','png','gif','webp','svg','bmp'].includes(ext)) {
+                console.warn('⚠️ window.open interceptado → CRM_MediaViewer.open', url);
+                CRM_MediaViewer.open(url);
+                return null;
+            }
+        }
+        // Permitir outros usos legítimos (login OAuth, etc.)
+        console.warn('⚠️ window.open chamado:', url);
+        return _origOpen.call(window, url, target, features);
+    };
+})();
+
 // Debounced cloud save — salva no Supabase 3s após última alteração
 let _cloudSaveTimer = null;
 function scheduleCloudSave() {
@@ -540,7 +609,7 @@ function appendRealtimeMessage(msg) {
         contentHtml = typeof formatWhatsAppText === 'function' ? formatWhatsAppText(msg.text) : escapeHtml(msg.text);
     }
     if (msg.mediaType === 'image' && msg.mediaUrl) {
-        contentHtml = `<img src="${msg.mediaUrl}" class="rounded-lg max-w-full max-h-[300px] cursor-pointer" onclick="window.open('${msg.mediaUrl}','_blank')" loading="lazy" />` + (contentHtml ? `<p class="mt-1 text-sm">${contentHtml}</p>` : '');
+        contentHtml = `<img src="${msg.mediaUrl}" class="rounded-lg max-w-full max-h-[300px] cursor-pointer" onclick="CRM_MediaViewer.open('${msg.mediaUrl}')" loading="lazy" />` + (contentHtml ? `<p class="mt-1 text-sm">${contentHtml}</p>` : '');
     } else if (msg.mediaType === 'audio') {
         const audioUrl = msg.mediaUrl || (msg.raw?.message?.audioMessage?.playableUrl) || (msg.raw?.message?.audioMessage?.url) || '';
         const duration = msg.raw?.message?.audioMessage?.seconds || 0;
@@ -2319,7 +2388,7 @@ function buildMessageBubble(msg) {
         const fileName = m.documentMessage.fileName || 'Documento';
         const docUrl = m.documentMessage.downloadUrl || m.documentMessage.url || '';
         if (docUrl) {
-            content = `<div class="flex items-center gap-2 cursor-pointer hover:opacity-80" onclick="window.open('${docUrl}', '_blank')">
+            content = `<div class="flex items-center gap-2 cursor-pointer hover:opacity-80" onclick="CRM_MediaViewer.download('${docUrl}', '${fileName}')">
                 <span class="text-lg">📄</span>
                 <span class="underline text-blue-600">${fileName}</span>
                 <span class="text-xs text-slate-400">⬇</span>

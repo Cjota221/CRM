@@ -18,6 +18,14 @@ class ChatLoadingSystem {
         this.lastLoadTime = 0;
         this.loadingCache = null; // Para evitar multiple requests
         
+        // === Performance Metrics ===
+        this._metrics = { idbLoadMs: 0, apiLoadMs: 0, enrichMs: 0, renderMs: 0, totalMs: 0, chatCount: 0 };
+        
+        // === Infinite Scroll (Módulo 2) ===
+        this.PAGE_SIZE = 25;
+        this._visibleCount = 25;    // Quantos chats estão renderizados no DOM
+        this._scrollBound = false;  // Listener de scroll já registrado
+        
         // Throttle para fotos de perfil (evitar ERR_INSUFFICIENT_RESOURCES)
         this._picQueue = [];       // Fila de {chat, cleanPhone, resolve}
         this._picActive = 0;       // Requests ativos
@@ -110,14 +118,17 @@ class ChatLoadingSystem {
         
         this.isLoading = true;
         let renderedFromCache = false;
+        const t0_total = performance.now();
         
         // ======== PASSO 1: Renderizar do IndexedDB instantaneamente ========
         let idbChats = [];
         try {
             if (window.ChatDB) {
+                const t_idb = performance.now();
                 idbChats = await window.ChatDB.getChats();
+                this._metrics.idbLoadMs = performance.now() - t_idb;
                 if (idbChats.length > 0 && !forceRefresh) {
-                    console.log(`[ChatLoader] ⚡ IDB hit! ${idbChats.length} chats do IndexedDB`);
+                    console.log(`[ChatLoader] ⚡ IDB hit! ${idbChats.length} chats em ${this._metrics.idbLoadMs.toFixed(0)}ms`);
                     this.allChats = idbChats;
                     this.loadingCache = this.allChats;
                     this.applyFilter(this.currentFilter);
@@ -221,7 +232,13 @@ class ChatLoadingSystem {
             } catch (e) {}
             
             const totalTime = performance.now() - t0;
+            this._metrics.totalMs = performance.now() - t0_total;
+            this._metrics.chatCount = this.allChats.length;
             console.log(`[ChatLoader] ✅ ${this.allChats.length} chats carregados em ${totalTime.toFixed(0)}ms`);
+            console.log(`[ChatLoader] 📊 Métricas — IDB: ${this._metrics.idbLoadMs.toFixed(0)}ms | API: ${this._metrics.apiLoadMs.toFixed(0)}ms | Enrich: ${this._metrics.enrichMs.toFixed(0)}ms | Total: ${this._metrics.totalMs.toFixed(0)}ms`);
+            
+            // Disparar evento com métricas para monitoramento
+            window.dispatchEvent(new CustomEvent('chat-loader-metrics', { detail: { ...this._metrics } }));
             
             // Re-renderizar com dados frescos
             this.applyFilter(this.currentFilter);
@@ -281,19 +298,24 @@ class ChatLoadingSystem {
     }
     
     /**
-     * Renderizar lista de chats na tela (paginados - 20 por vez)
+     * Renderizar lista de chats na tela (com Infinite Scroll)
      */
     renderChatsList() {
         const container = document.getElementById('chatsList');
         if (!container) return;
         
+        const t_render = performance.now();
         container.innerHTML = '';
         
         // Se vazio, mostrar mensagem
         if (this.filteredChats.length === 0) {
             container.innerHTML = this.getEmptyStateHTML();
+            this._metrics.renderMs = performance.now() - t_render;
             return;
         }
+        
+        // Reset scroll counter
+        this._visibleCount = this.PAGE_SIZE;
         
         // Delegar para a função global renderChatsList que tem paginação
         if (typeof window.renderChatsList === 'function') {
@@ -306,13 +328,23 @@ class ChatLoadingSystem {
                 }
             }
             window.renderChatsList(this.filteredChats);
+            this._metrics.renderMs = performance.now() - t_render;
+            this._setupInfiniteScroll(container);
             return;
         }
         
-        // Fallback: renderizar com paginação local
-        const PAGE = 20;
+        // Fallback: renderizar com scroll infinito local
+        this._renderPage(container, 0, this.PAGE_SIZE);
+        this._setupInfiniteScroll(container);
+        this._metrics.renderMs = performance.now() - t_render;
+    }
+    
+    /**
+     * Renderizar uma página de chats no container
+     */
+    _renderPage(container, start, count) {
         const fragment = document.createDocumentFragment();
-        const toRender = this.filteredChats.slice(0, PAGE);
+        const toRender = this.filteredChats.slice(start, start + count);
         
         toRender.forEach(chat => {
             const element = this.createChatElement(chat);
@@ -321,10 +353,77 @@ class ChatLoadingSystem {
         
         container.appendChild(fragment);
         
-        // Re-inicializar ícones (lucide)
         if (window.lucide) {
             window.lucide.createIcons();
         }
+    }
+    
+    /**
+     * Setup Infinite Scroll — carrega mais chats quando scroll chega a 80%
+     */
+    _setupInfiniteScroll(container) {
+        // Encontrar o container scrollável (pode ser o pai)
+        const scrollContainer = container.closest('.overflow-y-auto') || container.parentElement;
+        if (!scrollContainer || this._scrollBound) return;
+        
+        this._scrollBound = true;
+        let ticking = false;
+        
+        const onScroll = () => {
+            if (ticking) return;
+            ticking = true;
+            requestAnimationFrame(() => {
+                ticking = false;
+                const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
+                const threshold = 0.80;
+                
+                if (scrollTop + clientHeight >= scrollHeight * threshold) {
+                    this._loadMoreChats(container);
+                }
+            });
+        };
+        
+        scrollContainer.addEventListener('scroll', onScroll, { passive: true });
+        
+        // Cleanup quando o container for removido
+        const observer = new MutationObserver((mutations) => {
+            if (!document.contains(container)) {
+                scrollContainer.removeEventListener('scroll', onScroll);
+                observer.disconnect();
+                this._scrollBound = false;
+            }
+        });
+        observer.observe(container.parentElement || document.body, { childList: true, subtree: true });
+    }
+    
+    /**
+     * Carregar mais chats (infinite scroll)
+     */
+    _loadMoreChats(container) {
+        if (this._visibleCount >= this.filteredChats.length) return; // Tudo já carregado
+        
+        const start = this._visibleCount;
+        const count = this.PAGE_SIZE;
+        
+        // Se há renderChatsList global, simplesmente re-renderizar com mais
+        if (typeof window.renderChatsList === 'function') {
+            this._visibleCount = Math.min(this._visibleCount + count, this.filteredChats.length);
+            // A função global pode não suportar append, então adicionamos DOM direto
+            this._renderPage(container, start, count);
+            console.log(`[ChatLoader] 📜 Scroll infinito: mostrando ${this._visibleCount}/${this.filteredChats.length}`);
+            return;
+        }
+        
+        this._renderPage(container, start, count);
+        this._visibleCount = Math.min(this._visibleCount + count, this.filteredChats.length);
+        console.log(`[ChatLoader] 📜 Scroll infinito: mostrando ${this._visibleCount}/${this.filteredChats.length}`);
+    }
+    
+    /**
+     * Obter métricas de performance (para monitoramento)
+     */
+    getMetrics() {
+        return { ...this._metrics };
     }
     
     /**
