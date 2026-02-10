@@ -5273,17 +5273,20 @@ function addBlock(type, containerId = 'campaignBlocks') {
     switch (type) {
         case 'text':
             innerHtml += `
-                <textarea id="${id}_text" rows="3" placeholder="Digite a mensagem... Use {{nome}}, {{cupom}}, etc." class="input resize-none text-sm w-full" oninput="updateBlockData('${id}','text',this.value)"></textarea>`;
+                <textarea id="${id}_text" rows="3" placeholder="Digite a mensagem... Use {{nome}}, {{cupom}}, etc." class="input resize-none text-sm w-full" oninput="updateBlockData('${id}','text',this.value)"></textarea>
+                <button onclick="aiImproveBlock('${id}','text','campaign_text')" class="ai-improve-btn mt-1 flex items-center gap-1 text-[10px] font-medium text-violet-600 hover:text-violet-800 hover:bg-violet-50 px-2 py-1 rounded transition"><i data-lucide="sparkles" class="w-3 h-3"></i> Melhorar com Anny</button>`;
             break;
         case 'image':
             innerHtml += `
-                <textarea id="${id}_caption" rows="2" placeholder="Legenda da imagem (opcional)" class="input resize-none text-sm w-full mb-2" oninput="updateBlockData('${id}','caption',this.value)"></textarea>
+                <textarea id="${id}_caption" rows="2" placeholder="Legenda da imagem (opcional)" class="input resize-none text-sm w-full mb-1" oninput="updateBlockData('${id}','caption',this.value)"></textarea>
+                <button onclick="aiImproveBlock('${id}','caption','campaign_caption')" class="ai-improve-btn mb-2 flex items-center gap-1 text-[10px] font-medium text-violet-600 hover:text-violet-800 hover:bg-violet-50 px-2 py-1 rounded transition"><i data-lucide="sparkles" class="w-3 h-3"></i> Melhorar com Anny</button>
                 <input type="file" id="${id}_file" accept="image/*" class="input text-xs" onchange="handleBlockFile('${id}',event,'image')">
                 <div id="${id}_preview" class="hidden mt-2"><img class="w-16 h-16 object-cover rounded" id="${id}_thumb"></div>`;
             break;
         case 'video':
             innerHtml += `
-                <textarea id="${id}_caption" rows="2" placeholder="Legenda do vídeo (opcional)" class="input resize-none text-sm w-full mb-2" oninput="updateBlockData('${id}','caption',this.value)"></textarea>
+                <textarea id="${id}_caption" rows="2" placeholder="Legenda do vídeo (opcional)" class="input resize-none text-sm w-full mb-1" oninput="updateBlockData('${id}','caption',this.value)"></textarea>
+                <button onclick="aiImproveBlock('${id}','caption','campaign_caption')" class="ai-improve-btn mb-2 flex items-center gap-1 text-[10px] font-medium text-violet-600 hover:text-violet-800 hover:bg-violet-50 px-2 py-1 rounded transition"><i data-lucide="sparkles" class="w-3 h-3"></i> Melhorar com Anny</button>
                 <input type="file" id="${id}_file" accept="video/mp4,video/3gpp" class="input text-xs" onchange="handleBlockFile('${id}',event,'video')">`;
             break;
         case 'audio':
@@ -5312,7 +5315,8 @@ function addBlock(type, containerId = 'campaignBlocks') {
         case 'sticker':
             innerHtml += `
                 <input type="file" id="${id}_file" accept="image/webp,image/png" class="input text-xs" onchange="handleBlockFile('${id}',event,'sticker')">
-                <textarea id="${id}_text" rows="1" placeholder="Texto acompanhando (opcional)" class="input resize-none text-xs w-full mt-2" oninput="updateBlockData('${id}','text',this.value)"></textarea>`;
+                <textarea id="${id}_text" rows="1" placeholder="Texto acompanhando (opcional)" class="input resize-none text-xs w-full mt-2" oninput="updateBlockData('${id}','text',this.value)"></textarea>
+                <button onclick="aiImproveBlock('${id}','text','campaign_text')" class="ai-improve-btn mt-1 flex items-center gap-1 text-[10px] font-medium text-violet-600 hover:text-violet-800 hover:bg-violet-50 px-2 py-1 rounded transition"><i data-lucide="sparkles" class="w-3 h-3"></i> Melhorar com Anny</button>`;
             break;
         case 'product':
             innerHtml += `
@@ -5327,12 +5331,14 @@ function addBlock(type, containerId = 'campaignBlocks') {
                         <p id="${id}_productPrice" class="text-xs text-emerald-600"></p>
                     </div>
                 </div>
-                <textarea id="${id}_text" rows="2" placeholder="Texto complementar (ex: Disponível no atacado!)" class="input resize-none text-xs w-full mt-2" oninput="updateBlockData('${id}','text',this.value)"></textarea>`;
+                <textarea id="${id}_text" rows="2" placeholder="Texto complementar (ex: Disponível no atacado!)" class="input resize-none text-xs w-full mt-2" oninput="updateBlockData('${id}','text',this.value)"></textarea>
+                <button onclick="aiImproveBlock('${id}','text','product_text')" class="ai-improve-btn mt-1 flex items-center gap-1 text-[10px] font-medium text-violet-600 hover:text-violet-800 hover:bg-violet-50 px-2 py-1 rounded transition"><i data-lucide="sparkles" class="w-3 h-3"></i> Melhorar com Anny</button>`;
             break;
         case 'pix':
             innerHtml += `
                 <input type="text" id="${id}_text" placeholder="Chave PIX ou link do carrinho" class="input text-sm w-full" oninput="updateBlockData('${id}','text',this.value)">
-                <textarea id="${id}_msg" rows="2" placeholder="Mensagem de acompanhamento" class="input resize-none text-xs w-full mt-2" oninput="updateBlockData('${id}','message',this.value)"></textarea>`;
+                <textarea id="${id}_msg" rows="2" placeholder="Mensagem de acompanhamento" class="input resize-none text-xs w-full mt-2" oninput="updateBlockData('${id}','message',this.value)"></textarea>
+                <button onclick="aiImproveBlock('${id}','msg','pix_message')" class="ai-improve-btn mt-1 flex items-center gap-1 text-[10px] font-medium text-violet-600 hover:text-violet-800 hover:bg-violet-50 px-2 py-1 rounded transition"><i data-lucide="sparkles" class="w-3 h-3"></i> Melhorar com Anny</button>`;
             break;
     }
     
@@ -5814,6 +5820,76 @@ function injectVariables(text, contact) {
         .replace(/\{\{cupom\}\}/gi, client?.cupom || 'VEXX10')
         .replace(/\{\{link_carrinho\}\}/gi, client?.link_carrinho || '')
         .replace(/\{\{ultimo_pedido\}\}/gi, lastOrder ? `#${lastOrder.codigo || lastOrder.id} (R$ ${parseFloat(lastOrder.total||0).toFixed(2)})` : 'nenhum');
+}
+
+// ============================================================================
+// ANNY IA — Melhorar texto com inteligência artificial
+// ============================================================================
+
+async function aiImproveText(inputId, context = 'campaign_text', mode = 'improve') {
+    const el = document.getElementById(inputId);
+    if (!el) return;
+    const text = el.value?.trim();
+    if (!text || text.length < 3) return alert('Digite algo antes de pedir para a Anny melhorar.');
+    
+    // Visual feedback
+    const originalPlaceholder = el.placeholder;
+    el.disabled = true;
+    el.placeholder = '✨ Anny está pensando...';
+    el.classList.add('opacity-50');
+    
+    try {
+        const res = await fetch(`${API_BASE}/anny/improve-text`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, context, mode })
+        });
+        
+        const data = await res.json();
+        if (data.success && data.improved) {
+            el.value = data.improved;
+            // Disparar evento de input para atualizar os dados do bloco
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            showToast?.('✨ Texto melhorado pela Anny!', 'success');
+        } else {
+            throw new Error(data.error || 'Erro desconhecido');
+        }
+    } catch(e) {
+        console.error('[AI] Erro:', e);
+        alert(`Erro ao melhorar texto: ${e.message}`);
+    } finally {
+        el.disabled = false;
+        el.placeholder = originalPlaceholder;
+        el.classList.remove('opacity-50');
+    }
+}
+
+// Botão nos blocos de campanha — chama aiImproveText com o id do textarea do bloco
+function aiImproveBlock(blockId, field, context) {
+    aiImproveText(`${blockId}_${field}`, context, 'improve');
+}
+
+// Menu IA no chat
+function toggleAiMenu() {
+    const menu = document.getElementById('aiModeMenu');
+    if (menu) menu.classList.toggle('hidden');
+}
+
+// Fechar menu ao clicar fora
+document.addEventListener('click', (e) => {
+    const menu = document.getElementById('aiModeMenu');
+    const btn = document.getElementById('btnAiImprove');
+    if (menu && !menu.contains(e.target) && !btn?.contains(e.target)) {
+        menu.classList.add('hidden');
+    }
+});
+
+async function aiImproveChat(mode = 'improve') {
+    // Fechar menu
+    const menu = document.getElementById('aiModeMenu');
+    if (menu) menu.classList.add('hidden');
+    
+    await aiImproveText('inputMessage', 'chat_message', mode);
 }
 
 async function sendPresence(remoteJid, type = 'composing') {

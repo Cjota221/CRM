@@ -553,6 +553,34 @@
                     
                     <input id="inputMessage" type="text" class="flex-1 input" placeholder="Digite sua mensagem... (/ para atalhos)">
                     
+                    <!-- Botão Melhorar com Anny IA -->
+                    <div class="relative">
+                        <button onclick="toggleAiMenu()" id="btnAiImprove" class="text-violet-400 hover:text-violet-600 p-2 rounded-lg hover:bg-violet-50 transition-colors" title="Melhorar texto com Anny IA">
+                            <i data-lucide="sparkles" class="w-5 h-5"></i>
+                        </button>
+                        <div id="aiModeMenu" class="hidden absolute bottom-full right-0 mb-2 bg-white rounded-xl shadow-lg border border-slate-200 py-2 min-w-[180px] z-50">
+                            <p class="px-4 py-1 text-[10px] font-bold text-slate-400 uppercase">Anny IA — Reescrever</p>
+                            <button onclick="aiImproveChat('improve')" class="w-full px-4 py-2 text-left text-sm hover:bg-violet-50 flex items-center gap-3">
+                                <i data-lucide="sparkles" class="w-4 h-4 text-violet-500"></i> Melhorar texto
+                            </button>
+                            <button onclick="aiImproveChat('persuasive')" class="w-full px-4 py-2 text-left text-sm hover:bg-violet-50 flex items-center gap-3">
+                                <i data-lucide="flame" class="w-4 h-4 text-orange-500"></i> Mais persuasivo
+                            </button>
+                            <button onclick="aiImproveChat('casual')" class="w-full px-4 py-2 text-left text-sm hover:bg-violet-50 flex items-center gap-3">
+                                <i data-lucide="smile" class="w-4 h-4 text-yellow-500"></i> Mais casual
+                            </button>
+                            <button onclick="aiImproveChat('formal')" class="w-full px-4 py-2 text-left text-sm hover:bg-violet-50 flex items-center gap-3">
+                                <i data-lucide="briefcase" class="w-4 h-4 text-blue-500"></i> Mais formal
+                            </button>
+                            <button onclick="aiImproveChat('shorter')" class="w-full px-4 py-2 text-left text-sm hover:bg-violet-50 flex items-center gap-3">
+                                <i data-lucide="minimize-2" class="w-4 h-4 text-emerald-500"></i> Encurtar
+                            </button>
+                            <button onclick="aiImproveChat('longer')" class="w-full px-4 py-2 text-left text-sm hover:bg-violet-50 flex items-center gap-3">
+                                <i data-lucide="maximize-2" class="w-4 h-4 text-cyan-500"></i> Expandir
+                            </button>
+                        </div>
+                    </div>
+                    
                     <!-- Botão Gravar Áudio - Novo Design -->
                     <button onclick="startAudioRecording()" id="btnStartRecording" class="text-slate-400 hover:text-emerald-600 p-2 rounded-lg hover:bg-emerald-50 transition-colors" title="Clique para gravar áudio">
                         <i data-lucide="mic" class="w-5 h-5"></i>

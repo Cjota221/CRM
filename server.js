@@ -2852,6 +2852,90 @@ app.post('/api/anny', async (req, res) => {
 });
 
 // ============================================================================
+// ANNY AI - Melhorar / Reescrever texto com IA
+// ============================================================================
+app.post('/api/anny/improve-text', async (req, res) => {
+    try {
+        if (!OPENAI_API_KEY) {
+            return res.status(500).json({ error: 'OPENAI_API_KEY não configurada' });
+        }
+
+        const { text, context, mode } = req.body;
+        // text = rascunho do usuário
+        // context = 'campaign_caption' | 'campaign_text' | 'chat_message' | 'pix_message'
+        // mode = 'improve' (default) | 'formal' | 'casual' | 'shorter' | 'longer' | 'persuasive'
+
+        if (!text || text.trim().length < 3) {
+            return res.status(400).json({ error: 'Texto muito curto para melhorar' });
+        }
+
+        const modeInstructions = {
+            improve: 'Melhore a escrita, gramática e impacto. Mantenha o tom original.',
+            formal: 'Reescreva em tom profissional e formal.',
+            casual: 'Reescreva de forma leve, descontraída e simpática para WhatsApp.',
+            shorter: 'Encurte ao máximo sem perder a mensagem principal.',
+            longer: 'Expanda com mais detalhes e argumentos de venda.',
+            persuasive: 'Reescreva de forma muito persuasiva com gatilhos de urgência/escassez.'
+        };
+
+        const contextHints = {
+            campaign_caption: 'É uma legenda para imagem/vídeo de campanha no WhatsApp (atacado de calçados femininos).',
+            campaign_text: 'É uma mensagem de texto para campanha WhatsApp em massa (atacado de calçados femininos).',
+            chat_message: 'É uma mensagem direta para um cliente no WhatsApp (venda de calçados femininos atacado).',
+            pix_message: 'É uma mensagem que acompanha um link de pagamento PIX.',
+            product_text: 'É uma descrição/oferta de produto (calçados femininos atacado).'
+        };
+
+        const prompt = `Você é a Anny, copywriter especialista em vendas de calçados femininos (atacado B2B). 
+${contextHints[context] || 'É uma mensagem para WhatsApp comercial.'}
+${modeInstructions[mode] || modeInstructions.improve}
+
+REGRAS:
+- Preserve variáveis como {{nome}}, {{cupom}}, {{link_carrinho}} intactas
+- Use emojis moderadamente (máx 3-4)
+- Linguagem natural para WhatsApp, sem ser robótica
+- Máx 500 caracteres (a menos que mode=longer)
+- NÃO use markdown, NÃO use * ou ** ou # 
+- Responda APENAS com o texto melhorado, nada mais
+
+Texto original do operador:
+"${text}"`;
+
+        const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${OPENAI_API_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: 'gpt-4o-mini',
+                messages: [
+                    { role: 'system', content: 'Você é copywriter de WhatsApp comercial. Responda APENAS com o texto melhorado.' },
+                    { role: 'user', content: prompt }
+                ],
+                temperature: 0.7,
+                max_tokens: 600
+            })
+        });
+
+        if (!aiResponse.ok) {
+            const errorText = await aiResponse.text();
+            throw new Error(`OpenAI API error: ${aiResponse.status} - ${errorText}`);
+        }
+
+        const data = await aiResponse.json();
+        const improved = data.choices[0].message.content.trim().replace(/^["']|["']$/g, '');
+
+        console.log(`[Anny] improve-text: "${text.substring(0, 50)}..." → "${improved.substring(0, 50)}..."`);
+        res.json({ success: true, original: text, improved });
+
+    } catch (error) {
+        console.error('[Anny] Improve text error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ============================================================================
 // ANNY AI - Gerador de mensagem de campanha via IA
 // ============================================================================
 app.post('/api/anny/generate-campaign-message', async (req, res) => {
