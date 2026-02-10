@@ -1682,46 +1682,46 @@ app.post('/api/supabase-sync', async (req, res) => {
                 // ---- DADOS DO ATENDIMENTO ----
                 if (tags?.length > 0) {
                     // Limpar e reinserir tags (replace strategy)
-                    await supabase.from('crm_tags').delete().neq('id', 0);
-                    const { error } = await supabase.from('crm_tags').insert(tags);
+                    await supabase.from('tags').delete().neq('id', 0);
+                    const { error } = await supabase.from('tags').insert(tags);
                     if (error) console.error('Erro tags:', error);
                     results.tags = tags.length;
                 }
                 if (chat_tags?.length > 0) {
-                    await supabase.from('crm_chat_tags').delete().neq('id', 0);
-                    const { error } = await supabase.from('crm_chat_tags').insert(chat_tags);
+                    await supabase.from('chat_tags').delete().neq('id', 0);
+                    const { error } = await supabase.from('chat_tags').insert(chat_tags);
                     if (error) console.error('Erro chat_tags:', error);
                     results.chat_tags = chat_tags.length;
                 }
                 if (quick_replies?.length > 0) {
-                    await supabase.from('crm_quick_replies').delete().neq('id', 0);
-                    const { error } = await supabase.from('crm_quick_replies').insert(quick_replies);
+                    await supabase.from('quick_replies').delete().neq('id', 0);
+                    const { error } = await supabase.from('quick_replies').insert(quick_replies);
                     if (error) console.error('Erro quick_replies:', error);
                     results.quick_replies = quick_replies.length;
                 }
                 if (client_notes?.length > 0) {
-                    const { error } = await supabase.from('crm_client_notes').upsert(client_notes, { onConflict: 'id' });
+                    const { error } = await supabase.from('client_notes').upsert(client_notes, { onConflict: 'id' });
                     if (error) console.error('Erro client_notes:', error);
                     results.client_notes = client_notes.length;
                 }
                 if (snoozed?.length > 0) {
-                    await supabase.from('crm_snoozed').delete().neq('chat_id', '');
-                    const { error } = await supabase.from('crm_snoozed').insert(snoozed);
+                    await supabase.from('snoozed').delete().neq('chat_id', '');
+                    const { error } = await supabase.from('snoozed').insert(snoozed);
                     if (error) console.error('Erro snoozed:', error);
                     results.snoozed = snoozed.length;
                 }
                 if (scheduled?.length > 0) {
-                    const { error } = await supabase.from('crm_scheduled').upsert(scheduled, { onConflict: 'id' });
+                    const { error } = await supabase.from('scheduled').upsert(scheduled, { onConflict: 'id' });
                     if (error) console.error('Erro scheduled:', error);
                     results.scheduled = scheduled.length;
                 }
                 if (ai_tags?.length > 0) {
-                    const { error } = await supabase.from('crm_ai_tags').upsert(ai_tags, { onConflict: 'client_id' });
+                    const { error } = await supabase.from('ai_tags').upsert(ai_tags, { onConflict: 'client_id' });
                     if (error) console.error('Erro ai_tags:', error);
                     results.ai_tags = ai_tags.length;
                 }
                 if (coupon_assignments?.length > 0) {
-                    const { error } = await supabase.from('crm_coupon_assignments').upsert(coupon_assignments, { onConflict: 'id' });
+                    const { error } = await supabase.from('coupon_assignments').upsert(coupon_assignments, { onConflict: 'id' });
                     if (error) console.error('Erro coupon_assignments:', error);
                     results.coupon_assignments = coupon_assignments.length;
                 }
@@ -1738,14 +1738,14 @@ app.post('/api/supabase-sync', async (req, res) => {
                     supabase.from('coupons').select('*'),
                     supabase.from('campaigns').select('*'),
                     supabase.from('settings').select('*').eq('id', 'main').single(),
-                    supabase.from('crm_tags').select('*').order('id'),
-                    supabase.from('crm_chat_tags').select('*'),
-                    supabase.from('crm_quick_replies').select('*').order('id'),
-                    supabase.from('crm_client_notes').select('*'),
-                    supabase.from('crm_snoozed').select('*'),
-                    supabase.from('crm_scheduled').select('*'),
-                    supabase.from('crm_ai_tags').select('*'),
-                    supabase.from('crm_coupon_assignments').select('*')
+                    supabase.from('tags').select('*').order('id'),
+                    supabase.from('chat_tags').select('*'),
+                    supabase.from('quick_replies').select('*').order('id'),
+                    supabase.from('client_notes').select('*'),
+                    supabase.from('snoozed').select('*'),
+                    supabase.from('scheduled').select('*'),
+                    supabase.from('ai_tags').select('*'),
+                    supabase.from('coupon_assignments').select('*')
                 ]);
 
                 return res.json({
@@ -1764,6 +1764,11 @@ app.post('/api/supabase-sync', async (req, res) => {
                     ai_tags: aiTagsRes.data || [],
                     coupon_assignments: couponAssignRes.data || []
                 });
+            }
+
+            case 'ping': {
+                // Lightweight keepalive from beforeunload — just acknowledge
+                return res.json({ ok: true, action: 'ping' });
             }
 
             default:

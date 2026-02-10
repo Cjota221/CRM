@@ -4426,7 +4426,7 @@ function updateConnectionUI(state) {
     
     // Verificar se elementos existem antes de manipular
     if (!dot || !text) {
-        console.warn('[updateConnectionUI] Elementos de conexão não encontrados no DOM');
+        // Silencioso: elementos podem não existir se a página não é atendimentos.html
         return;
     }
     
@@ -4499,6 +4499,13 @@ function updateConnectionUI(state) {
 
 // Iniciar monitoramento de conexão
 function startConnectionMonitoring() {
+    // Aguardar DOM estar pronto antes de verificar
+    const dot = document.getElementById('connectionDot');
+    if (!dot) {
+        // Elementos de conexão não existem nesta página, não monitorar
+        return;
+    }
+    
     // Verificar imediatamente
     checkConnectionStatus();
     
