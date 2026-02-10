@@ -1546,6 +1546,57 @@ async function generateInsights() {
 // CHAMADA À API GROQ
 // ============================================================================
 
+// Parser para tool calls mal-formatados pelo Llama
+// Formato inválido: <function=nomeFuncao{"param":"valor"}</function>
+// Também captura: <function=nomeFuncao>{"param":"valor"}</function>
+function parseFailedToolCall(failedGeneration) {
+    if (!failedGeneration) return null;
+    
+    try {
+        // Padrão 1: <function=name{"key":"val"}</function>
+        let match = failedGeneration.match(/<function=(\w+)\s*(\{[\s\S]*?\})\s*<\/function>/);
+        if (match) {
+            return {
+                name: match[1],
+                arguments: JSON.parse(match[2])
+            };
+        }
+        
+        // Padrão 2: <function=name>{"key":"val"}</function>
+        match = failedGeneration.match(/<function=(\w+)>\s*(\{[\s\S]*?\})\s*<\/function>/);
+        if (match) {
+            return {
+                name: match[1],
+                arguments: JSON.parse(match[2])
+            };
+        }
+        
+        // Padrão 3: funcName({"key":"val"})
+        match = failedGeneration.match(/(\w+)\(\s*(\{[\s\S]*?\})\s*\)/);
+        if (match) {
+            return {
+                name: match[1],
+                arguments: JSON.parse(match[2])
+            };
+        }
+
+        // Padrão 4: {"name":"funcName","parameters":{"key":"val"}}
+        if (failedGeneration.includes('"name"')) {
+            const parsed = JSON.parse(failedGeneration);
+            if (parsed.name) {
+                return {
+                    name: parsed.name,
+                    arguments: parsed.parameters || parsed.arguments || {}
+                };
+            }
+        }
+    } catch (e) {
+        console.error('[Anny] parseFailedToolCall error:', e.message, 'input:', failedGeneration);
+    }
+    
+    return null;
+}
+
 async function callGroqAPI(messages, tools = null, retryCount = 0) {
     const MAX_RETRIES = 3;
     
@@ -1588,6 +1639,46 @@ async function callGroqAPI(messages, tools = null, retryCount = 0) {
         // Se for rate limit e já esgotou retries, dá mensagem amigável
         if (response.status === 429) {
             throw new Error('Estou processando muitas mensagens agora. Por favor, aguarde alguns segundos e tente novamente! 🙏');
+        }
+        
+        // FIX: Llama às vezes gera tool calls em formato inválido (<function=name{args}</function>)
+        // Groq retorna 400 tool_use_failed — capturar, parsear e executar manualmente
+        if (response.status === 400 && errorText.includes('tool_use_failed')) {
+            console.log('[Anny] Tool call format inválido detectado, tentando recuperar...');
+            try {
+                const errorData = JSON.parse(errorText);
+                const failedGen = errorData?.error?.failed_generation || '';
+                const parsed = parseFailedToolCall(failedGen);
+                
+                if (parsed) {
+                    console.log(`[Anny] Recuperado tool call: ${parsed.name}`, parsed.arguments);
+                    // Retornar como se fosse uma resposta normal com tool_calls
+                    return {
+                        choices: [{
+                            message: {
+                                role: 'assistant',
+                                content: null,
+                                tool_calls: [{
+                                    id: `recovered_${Date.now()}`,
+                                    type: 'function',
+                                    function: {
+                                        name: parsed.name,
+                                        arguments: JSON.stringify(parsed.arguments)
+                                    }
+                                }]
+                            }
+                        }]
+                    };
+                }
+            } catch (parseErr) {
+                console.error('[Anny] Falha ao parsear failed_generation:', parseErr.message);
+            }
+            
+            // Se não conseguiu parsear, tenta novamente SEM tools
+            if (tools && retryCount < MAX_RETRIES) {
+                console.log('[Anny] Retentando sem tools...');
+                return callGroqAPI(messages, null, retryCount + 1);
+            }
         }
         
         throw new Error(`Groq API error: ${response.status} - ${errorText}`);
