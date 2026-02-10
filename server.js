@@ -1971,26 +1971,32 @@ app.post('/api/supabase-sync', async (req, res) => {
 // 5. Enviar Mensagem
 app.post('/api/whatsapp/send-message', async (req, res) => {
     try {
-        const { number, text } = req.body; 
+        const { number, text, phoneNumber, message } = req.body;
+        
+        // Compatibilidade: aceitar 'phoneNumber'/'message' como fallback
+        let rawNumber = number || phoneNumber;
+        const rawText = text || message;
+        if (!rawNumber) return res.status(400).json({ error: 'Número não informado' });
+        if (!rawText) return res.status(400).json({ error: 'Texto não informado' });
         
         // Normalizar número - remover @s.whatsapp.net se presente (a API adiciona automaticamente)
-        let phoneNumber = number;
-        if (phoneNumber.includes('@s.whatsapp.net')) {
-            phoneNumber = phoneNumber.replace('@s.whatsapp.net', '');
+        let phoneNum = rawNumber;
+        if (phoneNum.includes('@s.whatsapp.net')) {
+            phoneNum = phoneNum.replace('@s.whatsapp.net', '');
         }
         // Para grupos, manter @g.us
-        if (phoneNumber.includes('@g.us')) {
+        if (phoneNum.includes('@g.us')) {
             // Para grupos, enviar como está
-            phoneNumber = number;
-        } else if (phoneNumber.includes('@lid')) {
+            phoneNum = rawNumber;
+        } else if (phoneNum.includes('@lid')) {
             // Para @lid, enviar como está
-            phoneNumber = number;
+            phoneNum = rawNumber;
         } else {
             // Chat individual — normalizar DDI para garantir +55
-            phoneNumber = ensureDDI55(normalizePhoneServer(phoneNumber));
+            phoneNum = ensureDDI55(normalizePhoneServer(phoneNum));
         }
         
-        console.log(`[WhatsApp] Enviando mensagem para: ${phoneNumber}`);
+        console.log(`[WhatsApp] Enviando mensagem para: ${phoneNum}`);
 
         const url = `${EVOLUTION_URL}/message/sendText/${INSTANCE_NAME}`;
         
@@ -1999,8 +2005,8 @@ app.post('/api/whatsapp/send-message', async (req, res) => {
             method: 'POST',
             headers: evolutionHeaders,
             body: JSON.stringify({
-                number: phoneNumber,
-                text: text
+                number: phoneNum,
+                text: rawText
             })
         });
         
@@ -2023,25 +2029,29 @@ app.post('/api/whatsapp/send-message', async (req, res) => {
 // 5.1 Enviar Mídia (Imagem, Vídeo, Áudio, Documento)
 app.post('/api/whatsapp/send-media', async (req, res) => {
     try {
-        const { number, mediaType, media, caption, fileName } = req.body;
+        const { number, mediaType, media, caption, fileName, phoneNumber } = req.body;
+        
+        // Compatibilidade: aceitar 'phoneNumber' como fallback
+        let rawNumber = number || phoneNumber;
+        if (!rawNumber) return res.status(400).json({ error: 'Número não informado' });
         
         // Normalizar número
-        let phoneNumber = number;
-        if (phoneNumber.includes('@s.whatsapp.net')) {
-            phoneNumber = phoneNumber.replace('@s.whatsapp.net', '');
+        let phoneNum = rawNumber;
+        if (phoneNum.includes('@s.whatsapp.net')) {
+            phoneNum = phoneNum.replace('@s.whatsapp.net', '');
         }
         // Manter @g.us para grupos
-        if (!phoneNumber.includes('@g.us') && !phoneNumber.includes('@lid')) {
-            phoneNumber = phoneNumber.replace(/@.*/, '');
+        if (!phoneNum.includes('@g.us') && !phoneNum.includes('@lid')) {
+            phoneNum = phoneNum.replace(/@.*/, '');
             // Chat individual — normalizar DDI para garantir +55
-            phoneNumber = ensureDDI55(normalizePhoneServer(phoneNumber));
+            phoneNum = ensureDDI55(normalizePhoneServer(phoneNum));
         }
         
-        console.log(`[WhatsApp] Enviando ${mediaType} para: ${phoneNumber}`);
+        console.log(`[WhatsApp] Enviando ${mediaType} para: ${phoneNum}`);
         
         // Determinar endpoint correto baseado no tipo de mídia
         let endpoint;
-        let body = { number: phoneNumber };
+        let body = { number: phoneNum };
         
         switch (mediaType) {
             case 'image':

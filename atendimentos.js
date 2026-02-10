@@ -3644,7 +3644,7 @@ async function sendProductToChat(idx) {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    phoneNumber,
+                    number: phoneNumber,
                     media: imagem,
                     mediaType: 'image',
                     caption: caption
@@ -3658,8 +3658,8 @@ async function sendProductToChat(idx) {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    phoneNumber,
-                    message: caption
+                    number: phoneNumber,
+                    text: caption
                 })
             });
             const result = await response.json();
@@ -3717,11 +3717,11 @@ async function sendProductMessage(name, preco, imageUrl, link) {
     closeProductModal();
     try {
         const caption = `Olha que linda essa opção! ✨\n\n*${name}*\nPor apenas *R$ ${parseFloat(preco).toFixed(2)}*\n\nVeja mais detalhes e feche seu pedido aqui:\n${link}`;
-        const phoneNumber = (currentChatData?.remoteJid || currentChatId).replace('@s.whatsapp.net', '').replace('@g.us', '');
+        const phoneNumber = (currentChatData?.remoteJid || currentChatId || currentRemoteJid).replace('@s.whatsapp.net', '').replace('@g.us', '');
         const response = await fetch(`${API_BASE}/whatsapp/send-media`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phoneNumber, media: imageUrl, mediaType: 'image', caption })
+            body: JSON.stringify({ number: phoneNumber, media: imageUrl, mediaType: 'image', caption })
         });
         const result = await response.json();
         if (result.error) throw new Error(result.error);
