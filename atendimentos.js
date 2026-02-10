@@ -1424,9 +1424,32 @@ async function openChat(chat) {
         console.log('Telefone formatado no header:', formattedPhone);
         
         if (headerWhatsAppLink && cleanPhone) {
-            // Verificar se já tem DDI 55 para não duplicar
+            // Envio interno via Evolution API (sem abrir wa.me externo)
             const waPhone = cleanPhone.startsWith('55') && cleanPhone.length >= 12 ? cleanPhone : `55${cleanPhone}`;
-            headerWhatsAppLink.href = `https://wa.me/${waPhone}`;
+            headerWhatsAppLink.onclick = async () => {
+                const text = 'Olá! Tudo bem? 😊';
+                headerWhatsAppLink.disabled = true;
+                headerWhatsAppLink.classList.add('opacity-50');
+                try {
+                    const res = await fetch(`${API_BASE}/whatsapp/send-message`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ number: waPhone, text, source: 'central-atendimento' })
+                    });
+                    const data = await res.json();
+                    if (res.ok && !data.error) {
+                        showToast('✅ Mensagem enviada!', 'success');
+                    } else {
+                        showToast('❌ Falha ao enviar: ' + (data.error || 'desconhecido'), 'error');
+                    }
+                } catch (err) {
+                    console.error('[WhatsApp] Erro de rede:', err);
+                    showToast('❌ Erro de conexão', 'error');
+                } finally {
+                    headerWhatsAppLink.disabled = false;
+                    headerWhatsAppLink.classList.remove('opacity-50');
+                }
+            };
             headerWhatsAppLink.classList.remove('hidden');
         }
     }
