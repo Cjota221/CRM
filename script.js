@@ -196,13 +196,192 @@ const Storage = {
         LAST_SYNC: 'crm_last_sync'
     },
 
+    // IndexedDB para overflow de dados grandes
+    _idb: null,
+    _idbReady: null,
+    
+    _openIDB() {
+        if (this._idbReady) return this._idbReady;
+        this._idbReady = new Promise((resolve, reject) => {
+            const req = indexedDB.open('crm_storage_v1', 1);
+            req.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains('data')) {
+                    db.createObjectStore('data', { keyPath: 'key' });
+                }
+            };
+            req.onsuccess = (e) => { this._idb = e.target.result; resolve(this._idb); };
+            req.onerror = (e) => { console.warn('[Storage IDB] Erro:', e); resolve(null); };
+        });
+        return this._idbReady;
+    },
+
+    async _saveToIDB(key, data) {
+        try {
+            const db = await this._openIDB();
+            if (!db) return false;
+            return new Promise((resolve) => {
+                const tx = db.transaction('data', 'readwrite');
+                tx.objectStore('data').put({ key, value: data, savedAt: Date.now() });
+                tx.oncomplete = () => resolve(true);
+                tx.onerror = () => resolve(false);
+            });
+        } catch { return false; }
+    },
+
+    async _loadFromIDB(key) {
+        try {
+            const db = await this._openIDB();
+            if (!db) return null;
+            return new Promise((resolve) => {
+                const tx = db.transaction('data', 'readonly');
+                const req = tx.objectStore('data').get(key);
+                req.onsuccess = () => resolve(req.result?.value || null);
+                req.onerror = () => resolve(null);
+            });
+        } catch { return null; }
+    },
+
+    // Compactar dados de clientes removendo campos pesados desnecessários
+    _compactClients(clients) {
+        return clients.map(c => {
+            const compact = { ...c };
+            // Limitar products a top 30 por cliente (ordenados por quantidade)
+            if (compact.products && compact.products.length > 30) {
+                compact.products = [...compact.products]
+                    .sort((a, b) => (b.quantity || 0) - (a.quantity || 0))
+                    .slice(0, 30);
+            }
+            // Limitar orderIds a últimos 50
+            if (compact.orderIds && compact.orderIds.length > 50) {
+                compact.orderIds = compact.orderIds.slice(-50);
+            }
+            // Remover campos vazios/nulos para economizar bytes
+            for (const key of Object.keys(compact)) {
+                if (compact[key] === null || compact[key] === '' || compact[key] === undefined) {
+                    delete compact[key];
+                }
+            }
+            return compact;
+        });
+    },
+
+    // Compactar pedidos removendo campos redundantes
+    _compactOrders(orders) {
+        return orders.map(o => {
+            const compact = { ...o };
+            // Remover campos pesados que podem ser obtidos via lookup no cliente
+            delete compact.clientEmail;
+            delete compact.clientCpf;
+            // Compactar products do pedido — manter só essenciais
+            if (compact.products) {
+                compact.products = compact.products.map(p => {
+                    const cp = {
+                        productId: p.productId,
+                        productName: p.productName,
+                        quantity: p.quantity,
+                        total: p.total
+                    };
+                    // Só incluir unitPrice se diferente de total/quantity
+                    if (p.unitPrice && p.quantity > 1) cp.unitPrice = p.unitPrice;
+                    return cp;
+                });
+            }
+            // Remover campos vazios
+            for (const key of Object.keys(compact)) {
+                if (compact[key] === null || compact[key] === '' || compact[key] === undefined) {
+                    delete compact[key];
+                }
+            }
+            return compact;
+        });
+    },
+
     save(key, data) {
         try {
             localStorage.setItem(key, JSON.stringify(data));
             scheduleCloudSave();
             return true;
         } catch (e) {
+            // QuotaExceededError — tentar compactar e salvar de novo
+            if (e.name === 'QuotaExceededError' || e.code === 22) {
+                console.warn(`[Storage] ⚠️ Quota excedida para '${key}', tentando compactar...`);
+                return this._saveWithCompaction(key, data);
+            }
             console.error('Erro ao salvar no localStorage:', e);
+            return false;
+        }
+    },
+
+    _saveWithCompaction(key, data) {
+        try {
+            let compacted = data;
+            
+            if (key === this.KEYS.CLIENTS && Array.isArray(data)) {
+                compacted = this._compactClients(data);
+                console.log(`[Storage] Clientes compactados: ${data.length} itens`);
+            } else if (key === this.KEYS.ORDERS && Array.isArray(data)) {
+                compacted = this._compactOrders(data);
+                console.log(`[Storage] Pedidos compactados: ${data.length} itens`);
+            }
+            
+            try {
+                localStorage.setItem(key, JSON.stringify(compacted));
+                scheduleCloudSave();
+                console.log(`[Storage] ✅ Salvo com compactação: ${key}`);
+                return true;
+            } catch (e2) {
+                // Ainda estourou — para pedidos, manter só os últimos 6 meses
+                if (key === this.KEYS.ORDERS && Array.isArray(compacted)) {
+                    const sixMonthsAgo = new Date();
+                    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+                    const recent = compacted.filter(o => {
+                        const d = o.data ? new Date(o.data) : new Date(0);
+                        return d >= sixMonthsAgo;
+                    });
+                    console.warn(`[Storage] Pedidos reduzidos: ${compacted.length} → ${recent.length} (últimos 6 meses)`);
+                    
+                    // Salvar TODOS no IndexedDB (backup completo)
+                    this._saveToIDB(key, compacted);
+                    
+                    try {
+                        localStorage.setItem(key, JSON.stringify(recent));
+                        scheduleCloudSave();
+                        console.log(`[Storage] ✅ Pedidos recentes salvos no localStorage, completos no IndexedDB`);
+                        return true;
+                    } catch (e3) {
+                        // Último recurso: salvar apenas no IndexedDB
+                        console.warn(`[Storage] localStorage esgotado, salvando apenas no IndexedDB: ${key}`);
+                        this._saveToIDB(key, compacted);
+                        return false;
+                    }
+                }
+                
+                // Para clientes: salvar no IndexedDB como fallback
+                if (key === this.KEYS.CLIENTS && Array.isArray(compacted)) {
+                    console.warn(`[Storage] Clientes: salvando no IndexedDB como fallback`);
+                    this._saveToIDB(key, compacted);
+                    // Tentar salvar versão mínima no localStorage (sem products/orderIds)
+                    const minimal = compacted.map(c => ({
+                        id: c.id, name: c.name, phone: c.phone, email: c.email,
+                        city: c.city, state: c.state, lastPurchaseDate: c.lastPurchaseDate,
+                        totalSpent: c.totalSpent, orderCount: c.orderCount, tags: c.tags
+                    }));
+                    try {
+                        localStorage.setItem(key, JSON.stringify(minimal));
+                        scheduleCloudSave();
+                        console.log(`[Storage] ✅ Clientes mínimos no localStorage, completos no IndexedDB`);
+                        return true;
+                    } catch { return false; }
+                }
+                
+                // Fallback genérico: IndexedDB
+                this._saveToIDB(key, data);
+                return false;
+            }
+        } catch (err) {
+            console.error(`[Storage] Erro na compactação de ${key}:`, err);
+            this._saveToIDB(key, data);
             return false;
         }
     },
@@ -217,12 +396,28 @@ const Storage = {
         }
     },
 
+    // Carregar com fallback para IndexedDB (para dados que podem ter overflow)
+    async loadWithFallback(key, defaultValue = []) {
+        const local = this.load(key, null);
+        if (local !== null) return local;
+        
+        // Tentar IndexedDB
+        const idbData = await this._loadFromIDB(key);
+        if (idbData) {
+            console.log(`[Storage] Dados de '${key}' carregados do IndexedDB (fallback)`);
+            return idbData;
+        }
+        return defaultValue;
+    },
+
     getClients() {
         return this.load(this.KEYS.CLIENTS, []);
     },
 
     saveClients(clients) {
-        return this.save(this.KEYS.CLIENTS, clients);
+        // Compactar antes de salvar para minimizar uso de espaço
+        const compacted = this._compactClients(clients);
+        return this.save(this.KEYS.CLIENTS, compacted);
     },
 
     getProducts() {
@@ -238,7 +433,9 @@ const Storage = {
     },
 
     saveOrders(orders) {
-        return this.save(this.KEYS.ORDERS, orders);
+        // Compactar antes de salvar para minimizar uso de espaço
+        const compacted = this._compactOrders(orders);
+        return this.save(this.KEYS.ORDERS, compacted);
     },
 
     getSettings() {
