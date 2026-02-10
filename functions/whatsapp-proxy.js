@@ -595,12 +595,21 @@ exports.handler = async (event) => {
     if (qRoute) {
         route = qRoute;
     } else {
-        // Extract from path after whatsapp-proxy
+        // Fallback 1: Extract from path after whatsapp-proxy
         const pathParts = event.path.split('whatsapp-proxy');
-        route = pathParts[1] ? pathParts[1].replace(/^\//, '') : '';
+        if (pathParts[1]) {
+            route = pathParts[1].replace(/^\//, '');
+        } else {
+            // Fallback 2: Extract from original path /api/xxx → xxx
+            const apiMatch = event.path.match(/\/api\/(.+)/);
+            route = apiMatch ? apiMatch[1] : '';
+        }
     }
 
-    const body = event.body ? JSON.parse(event.body) : {};
+    console.log('[WhatsApp Proxy] Route:', route, '| Path:', event.path, '| QRoute:', qRoute);
+
+    let body = {};
+    try { body = event.body ? JSON.parse(event.body) : {}; } catch (e) { body = {}; }
     const params = event.queryStringParameters || {};
 
     let result;
