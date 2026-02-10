@@ -9,8 +9,8 @@ const fetch = require('node-fetch');
 // ============================================================================
 // CONFIG
 // ============================================================================
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://qmyeyiujmcdjzvcqkyoc.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const EVOLUTION_URL = process.env.EVOLUTION_URL || 'https://evolution-api.cjota.site';
@@ -171,7 +171,7 @@ async function classifyIntent(texto, clientContext) {
     }
 
     // FASE 3: Inferência por IA (quando keywords não são conclusivas)
-    if (GROQ_API_KEY && texto && texto.length > 3) {
+    if (OPENAI_API_KEY && texto && texto.length > 3) {
         try {
             const classPrompt = `Classifique a intenção desta mensagem de WhatsApp.
 Contexto: CJ Rasteirinhas vende rasteirinhas femininas no atacado e tem programa de franquias C4.
@@ -183,19 +183,19 @@ ${clientContext?.perfil_cliente ? `Cliente: ${clientContext.perfil_cliente.nome 
 Responda APENAS com JSON (sem markdown):
 {"dominio":"vendas_atacado|c4_franquias|crm_financeiro|relacionamento","sub_intencao":"string","confianca":0-100,"urgencia":"baixa|media|alta","sentimento":"positivo|neutro|negativo"}`;
 
-            const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
-                headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' },
+                headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    model: GROQ_MODEL,
+                    model: OPENAI_MODEL,
                     messages: [{ role: 'user', content: classPrompt }],
                     temperature: 0.1,
                     max_tokens: 200
                 })
             });
 
-            const groqData = await groqRes.json();
-            const content = groqData.choices?.[0]?.message?.content || '';
+            const aiData = await aiRes.json();
+            const content = aiData.choices?.[0]?.message?.content || '';
             const parsed = JSON.parse(content.replace(/```json?\n?/g, '').replace(/```/g, '').trim());
 
             return {
@@ -315,18 +315,18 @@ async function closeSession(sessionId, resumo = '', resultado = 'encerrado') {
     if (!session) return;
 
     // Gerar resumo automático se não fornecido
-    if (!resumo && GROQ_API_KEY && session.mensagens?.length > 0) {
+    if (!resumo && OPENAI_API_KEY && session.mensagens?.length > 0) {
         try {
             const msgs = session.mensagens
                 .slice(-20)
                 .map(m => `${m.role}: ${m.content}`)
                 .join('\n');
 
-            const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            const res = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
-                headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' },
+                headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    model: GROQ_MODEL,
+                    model: OPENAI_MODEL,
                     messages: [{
                         role: 'user',
                         content: `Resuma esta conversa em 2-3 frases focando em: 1) Intenção principal 2) Resultado 3) Próximos passos.\n\nConversa:\n${msgs}`
@@ -622,7 +622,7 @@ async function executeTool(toolName, params) {
 // ============================================================================
 
 async function generateAgentResponse(agentId, userMessage, session, clientContext) {
-    if (!GROQ_API_KEY) {
+    if (!OPENAI_API_KEY) {
         return { resposta: 'Sistema de IA indisponível no momento. Um atendente humano vai te ajudar em breve!', tools_used: [] };
     }
 
@@ -651,7 +651,7 @@ async function generateAgentResponse(agentId, userMessage, session, clientContex
         .replace('{client_context}', clientStr)
         .replace('{conversation_history}', historyStr || 'Primeira mensagem');
 
-    // Chamar Groq
+    // Chamar OpenAI
     const messages = [
         { role: 'system', content: systemPrompt },
         ...(session?.mensagens || []).slice(-8).map(m => ({
@@ -662,20 +662,20 @@ async function generateAgentResponse(agentId, userMessage, session, clientContex
     ];
 
     const startTime = Date.now();
-    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' },
+        headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            model: GROQ_MODEL,
+            model: OPENAI_MODEL,
             messages,
             temperature: 0.7,
             max_tokens: 800
         })
     });
 
-    const groqData = await groqRes.json();
-    let resposta = groqData.choices?.[0]?.message?.content || 'Desculpe, tive um problema. Pode repetir?';
-    const tokensUsed = groqData.usage?.total_tokens || 0;
+    const aiData = await aiRes.json();
+    let resposta = aiData.choices?.[0]?.message?.content || 'Desculpe, tive um problema. Pode repetir?';
+    const tokensUsed = aiData.usage?.total_tokens || 0;
     const tempoResposta = Date.now() - startTime;
 
     // Processar chamadas de ferramentas na resposta
@@ -718,11 +718,11 @@ async function generateAgentResponse(agentId, userMessage, session, clientContex
             `Resultado de ${t.name}: ${JSON.stringify(t.result)}`
         ).join('\n');
 
-        const followUpRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        const followUpRes = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
-            headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' },
+            headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                model: GROQ_MODEL,
+                model: OPENAI_MODEL,
                 messages: [
                     ...messages,
                     { role: 'assistant', content: resposta },

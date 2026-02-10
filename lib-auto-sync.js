@@ -98,7 +98,7 @@
                 localStorage.setItem('crm_settings', JSON.stringify({
                     activeDays: result.settings.active_days || current.activeDays || 30,
                     riskDays: result.settings.risk_days || current.riskDays || 60,
-                    groqApiKey: result.settings.groq_api_key || current.groqApiKey || ''
+                    openaiApiKey: result.settings.openai_api_key || current.openaiApiKey || ''
                 }));
                 loaded++;
             }

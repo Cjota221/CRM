@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS settings (
     id TEXT PRIMARY KEY DEFAULT 'main',
     active_days INTEGER DEFAULT 30,
     risk_days INTEGER DEFAULT 60,
-    groq_api_key TEXT,
+    openai_api_key TEXT,
     whatsapp_instance TEXT,
     auto_sync BOOLEAN DEFAULT FALSE,
     last_sync TIMESTAMP WITH TIME ZONE,

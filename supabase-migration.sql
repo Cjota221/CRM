@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS settings (
     id TEXT PRIMARY KEY DEFAULT 'main',
     active_days INTEGER DEFAULT 30,
     risk_days INTEGER DEFAULT 60,
-    groq_api_key TEXT DEFAULT '',
+    openai_api_key TEXT DEFAULT '',
     evolution_url TEXT DEFAULT '',
     evolution_api_key TEXT DEFAULT '',
     instance_name TEXT DEFAULT '',

@@ -1,13 +1,13 @@
 // ============================================================================
 // ANNY AI - Business Intelligence Assistant v2.0 (CEO Mode)
-// Netlify Function com integração Groq API
+// Netlify Function com integração OpenAI API
 // Superpoderes: Cohort Analysis, Copywriting, Stock Audit, Morning Briefing
 // ============================================================================
 
 const { createClient } = require('@supabase/supabase-js');
 
 // Configuração
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY;
 
@@ -1543,10 +1543,10 @@ async function generateInsights() {
 }
 
 // ============================================================================
-// CHAMADA À API GROQ
+// CHAMADA À API OPENAI
 // ============================================================================
 
-// Parser para tool calls mal-formatados pelo Llama
+// Parser para tool calls mal-formatados
 // Formato inválido: <function=nomeFuncao{"param":"valor"}</function>
 // Também captura: <function=nomeFuncao>{"param":"valor"}</function>
 function parseFailedToolCall(failedGeneration) {
@@ -1597,11 +1597,11 @@ function parseFailedToolCall(failedGeneration) {
     return null;
 }
 
-async function callGroqAPI(messages, tools = null, retryCount = 0) {
+async function callOpenAI(messages, tools = null, retryCount = 0) {
     const MAX_RETRIES = 3;
     
     const requestBody = {
-        model: 'llama-3.3-70b-versatile',
+        model: 'gpt-4o-mini',
         messages,
         temperature: 0.7,
         max_tokens: 1500 // Reduzido para caber no rate limit
@@ -1612,10 +1612,10 @@ async function callGroqAPI(messages, tools = null, retryCount = 0) {
         requestBody.tool_choice = 'auto';
     }
 
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
-            'Authorization': `Bearer ${GROQ_API_KEY}`,
+            'Authorization': `Bearer ${OPENAI_API_KEY}`,
             'Content-Type': 'application/json'
         },
         body: JSON.stringify(requestBody)
@@ -1633,7 +1633,7 @@ async function callGroqAPI(messages, tools = null, retryCount = 0) {
             console.log(`[Anny] Rate limit atingido. Aguardando ${waitTime/1000}s antes de tentar novamente (tentativa ${retryCount + 1}/${MAX_RETRIES})...`);
             
             await new Promise(resolve => setTimeout(resolve, waitTime));
-            return callGroqAPI(messages, tools, retryCount + 1);
+            return callOpenAI(messages, tools, retryCount + 1);
         }
         
         // Se for rate limit e já esgotou retries, dá mensagem amigável
@@ -1641,8 +1641,8 @@ async function callGroqAPI(messages, tools = null, retryCount = 0) {
             throw new Error('Estou processando muitas mensagens agora. Por favor, aguarde alguns segundos e tente novamente! 🙏');
         }
         
-        // FIX: Llama às vezes gera tool calls em formato inválido (<function=name{args}</function>)
-        // Groq retorna 400 tool_use_failed — capturar, parsear e executar manualmente
+        // FIX: LLM às vezes gera tool calls em formato inválido (<function=name{args}</function>)
+        // OpenAI retorna 400 tool_use_failed — capturar, parsear e executar manualmente
         if (response.status === 400 && errorText.includes('tool_use_failed')) {
             console.log('[Anny] Tool call format inválido detectado, tentando recuperar...');
             try {
@@ -1677,11 +1677,11 @@ async function callGroqAPI(messages, tools = null, retryCount = 0) {
             // Se não conseguiu parsear, tenta novamente SEM tools
             if (tools && retryCount < MAX_RETRIES) {
                 console.log('[Anny] Retentando sem tools...');
-                return callGroqAPI(messages, null, retryCount + 1);
+                return callOpenAI(messages, null, retryCount + 1);
             }
         }
         
-        throw new Error(`Groq API error: ${response.status} - ${errorText}`);
+        throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
     }
 
     return await response.json();
@@ -1788,11 +1788,11 @@ exports.handler = async (event, context) => {
 
     if (event.httpMethod === 'POST') {
         try {
-            if (!GROQ_API_KEY) {
+            if (!OPENAI_API_KEY) {
                 return {
                     statusCode: 500,
                     headers,
-                    body: JSON.stringify({ error: 'GROQ_API_KEY não configurada' })
+                    body: JSON.stringify({ error: 'OPENAI_API_KEY não configurada' })
                 };
             }
 
@@ -1809,7 +1809,7 @@ A mensagem deve ser para ${clientCount || 'vários'} clientes, então use {{nome
 ${couponName ? 'Use {{cupom}} como variável para o código do cupom.' : ''}
 Responda APENAS com o texto da mensagem, sem aspas, sem explicação.`;
 
-                const completion = await callGroqAPI([
+                const completion = await callOpenAI([
                     { role: 'system', content: ANNY_SYSTEM_PROMPT },
                     { role: 'user', content: prompt }
                 ]);
@@ -1840,7 +1840,7 @@ Responda APENAS com o texto da mensagem, sem aspas, sem explicação.`;
                 { role: 'user', content: message }
             ];
 
-            let completion = await callGroqAPI(messages, TOOLS);
+            let completion = await callOpenAI(messages, TOOLS);
             let assistantMessage = completion.choices[0].message;
 
             let results = null;
@@ -1863,7 +1863,7 @@ Responda APENAS com o texto da mensagem, sem aspas, sem explicação.`;
                 messages.push(assistantMessage);
                 messages.push(...toolResults);
 
-                completion = await callGroqAPI(messages);
+                completion = await callOpenAI(messages);
                 assistantMessage = completion.choices[0].message;
             }
 

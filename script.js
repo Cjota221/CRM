@@ -245,7 +245,7 @@ const Storage = {
         return this.load(this.KEYS.SETTINGS, {
             activeDays: 30,
             riskDays: 60,
-            groqApiKey: ''
+            openaiApiKey: ''
         });
     },
 
@@ -371,7 +371,7 @@ const SupabaseSync = {
         const settingsForDb = {
             active_days: settings.activeDays,
             risk_days: settings.riskDays,
-            groq_api_key: settings.groqApiKey
+            openai_api_key: settings.openaiApiKey
         };
 
         // Preparar dados do atendimento (localStorage → Supabase)
@@ -510,7 +510,7 @@ const SupabaseSync = {
             Storage.saveSettings({
                 activeDays: result.settings.active_days || currentSettings.activeDays,
                 riskDays: result.settings.risk_days || currentSettings.riskDays,
-                groqApiKey: result.settings.groq_api_key || currentSettings.groqApiKey
+                openaiApiKey: result.settings.openai_api_key || currentSettings.openaiApiKey
             });
         }
 
@@ -603,7 +603,7 @@ const SupabaseSync = {
 window.SupabaseSync = SupabaseSync;
 
 // ============================================================================
-// GROQ API - IA GRATUITA COM LIMITES GENEROSOS (14.400 req/dia)
+// OPENAI API (ChatGPT) - gpt-4o-mini
 // ============================================================================
 
 // System Prompt - O "Cérebro" Completo da IA (Especialista em CRM e Campanhas)
@@ -700,22 +700,22 @@ REGRAS IMPORTANTES:
 
 async function callAI(apiKey, prompt, maxRetries = 3) {
     if (!apiKey || apiKey.trim().length < 10) {
-        showToast('⚠️ API Key do Groq não configurada. Vá em Configurações.', 'error', 5000);
-        throw new Error('API Key do Groq não configurada. Vá em Configurações.');
+        showToast('⚠️ API Key do ChatGPT não configurada. Vá em Configurações.', 'error', 5000);
+        throw new Error('API Key do ChatGPT não configurada. Vá em Configurações.');
     }
 
     let lastError = null;
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-            const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            const response = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${apiKey}`
                 },
                 body: JSON.stringify({
-                    model: 'llama-3.3-70b-versatile',
+                    model: 'gpt-4o-mini',
                     messages: [
                         { role: 'system', content: AI_SYSTEM_PROMPT },
                         { role: 'user', content: prompt }
@@ -727,9 +727,9 @@ async function callAI(apiKey, prompt, maxRetries = 3) {
 
             // 401 = chave inválida/expirada — não faz sentido retries
             if (response.status === 401) {
-                console.error('[Groq] 🔑 API Key inválida ou expirada (401)');
-                showToast('🔑 API Key do Groq inválida ou expirada. Gere uma nova em console.groq.com e atualize em Configurações.', 'error', 8000);
-                throw new Error('API Key do Groq inválida ou expirada. Gere uma nova em console.groq.com');
+                console.error('[ChatGPT] 🔑 API Key inválida ou expirada (401)');
+                showToast('🔑 API Key do ChatGPT inválida ou expirada. Gere uma nova em platform.openai.com e atualize em Configurações.', 'error', 8000);
+                throw new Error('API Key do ChatGPT inválida ou expirada. Gere uma nova em platform.openai.com');
             }
 
             if (response.status === 429) {
@@ -916,8 +916,8 @@ function buildEnrichedClientData(client) {
 const AIAssistant = {
     async generateStrategy(segmentData) {
         const settings = Storage.getSettings();
-        if (!settings.groqApiKey) {
-            throw new Error('API Key do Groq não configurada. Vá em Configurações.');
+        if (!settings.openaiApiKey) {
+            throw new Error('API Key do ChatGPT não configurada. Vá em Configurações.');
         }
 
         const prompt = `Você é um especialista em Growth e CRM para e-commerce. Analise os dados abaixo e me dê:
@@ -939,7 +939,7 @@ Responda em JSON com o formato:
   ]
 }`;
 
-        const data = await callAI(settings.groqApiKey, prompt);
+        const data = await callAI(settings.openaiApiKey, prompt);
         const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
         
         // Tentar parsear JSON da resposta
@@ -957,8 +957,8 @@ Responda em JSON com o formato:
 
     async generatePersonalizedMessage(client, context = '') {
         const settings = Storage.getSettings();
-        if (!settings.groqApiKey) {
-            throw new Error('API Key do Groq não configurada. Vá em Configurações.');
+        if (!settings.openaiApiKey) {
+            throw new Error('API Key do ChatGPT não configurada. Vá em Configurações.');
         }
 
         // Usar dados enriquecidos completos
@@ -988,7 +988,7 @@ FORMATO DE RESPOSTA (JSON):
   "melhor_horario_envio": "dia e período sugerido"
 }`;
 
-        const data = await callAI(settings.groqApiKey, prompt);
+        const data = await callAI(settings.openaiApiKey, prompt);
         const content = (data.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
         
         // Tentar parsear JSON e salvar tags
@@ -1033,8 +1033,8 @@ FORMATO DE RESPOSTA (JSON):
     // IA sugere parâmetros ideais de classificação
     async suggestClassificationParams() {
         const settings = Storage.getSettings();
-        if (!settings.groqApiKey) {
-            throw new Error('API Key do Groq não configurada. Vá em Configurações.');
+        if (!settings.openaiApiKey) {
+            throw new Error('API Key do ChatGPT não configurada. Vá em Configurações.');
         }
 
         const clients = Storage.getClients();
@@ -1125,7 +1125,7 @@ Responda em JSON:
   }
 }`;
 
-        const data = await callAI(settings.groqApiKey, prompt);
+        const data = await callAI(settings.openaiApiKey, prompt);
         const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
         
         try {
@@ -1290,9 +1290,9 @@ function setupModals() {
         const settings = Storage.getSettings();
         statusAtivoDaysInput.value = settings.activeDays;
         statusRiscoDaysInput.value = settings.riskDays;
-        const groqKeyInput = document.getElementById('groq-api-key');
-        if (groqKeyInput) {
-            groqKeyInput.value = settings.groqApiKey || '';
+        const openaiKeyInput = document.getElementById('openai-api-key');
+        if (openaiKeyInput) {
+            openaiKeyInput.value = settings.openaiApiKey || '';
         }
         openModal('settings-modal');
     });
@@ -2780,11 +2780,11 @@ function viewOrderDetails(orderId) {
 function saveSettings(e) {
     e.preventDefault();
 
-    const groqKeyInput = document.getElementById('groq-api-key');
+    const openaiKeyInput = document.getElementById('openai-api-key');
     const settings = {
         activeDays: parseInt(statusAtivoDaysInput.value) || 30,
         riskDays: parseInt(statusRiscoDaysInput.value) || 60,
-        groqApiKey: groqKeyInput?.value || ''
+        openaiApiKey: openaiKeyInput?.value || ''
     };
 
     if (settings.riskDays <= settings.activeDays) {
@@ -2976,8 +2976,8 @@ async function generateAIMessage() {
     const messageInput = document.getElementById('whatsapp-message');
     const settings = Storage.getSettings();
     
-    if (!settings.groqApiKey) {
-        showToast('Configure sua API Key do Groq nas Configurações', 'error');
+    if (!settings.openaiApiKey) {
+        showToast('Configure sua API Key do ChatGPT nas Configurações', 'error');
         return;
     }
     
@@ -3025,8 +3025,8 @@ async function sendWhatsApp() {
 async function generateReactivationStrategy() {
     const settings = Storage.getSettings();
     
-    if (!settings.groqApiKey) {
-        showToast('Configure sua API Key do Groq nas Configurações', 'error');
+    if (!settings.openaiApiKey) {
+        showToast('Configure sua API Key do ChatGPT nas Configurações', 'error');
         return;
     }
     
@@ -3116,8 +3116,8 @@ function copyToClipboard(text) {
 async function aiSuggestParameters() {
     const settings = Storage.getSettings();
     
-    if (!settings.groqApiKey) {
-        showToast('Configure sua API Key do Groq nas Configurações', 'error');
+    if (!settings.openaiApiKey) {
+        showToast('Configure sua API Key do ChatGPT nas Configurações', 'error');
         return;
     }
     
@@ -3420,9 +3420,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Carregar API Key nas configurações
     const settings = Storage.getSettings();
-    const groqKeyInput = document.getElementById('groq-api-key');
-    if (groqKeyInput && settings.groqApiKey) {
-        groqKeyInput.value = settings.groqApiKey;
+    const openaiKeyInput = document.getElementById('openai-api-key');
+    if (openaiKeyInput && settings.openaiApiKey) {
+        openaiKeyInput.value = settings.openaiApiKey;
     }
     
     // Verificar última sincronização
@@ -4972,8 +4972,8 @@ const CampaignManager = {
         const baseMsg = document.getElementById('bulk-message-text').value;
         const settings = Storage.getSettings();
         
-        if (!settings.groqApiKey) {
-            showToast('Configure a API Key do Groq em Configurações', 'error');
+        if (!settings.openaiApiKey) {
+            showToast('Configure a API Key do ChatGPT em Configurações', 'error');
             return;
         }
         
@@ -5007,7 +5007,7 @@ Exemplo de resposta:
 ["Mensagem 1...", "Mensagem 2...", "Mensagem 3..."]`;
 
         try {
-            const data = await callAI(settings.groqApiKey, prompt);
+            const data = await callAI(settings.openaiApiKey, prompt);
             const content = (data.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
             
             // Tentar parsear JSON da resposta

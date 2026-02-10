@@ -2209,7 +2209,7 @@ app.post('/api/whatsapp/send-media', async (req, res) => {
 // ANNY AI - Business Intelligence Assistant (LOCAL DEV)
 // ============================================================================
 
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 const ANNY_SYSTEM_PROMPT = `Você é a Anny 3.0, Consultora Comercial Sênior e Estrategista de Recuperação de Vendas da Cjota Rasteirinhas — especialista em atacado B2B de calçados femininos com foco em reativação, crescimento e maximização de LTV.
 
@@ -2402,8 +2402,8 @@ async function executeAnnyTool(name, args, clientsData = []) {
 
 app.post('/api/anny', async (req, res) => {
     try {
-        if (!GROQ_API_KEY) {
-            return res.status(500).json({ error: 'GROQ_API_KEY não configurada no .env' });
+        if (!OPENAI_API_KEY) {
+            return res.status(500).json({ error: 'OPENAI_API_KEY não configurada no .env' });
         }
 
         const { message, history = [], clientsData = [] } = req.body;
@@ -2415,15 +2415,15 @@ app.post('/api/anny', async (req, res) => {
             { role: 'user', content: message }
         ];
 
-        // Chamar Groq API
-        const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        // Chamar OpenAI API
+        const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${GROQ_API_KEY}`,
+                'Authorization': `Bearer ${OPENAI_API_KEY}`,
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: 'llama-3.3-70b-versatile',
+                model: 'gpt-4o-mini',
                 messages,
                 tools: ANNY_TOOLS,
                 tool_choice: 'auto',
@@ -2432,12 +2432,12 @@ app.post('/api/anny', async (req, res) => {
             })
         });
 
-        if (!groqResponse.ok) {
-            const errorText = await groqResponse.text();
-            throw new Error(`Groq API error: ${groqResponse.status} - ${errorText}`);
+        if (!aiResponse.ok) {
+            const errorText = await aiResponse.text();
+            throw new Error(`OpenAI API error: ${aiResponse.status} - ${errorText}`);
         }
 
-        let data = await groqResponse.json();
+        let data = await aiResponse.json();
         let assistantMessage = data.choices[0].message;
         let results = null;
 
@@ -2462,14 +2462,14 @@ app.post('/api/anny', async (req, res) => {
             messages.push(assistantMessage);
             messages.push(...toolResults);
 
-            const secondResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            const secondResponse = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${GROQ_API_KEY}`,
+                    'Authorization': `Bearer ${OPENAI_API_KEY}`,
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    model: 'llama-3.3-70b-versatile',
+                    model: 'gpt-4o-mini',
                     messages,
                     temperature: 0.7,
                     max_tokens: 2048
@@ -2493,8 +2493,8 @@ app.post('/api/anny', async (req, res) => {
 // ============================================================================
 app.post('/api/anny/generate-campaign-message', async (req, res) => {
     try {
-        if (!GROQ_API_KEY) {
-            return res.status(500).json({ error: 'GROQ_API_KEY não configurada' });
+        if (!OPENAI_API_KEY) {
+            return res.status(500).json({ error: 'OPENAI_API_KEY não configurada' });
         }
 
         const { daysInactive, tone, couponName, clientCount, context } = req.body;
@@ -2508,14 +2508,14 @@ A mensagem deve ser para ${clientCount || 'vários'} clientes, então use {{nome
 ${couponName ? 'Use {{cupom}} como variável para o código do cupom.' : ''}
 Responda APENAS com o texto da mensagem, sem aspas, sem explicação.`;
 
-        const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${GROQ_API_KEY}`,
+                'Authorization': `Bearer ${OPENAI_API_KEY}`,
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: 'llama-3.3-70b-versatile',
+                model: 'gpt-4o-mini',
                 messages: [
                     { role: 'system', content: ANNY_SYSTEM_PROMPT },
                     { role: 'user', content: prompt }
@@ -2525,12 +2525,12 @@ Responda APENAS com o texto da mensagem, sem aspas, sem explicação.`;
             })
         });
 
-        if (!groqResponse.ok) {
-            const errorText = await groqResponse.text();
-            throw new Error(`Groq API error: ${groqResponse.status} - ${errorText}`);
+        if (!aiResponse.ok) {
+            const errorText = await aiResponse.text();
+            throw new Error(`OpenAI API error: ${aiResponse.status} - ${errorText}`);
         }
 
-        const data = await groqResponse.json();
+        const data = await aiResponse.json();
         const generatedMessage = data.choices[0].message.content.trim();
 
         res.json({ success: true, message: generatedMessage });
