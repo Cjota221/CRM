@@ -871,7 +871,14 @@ async function handleWebhook(req, res) {
                     ultima_atualizacao: dados.ultima_atualizacao
                 };
                 
-                // Salvar carrinho abandonado
+                // Log de debug: mostrar TODOS os campos que chegam (para identificar o campo correto do link)
+                console.log(`[WEBHOOK] 🔗 link_carrinho capturado: ${processedData.link_carrinho || 'NENHUM'}`);
+                console.log(`[WEBHOOK] 📋 Campos do payload: ${Object.keys(dados).join(', ')}`);
+                if (!processedData.link_carrinho) {
+                    console.log(`[WEBHOOK] ⚠️ Nenhum link encontrado! Campos disponíveis:`, JSON.stringify(dados, null, 2).slice(0, 500));
+                }
+                
+                // Salvar carrinho abandonado em memória
                 const existingCartIndex = abandonedCarts.findIndex(c => c.id === dados.id);
                 if (existingCartIndex >= 0) {
                     abandonedCarts[existingCartIndex] = processedData;
@@ -880,6 +887,28 @@ async function handleWebhook(req, res) {
                 }
                 // Manter apenas os últimos 100
                 abandonedCarts = abandonedCarts.slice(0, 100);
+                
+                // ====== PERSISTIR NO SUPABASE (fire-and-forget) ======
+                try {
+                    const sbCarts = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+                    await sbCarts.from('abandoned_carts').upsert({
+                        id: String(processedData.id || webhookId),
+                        cliente_id: processedData.cliente?.id,
+                        cliente_nome: processedData.cliente?.nome,
+                        cliente_whatsapp: processedData.cliente?.whatsapp,
+                        cliente_email: processedData.cliente?.email,
+                        valor_total: processedData.valor_total || 0,
+                        quantidade_produtos: processedData.quantidade_produtos || 0,
+                        produtos: processedData.produtos || [],
+                        link_carrinho: processedData.link_carrinho,
+                        iniciado_em: processedData.iniciado_em,
+                        ultima_atualizacao: processedData.ultima_atualizacao,
+                        status: 'pendente'
+                    }, { onConflict: 'id' });
+                    console.log('[WEBHOOK] ✅ Carrinho persistido no Supabase');
+                } catch (supErr) {
+                    console.warn('[WEBHOOK] Supabase save falhou (não-crítico):', supErr.message);
+                }
                 
                 console.log(`[WEBHOOK] Carrinho abandonado: ${dados.cliente?.nome} - R$ ${dados.valor_total}`);
                 break;

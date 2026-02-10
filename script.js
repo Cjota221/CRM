@@ -105,14 +105,27 @@ function buildCartRecoveryTemplate(cart) {
     const nome = cart.cliente?.nome?.split(' ')[0] || 'amiga';
     const produtos = (cart.produtos || []);
     const produtosList = produtos.map(p => {
-        let line = `  • ${p.nome}`;
+        let line = `  • ${p.nome || 'Produto'}`;
         if (p.variacao) line += ` (${p.variacao})`;
         if (p.preco) line += ` — R$ ${parseFloat(p.preco).toFixed(2)}`;
         return line;
     }).join('\n');
 
     const valor = (cart.valor_total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
-    const linkCarrinho = cart.link_carrinho || 'https://cjotarasteirinhas.com.br';
+
+    // Link de checkout: prioridade para link real da FacilZap
+    // O campo link_carrinho vem diretamente do webhook (dados.url / dados.link_carrinho)
+    // e já contém os parâmetros de sessão únicos do cliente
+    const linkCarrinho = cart.link_carrinho || null;
+
+    let linkSection = '';
+    if (linkCarrinho) {
+        linkSection = `\n🛒 Finalize sua compra aqui: ${linkCarrinho}\n`;
+    } else {
+        // Fallback: link genérico da loja (sem sessão do carrinho)
+        linkSection = `\n🛒 Acesse nossa loja: https://cjotarasteirinhas.com.br\n`;
+        console.warn('[Cart Recovery] ⚠️ Carrinho sem link_carrinho! Usando fallback genérico. Cart ID:', cart.id);
+    }
 
     return `Oi ${nome}! 💕
 
@@ -121,9 +134,7 @@ Vi que você deixou umas rasteirinhas lindas no carrinho! 👀
 ${produtosList}
 
 💰 Total: *R$ ${valor}*
-
-🛒 Finalize sua compra aqui: ${linkCarrinho}
-
+${linkSection}
 🎟️ Use o cupom *QUINTOU* e ganhe desconto especial!
 
 Se tiver qualquer dúvida, é só me chamar aqui! A Anne está de plantão pra te ajudar 😊`;
@@ -4295,6 +4306,12 @@ const WebhookManager = {
     // Salvar carrinho abandonado
     saveAbandonedCart(cart) {
         const carts = this.getAbandonedCarts();
+        
+        // Normalizar: garantir que link_carrinho esteja na raiz do objeto
+        if (!cart.link_carrinho) {
+            cart.link_carrinho = cart.url || cart.link || cart.checkout_url || null;
+        }
+        
         // Verificar se já existe
         const existingIndex = carts.findIndex(c => c.id === cart.id);
         if (existingIndex >= 0) {
@@ -4405,9 +4422,18 @@ const WebhookManager = {
                         </div>
                     </div>
                     <div class="text-xs text-gray-500 mb-2">
-                        ${produtos.slice(0, 2).map(p => `${p.nome}${p.variacao ? ` (${p.variacao})` : ''}`).join(', ')}
+                        ${produtos.slice(0, 2).map(p => `${p.nome || 'Produto'}${p.variacao ? ` (${p.variacao})` : ''}`).join(', ')}
                         ${produtos.length > 2 ? ` +${produtos.length - 2} itens` : ''}
                     </div>
+                    ${linkCarrinho ? `
+                        <div class="text-xs text-green-600 mb-2 truncate" title="${linkCarrinho}">
+                            <i class="fas fa-link mr-1"></i> ${linkCarrinho.substring(0, 50)}${linkCarrinho.length > 50 ? '...' : ''}
+                        </div>
+                    ` : `
+                        <div class="text-xs text-yellow-600 mb-2">
+                            <i class="fas fa-exclamation-triangle mr-1"></i> Sem link de checkout
+                        </div>
+                    `}
                     <div class="flex gap-2">
                         ${linkCarrinho ? `
                             <a href="${linkCarrinho}" target="_blank" class="flex-1 bg-blue-600 text-white text-xs px-3 py-1.5 rounded hover:bg-blue-700 text-center">
@@ -4551,13 +4577,14 @@ const WebhookManager = {
                 evento: 'carrinho_abandonado_criado',
                 dados: {
                     id: 'cart-' + Math.random().toString(36).substr(2, 9),
-                    cliente: { nome: 'Maria Silva', whatsapp: '11988887777' },
+                    cliente: { nome: 'Maria Silva', whatsapp: '62988887777' },
                     valor_total: Math.floor(Math.random() * 300) + 100,
                     quantidade_produtos: 2,
                     produtos: [
-                        { nome: 'Camiseta Básica', variacao: { nome: 'M' }, quantidade: 1 },
-                        { nome: 'Calça Jeans', variacao: null, quantidade: 1 }
+                        { nome: 'Rasteirinha Dourada', variacao: { nome: '37' }, quantidade: 1, preco: 79.90 },
+                        { nome: 'Rasteirinha Preta Basic', variacao: { nome: '38' }, quantidade: 1, preco: 59.90 }
                     ],
+                    url: 'https://cjotarasteirinhas.com.br/carrinho?id=TESTE-' + Date.now(),
                     iniciado_em: now,
                     ultima_atualizacao: now
                 }
