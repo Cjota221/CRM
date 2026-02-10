@@ -1321,20 +1321,35 @@ app.get('/api/whatsapp/chats', async (req, res) => {
                 }
             }
             
+            // Extrair telefone real para @lid (de remoteJidAlt se for @s.whatsapp.net)
+            let realPhone = null;
+            if (jid && jid.includes('@lid')) {
+                const altJid = chat.lastMessage?.key?.remoteJidAlt;
+                if (altJid && altJid.includes('@s.whatsapp.net')) {
+                    realPhone = altJid.replace('@s.whatsapp.net', '');
+                }
+            }
+            
             // Se ainda não tem nome, formatar telefone
             if (!name && jid) {
-                const phone = jid.replace('@s.whatsapp.net', '').replace('@lid', '');
-                if (phone.length > 8) {
-                    name = `+${phone.slice(0,2)} ${phone.slice(2)}`;
+                if (jid.includes('@lid')) {
+                    // @lid NÃO contém telefone real, não formatar como número
+                    name = realPhone ? `+${realPhone.slice(0,2)} ${realPhone.slice(2)}` : 'Lead (Anúncio)';
                 } else {
-                    name = phone;
+                    const phone = jid.replace('@s.whatsapp.net', '').replace('@c.us', '');
+                    if (phone.length > 8) {
+                        name = `+${phone.slice(0,2)} ${phone.slice(2)}`;
+                    } else {
+                        name = phone;
+                    }
                 }
             }
             
             return {
                 ...chat,
                 name: name || 'Desconhecido',
-                pushName: name || chat.pushName
+                pushName: name || chat.pushName,
+                phone: realPhone || null // Telefone real para @lid (extraído de remoteJidAlt)
             };
         });
         
@@ -1576,15 +1591,29 @@ app.get('/api/whatsapp/all-chats', async (req, res) => {
                 }
                 
                 if (!name && jid) {
-                    const phone = jid.replace('@s.whatsapp.net', '').replace('@lid', '');
-                    if (phone.length > 8) {
-                        name = `+${phone.slice(0,2)} ${phone.slice(2)}`;
+                    if (jid.includes('@lid')) {
+                        // @lid NÃO contém telefone real, não formatar como número
+                        name = 'Lead (Anúncio)';
                     } else {
-                        name = phone;
+                        const phone = jid.replace('@s.whatsapp.net', '').replace('@c.us', '');
+                        if (phone.length > 8) {
+                            name = `+${phone.slice(0,2)} ${phone.slice(2)}`;
+                        } else {
+                            name = phone;
+                        }
                     }
                 }
                 
                 profilePicUrl = chat.profilePicUrl;
+            }
+            
+            // Extrair telefone real para @lid (de remoteJidAlt se for @s.whatsapp.net)
+            let realPhone = null;
+            if (jid && jid.includes('@lid')) {
+                const altJid = chat.lastMessage?.key?.remoteJidAlt;
+                if (altJid && altJid.includes('@s.whatsapp.net')) {
+                    realPhone = altJid.replace('@s.whatsapp.net', '');
+                }
             }
             
             return {
@@ -1595,7 +1624,8 @@ app.get('/api/whatsapp/all-chats', async (req, res) => {
                 profilePicUrl,
                 isGroup: isGroupChat,  // CRÍTICO: Marcar explicitamente
                 isCommunity,
-                participantsCount
+                participantsCount,
+                phone: realPhone || null // Telefone real para @lid (de remoteJidAlt)
             };
         });
         

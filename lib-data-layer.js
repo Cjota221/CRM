@@ -95,12 +95,28 @@ function phoneVariations(phone) {
 }
 
 /**
+ * Detectar se é um JID de Lead ID do Meta (@lid)
+ * JIDs @lid contém IDs internos do Meta, NÃO são números de telefone.
+ * Ex: "32637724934184@lid" → NÃO é telefone, é ID interno
+ * @param {string} jid
+ * @returns {boolean}
+ */
+function isLidJid(jid) {
+    if (!jid) return false;
+    return String(jid).includes('@lid');
+}
+
+/**
  * Extrair número puro de um JID (remoteJid da Evolution API)
  * @param {string} jid - "556299998888@s.whatsapp.net" ou "1234567890@g.us"
- * @returns {string} - "62999998888"
+ * @returns {string} - "62999998888" ou '' para @lid (que NÃO contém telefone)
  */
 function extractPhoneFromJid(jid) {
     if (!jid) return '';
+    
+    // @lid JIDs contêm IDs internos do Meta, NÃO números de telefone
+    // Extrair deles geraria números falsos (ex: 32637724934184@lid → 37724934184)
+    if (isLidJid(jid)) return '';
     
     // Usar normalizePhone que já lida com todos os sufixos
     return normalizePhone(jid);
@@ -124,6 +140,9 @@ function isGroupJid(jid) {
 function createChatKey(jid) {
     if (isGroupJid(jid)) {
         return `GROUP:${jid}`; // Grupos usam JID completo
+    }
+    if (isLidJid(jid)) {
+        return `LID:${jid}`; // @lid usa JID completo (não tem phone)
     }
     const phone = normalizePhone(jid);
     return `CONTACT:${phone}`; // Contatos usam telefone normalizado
@@ -226,12 +245,20 @@ class DataLayer {
         const enrichedChat = {
             ...rawChat,
             isGroup: isGroupJid(rawChat.remoteJid || rawChat.id),
-            cleanPhone: extractPhoneFromJid(rawChat.remoteJid || rawChat.id),
+            isLid: isLidJid(rawChat.remoteJid || rawChat.id),
+            cleanPhone: '',
             client: null,
             displayName: rawChat.pushName || rawChat.name || 'Desconhecido',
             isKnownClient: false,
             clientStatus: null,
         };
+        
+        // Para @lid: usar phone real do servidor (remoteJidAlt) se disponível
+        if (enrichedChat.isLid) {
+            enrichedChat.cleanPhone = rawChat.phone ? normalizePhone(rawChat.phone) : '';
+        } else {
+            enrichedChat.cleanPhone = extractPhoneFromJid(rawChat.remoteJid || rawChat.id);
+        }
         
         // Se não é grupo, tentar encontrar cliente
         if (!enrichedChat.isGroup && enrichedChat.cleanPhone) {
@@ -385,6 +412,7 @@ window.phonesMatch = phonesMatch;
 window.phoneVariations = phoneVariations;
 window.extractPhoneFromJid = extractPhoneFromJid;
 window.isGroupJid = isGroupJid;
+window.isLidJid = isLidJid;
 window.createChatKey = createChatKey;
 window.dataLayer = dataLayer;
 window.formatPhoneForDisplay = formatPhoneForDisplay;

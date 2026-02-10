@@ -957,9 +957,18 @@ function copyPhone() {
     const currentJid = currentChatData?.remoteJid;
     if (!currentJid) return;
     
-    const cleanedPhone = cleanPhoneNumber(currentJid);
+    // @lid JIDs não contêm telefone real
+    const isLidChat = currentJid.includes('@lid');
+    const cleanedPhone = isLidChat 
+        ? (currentChatData?.phone ? cleanPhoneNumber(currentChatData.phone) : '')
+        : cleanPhoneNumber(currentJid);
+    
+    if (!cleanedPhone) {
+        alert('Este contato não possui número de telefone disponível');
+        return;
+    }
     navigator.clipboard.writeText(cleanedPhone).then(() => {
-        alert('Número copiado: ' + phoneEl.innerText);
+        alert('Número copiado: ' + cleanedPhone);
     });
 }
 
@@ -1836,9 +1845,14 @@ async function openChat(chat) {
     // Extrair e normalizar o remoteJid para este chat
     const remoteJidParam = chat.remoteJid || chat.id;
     currentRemoteJid = remoteJidParam; // GUARDAR para validação depois
-    const cleanPhone = extractPhoneFromJid(remoteJidParam);
     
-    console.log('Telefone extraído:', cleanPhone);
+    // @lid JIDs contêm IDs internos do Meta, NÃO telefones reais
+    const isLid = remoteJidParam && remoteJidParam.includes('@lid');
+    const cleanPhone = isLid 
+        ? (chat.phone ? cleanPhoneNumber(chat.phone) : '')  // usar phone real do servidor
+        : extractPhoneFromJid(remoteJidParam);
+    
+    console.log('Telefone extraído:', cleanPhone, isLid ? '(@lid - de remoteJidAlt)' : '');
     console.log('RemoteJid para validação:', currentRemoteJid);
     
     // ====== PASSO 2: MOSTRAR LOADING IMEDIATAMENTE ======
@@ -1874,7 +1888,7 @@ async function openChat(chat) {
         if (headerWhatsAppLink) headerWhatsAppLink.classList.add('hidden');
         console.log('Chat é grupo:', participantsText);
     } else {
-        const formattedPhone = cleanPhone ? formatPhone(cleanPhone) : 'Número desconhecido';
+        const formattedPhone = cleanPhone ? formatPhone(cleanPhone) : (isLid ? 'Lead (Anúncio)' : 'Número desconhecido');
         headerNumber.innerText = formattedPhone;
         console.log('Telefone formatado no header:', formattedPhone);
         

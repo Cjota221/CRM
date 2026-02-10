@@ -405,7 +405,7 @@ class ChatLoadingSystem {
                     
                     <div class="text-sm text-gray-600 truncate">${lastMsgPreview}</div>
                     
-                    ${!chat.isGroup ? `<div class="text-xs text-gray-400 mt-1">${formatPhoneForDisplay(chat.cleanPhone)}</div>` : ''}
+                    ${!chat.isGroup ? `<div class="text-xs text-gray-400 mt-1">${chat.isLid && !chat.cleanPhone ? 'Lead (Anúncio)' : formatPhoneForDisplay(chat.cleanPhone)}</div>` : ''}
                 </div>
                 
                 <!-- Tempo -->
