@@ -2027,7 +2027,6 @@ function findAndRenderClientCRM(chatId) {
     const panel = document.getElementById('crmDataContainer');
     
     // Usar normalizePhone centralizado (lib-data-layer.js)
-    // Remove @s.whatsapp.net, DDI 55, e limpa caracteres
     const whatsappPhone = chatId.replace('@s.whatsapp.net', '').replace(/\D/g, '');
     const normalizedPhone = (typeof normalizePhone === 'function') ? normalizePhone(chatId) : whatsappPhone;
     
@@ -2035,45 +2034,116 @@ function findAndRenderClientCRM(chatId) {
     
     // Nome do perfil WhatsApp (pushname)
     const whatsappName = currentChatData?.pushName || currentChatData?.name || 'Contato';
+
+    // ====== SWR: Stale-While-Revalidate via CRMCache ======
+    const cache = (typeof CRMCache !== 'undefined') ? CRMCache.get(chatId) : { data: null, status: 'miss' };
     
-    // Mostrar loading
+    if (cache.data && cache.status !== 'miss') {
+        // ✅ Cache HIT — renderizar IMEDIATAMENTE sem spinner
+        console.log(`[CRM Brain] ⚡ Cache ${cache.status}: renderizando instantâneo`);
+        _renderBrainData(cache.data, whatsappPhone, normalizedPhone, whatsappName);
+        
+        if (cache.status === 'fresh') {
+            // Dados frescos (< 30min) — não precisa revalidar
+            console.log('[CRM Brain] 🟢 Dados frescos, sem revalidação');
+            return;
+        }
+        
+        // Dados stale — revalidar em background (silencioso)
+        if (typeof CRMCache !== 'undefined' && CRMCache.isRevalidating(chatId)) {
+            console.log('[CRM Brain] 🔄 Revalidação já em andamento, pulando');
+            return;
+        }
+        
+        console.log('[CRM Brain] 🔄 Dados stale, revalidando em background...');
+        _revalidateInBackground(chatId, whatsappPhone, normalizedPhone, whatsappName, cache.data);
+        return;
+    }
+    
+    // ❌ Cache MISS — comportamento original com spinner
+    console.log('[CRM Brain] 📡 Cache miss, buscando no servidor...');
     panel.innerHTML = `
         <div class="flex items-center justify-center py-8">
             <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500"></div>
         </div>
     `;
     
-    // Chamar API do "Cérebro" — enviar o telefone completo COM DDI
-    // O servidor agora faz normalização e fuzzy match internamente
+    _fetchAndRenderBrain(chatId, whatsappPhone, normalizedPhone, whatsappName);
+}
+
+/** Buscar no servidor e renderizar (usado tanto no miss quanto como fallback) */
+function _fetchAndRenderBrain(chatId, whatsappPhone, normalizedPhone, whatsappName) {
     fetch(`${API_BASE}/client-brain/${whatsappPhone}`)
         .then(res => res.json())
         .then(data => {
             console.log('[CRM Brain] Resposta:', data.found ? `✅ ${data.client?.name}` : '❌ Lead Novo');
             
-            if (!data.found) {
-                // Tentar fallback local antes de declarar Lead Novo
-                const localResult = tryLocalClientMatch(normalizedPhone);
-                if (localResult) {
-                    console.log('[CRM Brain] Fallback local encontrou:', localResult.nome || localResult.name);
-                    currentClient = localResult;
-                    renderLocalClientPanel(localResult, whatsappPhone);
-                } else {
-                    renderNewLeadPanelBrain(whatsappPhone, whatsappName, data);
-                }
-            } else {
-                // Cliente encontrado - atualizar nome no header se disponível
-                currentClient = data.client;
-                if (data.client?.name) {
-                    const headerName = document.getElementById('headerName');
-                    if (headerName) headerName.innerText = data.client.name;
-                }
-                renderClientPanelBrain(data, whatsappPhone);
+            // Salvar no cache (tanto encontrado quanto lead novo)
+            if (typeof CRMCache !== 'undefined') {
+                CRMCache.set(chatId, data);
             }
+            
+            _renderBrainData(data, whatsappPhone, normalizedPhone, whatsappName);
         })
         .catch(err => {
             console.error('[CRM Brain] Erro:', err);
-            // Fallback: usar busca local
             fallbackLocalClientSearch(chatId, whatsappPhone, normalizedPhone, whatsappName);
+        });
+}
+
+/** Renderizar brainData no painel (reutiliza lógica existente) */
+function _renderBrainData(data, whatsappPhone, normalizedPhone, whatsappName) {
+    if (!data.found) {
+        const localResult = tryLocalClientMatch(normalizedPhone);
+        if (localResult) {
+            console.log('[CRM Brain] Fallback local encontrou:', localResult.nome || localResult.name);
+            currentClient = localResult;
+            renderLocalClientPanel(localResult, whatsappPhone);
+        } else {
+            renderNewLeadPanelBrain(whatsappPhone, whatsappName, data);
+        }
+    } else {
+        currentClient = data.client;
+        if (data.client?.name) {
+            const headerName = document.getElementById('headerName');
+            if (headerName) headerName.innerText = data.client.name;
+        }
+        renderClientPanelBrain(data, whatsappPhone);
+    }
+}
+
+/** Revalidar em background — busca silenciosa, atualiza painel só se dados mudaram */
+function _revalidateInBackground(chatId, whatsappPhone, normalizedPhone, whatsappName, oldData) {
+    if (typeof CRMCache !== 'undefined') {
+        CRMCache.setRevalidating(chatId, true);
+    }
+    
+    fetch(`${API_BASE}/client-brain/${whatsappPhone}`)
+        .then(res => res.json())
+        .then(newData => {
+            // Salvar no cache independente de mudança
+            if (typeof CRMCache !== 'undefined') {
+                CRMCache.set(chatId, newData);
+                CRMCache.setRevalidating(chatId, false);
+            }
+            
+            // Só re-renderizar se dados realmente mudaram
+            const changed = (typeof CRMCache !== 'undefined') ? CRMCache.hasChanged(oldData, newData) : true;
+            if (changed) {
+                console.log('[CRM Brain] 🔄 Dados atualizados — re-renderizando painel');
+                // Só atualizar se ainda estamos no mesmo chat
+                if (currentRemoteJid === chatId || currentRemoteJid === whatsappPhone + '@s.whatsapp.net') {
+                    _renderBrainData(newData, whatsappPhone, normalizedPhone, whatsappName);
+                }
+            } else {
+                console.log('[CRM Brain] ✅ Dados iguais — sem atualização visual');
+            }
+        })
+        .catch(err => {
+            console.warn('[CRM Brain] Revalidação falhou (mantendo cache):', err.message);
+            if (typeof CRMCache !== 'undefined') {
+                CRMCache.setRevalidating(chatId, false);
+            }
         });
 }
 
