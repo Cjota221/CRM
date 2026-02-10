@@ -3786,15 +3786,32 @@ async function processCampaignBatches(campaign) {
                 }
                 
                 // Enviar via Evolution API
-                const url = `${EVOLUTION_URL}/message/sendText/${INSTANCE_NAME}`;
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: evolutionHeaders,
-                    body: JSON.stringify({
-                        number: phoneNumber,
-                        text: personalizedMsg
-                    })
-                });
+                let response;
+                if (imageUrl) {
+                    // Enviar imagem + legenda
+                    const mediaUrl = `${EVOLUTION_URL}/message/sendMedia/${INSTANCE_NAME}`;
+                    response = await fetch(mediaUrl, {
+                        method: 'POST',
+                        headers: evolutionHeaders,
+                        body: JSON.stringify({
+                            number: phoneNumber,
+                            mediatype: 'image',
+                            media: imageUrl,
+                            caption: personalizedMsg
+                        })
+                    });
+                } else {
+                    // Enviar texto puro
+                    const textUrl = `${EVOLUTION_URL}/message/sendText/${INSTANCE_NAME}`;
+                    response = await fetch(textUrl, {
+                        method: 'POST',
+                        headers: evolutionHeaders,
+                        body: JSON.stringify({
+                            number: phoneNumber,
+                            text: personalizedMsg
+                        })
+                    });
+                }
                 
                 const data = await response.json();
                 const success = !data.error && data.status !== 'error';

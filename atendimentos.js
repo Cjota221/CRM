@@ -5382,11 +5382,26 @@ async function processCampaignBatch(id) {
                 ? contact.phone 
                 : contact.phone.replace(/\D/g, '');
             
-            await fetch(`${API_BASE}/whatsapp/send-message`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ number: phone, text })
-            });
+            if (campaign.image) {
+                // Enviar imagem + legenda via send-media
+                await fetch(`${API_BASE}/whatsapp/send-media`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        number: phone,
+                        mediaType: 'image',
+                        media: campaign.image,
+                        caption: text
+                    })
+                });
+            } else {
+                // Enviar texto puro
+                await fetch(`${API_BASE}/whatsapp/send-message`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ number: phone, text })
+                });
+            }
             
             campaign.sent++;
             
