@@ -234,27 +234,64 @@ async function ensureCrmCache() {
         return false;
     }
     
-    if (!FACILZAP_TOKEN) return false;
+    if (!FACILZAP_TOKEN) {
+        console.warn('[CACHE] FACILZAP_TOKEN não configurado — tentando Supabase...');
+    }
     
     try {
         crmCacheLoading = true;
-        console.log('[CACHE] Auto-carregando dados FacilZap...');
-        const twoYearsAgo = new Date();
-        twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
-        const dataInicial = twoYearsAgo.toISOString().split('T')[0];
-        const dataFinal = new Date().toISOString().split('T')[0];
         
-        const [clients, orders, products] = await Promise.all([
-            fetchAllPages('https://api.facilzap.app.br/clientes', FACILZAP_TOKEN),
-            fetchAllPages('https://api.facilzap.app.br/pedidos', FACILZAP_TOKEN, `&filtros[data_inicial]=${dataInicial}&filtros[data_final]=${dataFinal}&filtros[incluir_produtos]=1`),
-            fetchAllPages('https://api.facilzap.app.br/produtos', FACILZAP_TOKEN)
-        ]);
+        if (FACILZAP_TOKEN) {
+            console.log('[CACHE] Auto-carregando dados FacilZap...');
+            const twoYearsAgo = new Date();
+            twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+            const dataInicial = twoYearsAgo.toISOString().split('T')[0];
+            const dataFinal = new Date().toISOString().split('T')[0];
+            
+            const [clients, orders, products] = await Promise.all([
+                fetchAllPages('https://api.facilzap.app.br/clientes', FACILZAP_TOKEN),
+                fetchAllPages('https://api.facilzap.app.br/pedidos', FACILZAP_TOKEN, `&filtros[data_inicial]=${dataInicial}&filtros[data_final]=${dataFinal}&filtros[incluir_produtos]=1`),
+                fetchAllPages('https://api.facilzap.app.br/produtos', FACILZAP_TOKEN)
+            ]);
+            
+            // Enriquecer produtos (mesma lógica do /api/facilzap-proxy)
+            const productsEnriched = enrichProducts(products);
+            crmCache = { clients, orders, products: productsEnriched, lastUpdate: new Date() };
+            console.log(`[CACHE] ✅ Auto-carregado: ${clients.length} clientes, ${orders.length} pedidos, ${productsEnriched.length} produtos`);
+            
+            if (clients.length > 0) return true;
+            // Se FacilZap retornou vazio, cair no fallback Supabase abaixo
+            console.warn('[CACHE] FacilZap retornou 0 clientes — tentando Supabase fallback...');
+        }
         
-        // Enriquecer produtos (mesma lógica do /api/facilzap-proxy)
-        const productsEnriched = enrichProducts(products);
-        crmCache = { clients, orders, products: productsEnriched, lastUpdate: new Date() };
-        console.log(`[CACHE] ✅ Auto-carregado: ${clients.length} clientes, ${orders.length} pedidos, ${productsEnriched.length} produtos`);
-        return true;
+        // FALLBACK: Carregar do Supabase se FacilZap falhar ou retornar vazio
+        if (SUPABASE_SERVICE_KEY) {
+            console.log('[CACHE] Tentando carregar do Supabase...');
+            const supa = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+            const [clientsRes, ordersRes, productsRes] = await Promise.all([
+                supa.from('clients').select('*'),
+                supa.from('orders').select('*'),
+                supa.from('products').select('*')
+            ]);
+            const supaClients = (clientsRes.data || []).map(c => ({
+                ...c, nome: c.name, telefone: c.phone, celular: c.phone
+            }));
+            const supaProducts = enrichProducts((productsRes.data || []).map(p => ({
+                ...p, nome: p.name, preco: p.price
+            })));
+            if (supaClients.length > 0 || crmCache.clients.length === 0) {
+                crmCache = { 
+                    clients: supaClients.length > 0 ? supaClients : crmCache.clients,
+                    orders: (ordersRes.data || []).length > 0 ? ordersRes.data : crmCache.orders,
+                    products: supaProducts.length > 0 ? supaProducts : crmCache.products,
+                    lastUpdate: new Date()
+                };
+                console.log(`[CACHE] ✅ Supabase fallback: ${supaClients.length} clientes, ${(ordersRes.data||[]).length} pedidos`);
+                return supaClients.length > 0;
+            }
+        }
+        
+        return false;
     } catch (error) {
         console.error('[CACHE] Erro ao auto-carregar:', error.message);
         return false;
@@ -310,7 +347,7 @@ function enrichProducts(products) {
 // CONFIGURAÇÃO
 // ============================================================================
 // Token da FacilZap
-const FACILZAP_TOKEN = process.env.FACILZAP_TOKEN;
+const FACILZAP_TOKEN = process.env.FACILZAP_TOKEN || '18984snBHqwS7ACgukUyeqadAYzE8E6ch2k27Qavj1vheckRVXKjJAMZfvcu8aS7MIanmBsnxOjyqPXpEcwT4';
 
 // Configuração Evolution API (WhatsApp) - VPS Hostinger/Easypanel
 const EVOLUTION_URL = process.env.EVOLUTION_URL || 'https://evolution-api.cjota.site'; 
