@@ -2899,17 +2899,31 @@ app.post('/api/sync-client-name', async (req, res) => {
             return res.status(400).json({ error: 'Phone e newName são obrigatórios' });
         }
         
-        // Se tiver integração com Supabase, descomentar:
-        // const { data } = await supabase
-        //     .from('clients')
-        //     .update({ name: newName })
-        //     .eq('clean_phone', phone);
+        // Tentar atualizar no Supabase se disponível
+        let supabaseResult = null;
+        if (typeof supabase !== 'undefined' && supabase) {
+            try {
+                const { data, error } = await supabase
+                    .from('clients')
+                    .update({ name: newName })
+                    .eq('clean_phone', phone);
+                if (error) {
+                    console.warn('[sync-client-name] Supabase update warn:', error.message);
+                } else {
+                    supabaseResult = data;
+                    console.log('[sync-client-name] ✅ Supabase atualizado');
+                }
+            } catch (supErr) {
+                console.warn('[sync-client-name] Supabase não disponível:', supErr.message);
+            }
+        }
         
         res.json({
             success: true,
             message: 'Nome sincronizado',
             phone,
-            newName
+            newName,
+            supabase: supabaseResult ? 'updated' : 'skipped'
         });
         
     } catch (error) {

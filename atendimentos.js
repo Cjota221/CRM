@@ -68,7 +68,7 @@ let currentChatId = null;
 let currentClient = null;
 let currentChatData = null; // Dados completos do chat atual
 let currentRemoteJid = null; // CRÍTICO: Rastreia qual remoteJid está sendo exibido para validação
-let allClients = [];
+let allClients = JSON.parse(localStorage.getItem('crm_all_clients') || '[]'); // Restaura clientes salvos localmente
 let allProducts = [];
 let allOrders = [];
 let allChats = []; // Armazena todos os chats para filtro
@@ -88,6 +88,11 @@ let editingQuickReplyId = null;
 
 // Sistema de Snooze
 let snoozedChats = JSON.parse(localStorage.getItem('crm_snoozed') || '{}'); // { chatId: timestamp }
+
+// Sistema de Nomes Customizados (persistente)
+// Quando o usuário edita/salva um nome no CRM, ele fica aqui
+// { chatId: "Nome editado" }
+let customContactNames = JSON.parse(localStorage.getItem('crm_custom_names') || '{}');
 
 // Sistema de Notas dos Clientes
 let clientNotes = JSON.parse(localStorage.getItem('crm_client_notes') || '{}'); // { chatId: { text, history: [] } }
@@ -861,7 +866,7 @@ function formatWhatsAppText(text) {
     return formatted;
 }
 
-// Função para extrair nome de contato (prioridade: CRM > WhatsApp > Telefone)
+// Função para extrair nome de contato (prioridade: CustomName > CRM > WhatsApp > Telefone)
 function getContactDisplayName(chatData) {
     if (!chatData) return 'Desconhecido';
     
@@ -869,6 +874,11 @@ function getContactDisplayName(chatData) {
     
     // NUNCA retornar "Você" para conversas
     if (!jid) return 'Desconhecido';
+    
+    // ★ PRIORIDADE 0: Nome customizado pelo usuário (salvo localmente)
+    if (customContactNames[jid] && customContactNames[jid].trim()) {
+        return customContactNames[jid].trim();
+    }
     
     // Se for grupo
     if (jid.includes('@g.us')) {
@@ -1300,6 +1310,22 @@ async function loadCRMData(retryCount = 0) {
         
         allClients = data.clients || [];
         allOrders = data.orders || [];
+        
+        // ★ MERGE: Manter clientes criados localmente (que não vieram da API)
+        try {
+            const localClients = JSON.parse(localStorage.getItem('crm_all_clients') || '[]');
+            if (localClients.length > 0) {
+                const apiPhones = new Set(allClients.map(c => c.telefone || c.celular || '').filter(Boolean));
+                const uniqueLocals = localClients.filter(lc => {
+                    const phone = lc.telefone || lc.celular || '';
+                    return phone && !apiPhones.has(phone);
+                });
+                if (uniqueLocals.length > 0) {
+                    allClients = [...allClients, ...uniqueLocals];
+                    console.log(`[CRM] Merged ${uniqueLocals.length} clientes locais com ${data.clients?.length || 0} da API`);
+                }
+            }
+        } catch(e) { console.warn('[CRM] Falha ao merge clientes locais:', e); }
         
         // Produtos já vem normalizado do proxy agora
         if (data.products && data.products.length > 0) {
@@ -3258,34 +3284,64 @@ function showAllOrders(clientId) {
 async function syncClientNameToUI(chatId, newName) {
     console.log(`[SYNC] Atualizando nome de ${chatId} para: ${newName}`);
     
-    // Atualizar nome no header imediatamente se este é o chat atual
+    if (!chatId || !newName || !newName.trim()) {
+        console.warn('[SYNC] chatId ou newName inválido');
+        return;
+    }
+    
+    const trimmedName = newName.trim();
+    
+    // ★ 1. PERSISTIR em localStorage (fonte de verdade para nomes customizados)
+    customContactNames[chatId] = trimmedName;
+    localStorage.setItem('crm_custom_names', JSON.stringify(customContactNames));
+    console.log('[SYNC] ✅ Nome salvo em localStorage');
+    
+    // 2. Atualizar nome no header imediatamente se este é o chat atual
     if (currentRemoteJid === chatId || currentChatId === chatId) {
         const headerNameEl = document.getElementById('headerName');
         if (headerNameEl) {
-            headerNameEl.innerText = newName;
+            headerNameEl.innerText = trimmedName;
             console.log('[SYNC] ✅ Header atualizado');
         }
     }
     
-    // Atualizar na lista de chats (sidebar)
-    const chatElement = document.querySelector(`[data-chat-id="${chatId}"]`);
+    // 3. Atualizar na lista de chats (sidebar) — buscar h4 dentro do chat-item
+    const chatElement = document.querySelector(`[data-chat-id="${chatId}"]`)
+                     || document.querySelector(`[data-chat-key="${chatId}"]`);
     if (chatElement) {
-        const nameElement = chatElement.querySelector('.chat-name');
+        // O nome está no <h4> dentro do item
+        const nameElement = chatElement.querySelector('h4.truncate')
+                         || chatElement.querySelector('.font-bold.truncate')
+                         || chatElement.querySelector('.font-medium.truncate')
+                         || chatElement.querySelector('.font-semibold.truncate');
         if (nameElement) {
-            nameElement.innerText = newName;
+            // Preservar badges/tags que estão como children do h4
+            const existingBadges = nameElement.querySelectorAll('span');
+            let badgesHtml = '';
+            existingBadges.forEach(b => badgesHtml += b.outerHTML);
+            nameElement.innerHTML = escapeHtml(trimmedName) + badgesHtml;
             console.log('[SYNC] ✅ Lista de chats atualizada');
+        } else {
+            console.warn('[SYNC] Elemento de nome não encontrado no chat item');
         }
     }
     
-    // Atualizar no array em memória
+    // 4. Atualizar no array em memória
     const chatIndex = allChats.findIndex(c => c.id === chatId || c.remoteJid === chatId);
     if (chatIndex !== -1) {
-        allChats[chatIndex].name = newName;
-        allChats[chatIndex].pushName = newName;
+        allChats[chatIndex].name = trimmedName;
+        allChats[chatIndex].pushName = trimmedName;
+        allChats[chatIndex]._customName = trimmedName;
         console.log('[SYNC] ✅ Array allChats atualizado');
     }
     
-    // Sincronizar com backend se tiver integração com Supabase/CRM
+    // 5. Atualizar no allClients se existir
+    if (currentClient) {
+        currentClient.nome = trimmedName;
+        currentClient.name = trimmedName;
+    }
+    
+    // 6. Sincronizar com backend (Supabase/CRM) — best-effort
     try {
         const phone = extractPhoneFromJid(chatId);
         if (phone) {
@@ -3294,7 +3350,7 @@ async function syncClientNameToUI(chatId, newName) {
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
                     phone: phone,
-                    newName: newName,
+                    newName: trimmedName,
                     chatId: chatId
                 })
             });
@@ -3303,8 +3359,14 @@ async function syncClientNameToUI(chatId, newName) {
         }
     } catch (e) {
         console.warn('[SYNC] Não conseguiu sincronizar com backend:', e);
-        // Isso não é crítico - o frontend já está atualizado
     }
+    
+    // 7. Limpar cache CRM para forçar refresh na próxima abertura
+    if (typeof CRMCache !== 'undefined') {
+        CRMCache.invalidate(chatId);
+    }
+    
+    showToast(`✅ Nome atualizado: ${trimmedName}`, 'success');
 }
 
 // Chamar essa função quando editar o nome do cliente no painel
@@ -3327,10 +3389,11 @@ async function saveNewClient() {
     
     if (!name) return alert('Nome é obrigatório');
     
-    // Criar novo cliente (simular API - em produção, enviar para backend)
+    // Criar novo cliente
     const newClient = {
         id: Date.now(),
         nome: name,
+        name: name,
         email: email,
         estado: state,
         telefone: phone,
@@ -3341,9 +3404,23 @@ async function saveNewClient() {
     // Adicionar à lista local
     allClients.push(newClient);
     
+    // ★ PERSISTIR allClients em localStorage para sobreviver a reloads
+    try {
+        localStorage.setItem('crm_all_clients', JSON.stringify(allClients));
+        console.log('[saveNewClient] ✅ allClients persistido em localStorage');
+    } catch (e) {
+        console.warn('[saveNewClient] Falha ao salvar allClients:', e);
+    }
+    
     // Atualizar painel
     currentClient = newClient;
     renderClientPanel(newClient, phone);
+    
+    // ★ SINCRONIZAR nome na sidebar + localStorage customContactNames
+    const chatId = currentRemoteJid || currentChatId;
+    if (chatId) {
+        await syncClientNameToUI(chatId, name);
+    }
     
     // Remover tag de Lead Novo
     if (currentChatId && chatTags[currentChatId]) {
@@ -3356,7 +3433,7 @@ async function saveNewClient() {
         }
     }
     
-    alert('Cliente cadastrado com sucesso!');
+    showToast('✅ Cliente cadastrado com sucesso!', 'success');
 }
 
 function openSearchClientModal() {
