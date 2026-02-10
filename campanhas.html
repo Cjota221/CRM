@@ -258,6 +258,21 @@
                             <p class="font-medium text-slate-700">Inativos 30+ dias</p>
                             <p id="countInativos30" class="text-xs text-slate-400">Último pedido há 30+ dias</p>
                         </button>
+                        <button onclick="selectAudience('inactive_300')" class="audience-btn p-4 rounded-xl border-2 border-slate-200 text-left hover:border-primary-500 transition-colors" data-audience="inactive_300">
+                            <i data-lucide="user-x" class="w-5 h-5 text-red-700 mb-2"></i>
+                            <p class="font-medium text-slate-700">Inativos 300+ dias</p>
+                            <p id="countInactive300" class="text-xs text-slate-400">Carregando...</p>
+                        </button>
+                        <button onclick="selectAudience('ticket_alto')" class="audience-btn p-4 rounded-xl border-2 border-slate-200 text-left hover:border-primary-500 transition-colors" data-audience="ticket_alto">
+                            <i data-lucide="trending-up" class="w-5 h-5 text-emerald-600 mb-2"></i>
+                            <p class="font-medium text-slate-700">Ticket Alto (LTV)</p>
+                            <p id="countTicketAlto" class="text-xs text-slate-400">Acima da média</p>
+                        </button>
+                        <button onclick="selectAudience('recuperacao')" class="audience-btn p-4 rounded-xl border-2 border-slate-200 text-left hover:border-primary-500 transition-colors" data-audience="recuperacao">
+                            <i data-lucide="heart-pulse" class="w-5 h-5 text-orange-600 mb-2"></i>
+                            <p class="font-medium text-slate-700">Recuperação (Risco)</p>
+                            <p id="countRecuperacao" class="text-xs text-slate-400">45-180 dias</p>
+                        </button>
                         <button onclick="selectAudience('group')" class="audience-btn p-4 rounded-xl border-2 border-slate-200 text-left hover:border-primary-500 transition-colors" data-audience="group">
                             <i data-lucide="message-circle" class="w-5 h-5 text-emerald-500 mb-2"></i>
                             <p class="font-medium text-slate-700">Grupo WhatsApp</p>
@@ -296,42 +311,32 @@
                     </div>
                 </div>
                 
-                <!-- Tipo de Campanha (Módulo 3 & 4) -->
+                <!-- Motor de Blocos (Sequência de Mensagens) -->
                 <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-2">Tipo de Campanha</label>
-                    <div class="grid grid-cols-5 gap-2">
-                        <button onclick="selectCampaignType('text')" class="campaign-type-btn p-3 rounded-xl border-2 border-primary-500 bg-primary-50 text-center transition-colors" data-type="text">
-                            <i data-lucide="type" class="w-5 h-5 mx-auto text-primary-600 mb-1"></i>
-                            <p class="text-xs font-medium text-primary-700">Texto</p>
-                        </button>
-                        <button onclick="selectCampaignType('image')" class="campaign-type-btn p-3 rounded-xl border-2 border-slate-200 text-center hover:border-primary-500 transition-colors" data-type="image">
-                            <i data-lucide="image" class="w-5 h-5 mx-auto text-blue-500 mb-1"></i>
-                            <p class="text-xs font-medium text-slate-700">Imagem</p>
-                        </button>
-                        <button onclick="selectCampaignType('poll')" class="campaign-type-btn p-3 rounded-xl border-2 border-slate-200 text-center hover:border-primary-500 transition-colors" data-type="poll">
-                            <i data-lucide="bar-chart-3" class="w-5 h-5 mx-auto text-purple-500 mb-1"></i>
-                            <p class="text-xs font-medium text-slate-700">Enquete</p>
-                        </button>
-                        <button onclick="selectCampaignType('audio')" class="campaign-type-btn p-3 rounded-xl border-2 border-slate-200 text-center hover:border-primary-500 transition-colors" data-type="audio">
-                            <i data-lucide="mic" class="w-5 h-5 mx-auto text-emerald-500 mb-1"></i>
-                            <p class="text-xs font-medium text-slate-700">Áudio PTT</p>
-                        </button>
-                        <button onclick="selectCampaignType('sticker')" class="campaign-type-btn p-3 rounded-xl border-2 border-slate-200 text-center hover:border-primary-500 transition-colors" data-type="sticker">
-                            <i data-lucide="smile" class="w-5 h-5 mx-auto text-amber-500 mb-1"></i>
-                            <p class="text-xs font-medium text-slate-700">Figurinha</p>
-                        </button>
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="block text-sm font-medium text-slate-700">Sequência de Mensagens</label>
+                        <div class="relative">
+                            <button onclick="toggleBlockMenu()" class="btn btn-secondary text-xs">
+                                <i data-lucide="plus" class="w-3.5 h-3.5"></i> Adicionar Bloco
+                            </button>
+                            <div id="addBlockMenu" class="hidden absolute right-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-slate-200 z-20 py-1 w-48">
+                                <button onclick="addBlock('text')" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center gap-2"><i data-lucide="type" class="w-4 h-4 text-blue-500"></i> Texto</button>
+                                <button onclick="addBlock('image')" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center gap-2"><i data-lucide="image" class="w-4 h-4 text-green-500"></i> Imagem + Legenda</button>
+                                <button onclick="addBlock('audio')" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center gap-2"><i data-lucide="mic" class="w-4 h-4 text-emerald-500"></i> Áudio PTT</button>
+                                <button onclick="addBlock('poll')" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center gap-2"><i data-lucide="bar-chart-3" class="w-4 h-4 text-purple-500"></i> Enquete</button>
+                                <button onclick="addBlock('sticker')" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center gap-2"><i data-lucide="smile" class="w-4 h-4 text-amber-500"></i> Figurinha</button>
+                                <div class="border-t border-slate-100 my-1"></div>
+                                <button onclick="addBlock('delay')" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center gap-2"><i data-lucide="timer" class="w-4 h-4 text-orange-500"></i> Delay (espera)</button>
+                                <button onclick="addBlock('presence')" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center gap-2"><i data-lucide="eye" class="w-4 h-4 text-cyan-500"></i> Presença (digitando...)</button>
+                            </div>
+                        </div>
                     </div>
-                </div>
-
-                <!-- Mensagem (oculta para poll) -->
-                <div id="campaignMessageSection">
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Mensagem</label>
-                    <textarea id="campaignMessage" rows="5" placeholder="Digite sua mensagem... Use {{nome}} para personalizar" class="input resize-none"></textarea>
-                    <div class="flex gap-2 mt-2 flex-wrap">
-                        <button onclick="insertCampaignVar('nome')" class="text-xs px-2 py-1 bg-slate-100 rounded hover:bg-slate-200">{{nome}}</button>
-                        <button onclick="insertCampaignVar('cidade')" class="text-xs px-2 py-1 bg-slate-100 rounded hover:bg-slate-200">{{cidade}}</button>
-                        <button onclick="insertCampaignVar('cupom')" class="text-xs px-2 py-1 bg-amber-100 text-amber-700 rounded hover:bg-amber-200">{{cupom}}</button>
-                        <button onclick="insertCampaignVar('link')" class="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200">{{link}}</button>
+                    <div id="blocksContainer" class="space-y-3 min-h-[80px]">
+                        <div class="text-center py-6 text-slate-400 border-2 border-dashed border-slate-200 rounded-xl">
+                            <i data-lucide="layers" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+                            <p class="text-sm">Monte sua sequência de disparos</p>
+                            <p class="text-xs mt-1">Adicione blocos: texto, imagem, áudio, enquete, delay...</p>
+                        </div>
                     </div>
                 </div>
 
@@ -341,83 +346,7 @@
                     <select id="campaignCoupon" class="input text-sm">
                         <option value="">Sem cupom</option>
                     </select>
-                    <p class="text-xs text-slate-400 mt-1">Use {{cupom}} na mensagem para incluir o código automaticamente</p>
-                </div>
-                
-                <!-- Mídia (opcional) -->
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Imagem (opcional)</label>
-                    <div id="campaignImagePreview" class="hidden mb-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
-                        <img id="campaignImageThumb" src="" class="w-20 h-20 object-cover rounded">
-                        <button onclick="removeCampaignImage()" class="text-red-500 text-xs mt-1">Remover</button>
-                    </div>
-                    <input type="file" id="campaignImage" accept="image/*" class="input text-sm" onchange="previewCampaignImage(event)">
-                </div>
-                
-                <!-- Seção Enquete (Módulo 3) -->
-                <div id="pollSection" class="hidden">
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Configuração da Enquete</label>
-                    <div class="p-4 bg-purple-50 rounded-xl space-y-3">
-                        <div>
-                            <label class="block text-xs text-slate-500 mb-1">Pergunta da Enquete</label>
-                            <input type="text" id="pollTitle" placeholder="Ex: Qual modelo você prefere?" class="input text-sm">
-                        </div>
-                        <div id="pollOptionsContainer">
-                            <label class="block text-xs text-slate-500 mb-1">Opções (mín 2, máx 12)</label>
-                            <div class="space-y-2" id="pollOptionsList">
-                                <div class="flex gap-2">
-                                    <input type="text" placeholder="Opção 1" class="poll-option input text-sm flex-1">
-                                    <button onclick="removePollOption(this)" class="text-red-400 hover:text-red-600 px-2"><i data-lucide="x" class="w-4 h-4"></i></button>
-                                </div>
-                                <div class="flex gap-2">
-                                    <input type="text" placeholder="Opção 2" class="poll-option input text-sm flex-1">
-                                    <button onclick="removePollOption(this)" class="text-red-400 hover:text-red-600 px-2"><i data-lucide="x" class="w-4 h-4"></i></button>
-                                </div>
-                            </div>
-                            <button onclick="addPollOption()" class="mt-2 text-xs text-purple-600 hover:text-purple-800 font-medium flex items-center gap-1">
-                                <i data-lucide="plus" class="w-3 h-3"></i> Adicionar opção
-                            </button>
-                        </div>
-                        <div>
-                            <label class="block text-xs text-slate-500 mb-1">Tipo de seleção</label>
-                            <select id="pollSelectableCount" class="input text-sm">
-                                <option value="1">Escolha única</option>
-                                <option value="0">Múltipla escolha</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Biblioteca de Mídias (Módulo 4) -->
-                <div id="mediaLibrarySection" class="hidden">
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Biblioteca de Mídias</label>
-                    <div class="p-4 bg-emerald-50 rounded-xl">
-                        <div class="flex items-center justify-between mb-3">
-                            <span class="text-xs text-slate-500">Selecione uma mídia pré-cadastrada ou envie uma nova</span>
-                            <button onclick="openMediaUploadModal()" class="text-xs text-emerald-600 hover:text-emerald-800 font-medium flex items-center gap-1">
-                                <i data-lucide="upload" class="w-3 h-3"></i> Enviar nova
-                            </button>
-                        </div>
-                        <div id="mediaLibraryGrid" class="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto">
-                            <p class="text-xs text-slate-400 col-span-4 p-3 text-center">Carregando biblioteca...</p>
-                        </div>
-                        <input type="hidden" id="selectedMediaId" value="">
-                        <div id="selectedMediaPreview" class="hidden mt-3 p-2 bg-white rounded-lg border border-emerald-200 flex items-center gap-2">
-                            <i data-lucide="check-circle" class="w-4 h-4 text-emerald-500"></i>
-                            <span id="selectedMediaName" class="text-sm text-slate-700 flex-1"></span>
-                            <button onclick="clearSelectedMedia()" class="text-red-400 hover:text-red-600"><i data-lucide="x" class="w-4 h-4"></i></button>
-                        </div>
-                        <!-- Upload inline para áudio -->
-                        <div id="audioUploadSection" class="mt-3">
-                            <label class="block text-xs text-slate-500 mb-1">Ou envie um áudio .ogg agora:</label>
-                            <input type="file" id="mediaAudioFile" accept="audio/ogg,audio/mpeg,audio/mp4,audio/webm" class="input text-sm" onchange="previewMediaAudio(event)">
-                            <div id="audioUploadPreview" class="hidden mt-2 p-2 bg-white rounded-lg border flex items-center gap-2">
-                                <i data-lucide="music" class="w-4 h-4 text-emerald-500"></i>
-                                <span id="audioFileName" class="text-xs text-slate-600 flex-1"></span>
-                                <audio id="audioPreviewPlayer" controls class="h-8"></audio>
-                            </div>
-                        </div>
-                    </div>
+                    <p class="text-xs text-slate-400 mt-1">Use {{cupom}} em blocos de texto para incluir o código</p>
                 </div>
                 
                 <!-- Agendamento -->
@@ -621,7 +550,9 @@
         let abandonedCartsList = [];
         let couponsList = [];
         let pollInterval = null;
-        // Módulo 3 & 4
+        // Motor de Blocos (Phase 15)
+        let campaignBlocks = [];
+        // Legacy (mantido para compat)
         let selectedCampaignType = 'text';
         let mediaLibraryItems = [];
         let selectedMediaId = null;
@@ -645,11 +576,13 @@
         // SEGMENTAÇÃO (BACKEND)
         // ============================
         async function loadSegmentCounts() {
-            const segments = ['todos', 'inativos', 'vip', 'recorrente', 'risco', 'fieis', 'inativos_30'];
+            const segments = ['todos', 'inativos', 'vip', 'recorrente', 'risco', 'fieis', 'inativos_30', 'inactive_300', 'ticket_alto', 'recuperacao'];
             const idMap = { 
                 todos: 'countAll', inativos: 'countInactive', vip: 'countVip', 
                 recorrente: 'countRecorrente', risco: 'countRisco',
-                fieis: 'countFieis', inativos_30: 'countInativos30'
+                fieis: 'countFieis', inativos_30: 'countInativos30',
+                inactive_300: 'countInactive300', ticket_alto: 'countTicketAlto',
+                recuperacao: 'countRecuperacao'
             };
             
             for (const seg of segments) {
@@ -740,7 +673,7 @@
                     preview.classList.remove('hidden');
                     countEl.textContent = segmentedContacts.length;
                     listEl.innerHTML = segmentedContacts.slice(0, 15).map(c => 
-                        `<div class="flex justify-between"><span>${c.name}</span><span class="text-slate-400">${c.orderCount} pedidos · R$ ${c.totalSpent}</span></div>`
+                        `<div class="flex justify-between"><span>${c.name}</span><span class="text-slate-400">${formatPhoneDisplay(c.phone)} · ${c.orderCount} ped · R$ ${c.totalSpent}</span></div>`
                     ).join('') + (segmentedContacts.length > 15 ? `<div class="text-center text-purple-500 font-medium mt-1">+${segmentedContacts.length - 15} mais</div>` : '');
                     
                 } catch (e) {
@@ -935,7 +868,9 @@
                 
                 const segLabels = {
                     todos: 'Todos', vip: 'VIP', recorrente: 'Recorrentes',
-                    inativos: 'Inativos', risco: 'Risco', novos: 'Novos', custom: 'Customizado'
+                    inativos: 'Inativos', risco: 'Risco', novos: 'Novos', custom: 'Customizado',
+                    inactive_300: 'Inativos 300+', ticket_alto: 'Ticket Alto',
+                    recuperacao: 'Recuperação', sequence: 'Sequência'
                 };
                 
                 return `
@@ -1019,23 +954,19 @@
         // ============================
         async function saveCampaign() {
             const name = document.getElementById('campaignName').value.trim();
-            const message = document.getElementById('campaignMessage')?.value?.trim() || '';
             const couponCode = document.getElementById('campaignCoupon').value || null;
             
-            // Validação por tipo
             if (!name || !selectedAudience) {
                 return alert('Preencha nome e selecione o público');
             }
             
-            if (selectedCampaignType === 'poll') {
-                const pollTitle = document.getElementById('pollTitle').value.trim();
-                const pollOpts = getPollOptions();
-                if (!pollTitle || pollOpts.length < 2) {
-                    return alert('Enquete precisa de título e pelo menos 2 opções');
-                }
-            } else if (!message && selectedCampaignType !== 'audio' && selectedCampaignType !== 'sticker') {
-                return alert('Preencha a mensagem');
+            if (campaignBlocks.length === 0) {
+                return alert('Adicione pelo menos um bloco de mensagem');
             }
+            
+            // Extrair mensagem do primeiro bloco de texto (compatibilidade)
+            const firstTextBlock = campaignBlocks.find(b => b.type === 'text');
+            const message = firstTextBlock?.config?.text || campaignBlocks.map(b => b.config?.text || b.config?.caption || `[${b.type}]`).join(' | ');
             
             if (selectedAudience !== 'group' && segmentedContacts.length === 0) {
                 return alert('Nenhum contato encontrado para este segmento');
@@ -1101,14 +1032,9 @@
                         messageDelay: parseInt(document.getElementById('messageDelay').value),
                         scheduledAt: scheduledAt,
                         couponCode: couponCode,
-                        imageUrl: campaignImageBase64 || null,
-                        // Módulo 3: Enquete
-                        campaignType: selectedCampaignType,
-                        pollTitle: selectedCampaignType === 'poll' ? document.getElementById('pollTitle').value.trim() : null,
-                        pollOptions: selectedCampaignType === 'poll' ? getPollOptions() : null,
-                        pollSelectableCount: selectedCampaignType === 'poll' ? parseInt(document.getElementById('pollSelectableCount').value) : 1,
-                        // Módulo 4: Mídia da biblioteca
-                        mediaLibraryId: selectedMediaId || null
+                        // Motor de Blocos
+                        blocks: campaignBlocks.map(b => ({ type: b.type, config: b.config })),
+                        campaignType: campaignBlocks.length === 1 ? campaignBlocks[0].type : 'sequence'
                     })
                 });
                 
@@ -1360,11 +1286,12 @@
             document.getElementById('newCampaignModal').classList.add('hidden');
             // Reset form
             document.getElementById('campaignName').value = '';
-            document.getElementById('campaignMessage').value = '';
             document.getElementById('campaignCoupon').value = '';
             selectedAudience = null;
             segmentedContacts = [];
+            campaignBlocks = [];
             campaignImageBase64 = null;
+            renderBlocks();
             document.getElementById('segmentPreview').classList.add('hidden');
             document.querySelectorAll('.audience-btn').forEach(btn => {
                 btn.classList.remove('border-primary-500', 'bg-primary-50');
@@ -1500,7 +1427,159 @@
         }
 
         // ============================
-        // MÓDULO 3: TIPO DE CAMPANHA + ENQUETES
+        // MOTOR DE BLOCOS (SEQUÊNCIA DE MENSAGENS)
+        // ============================
+        function toggleBlockMenu() {
+            const menu = document.getElementById('addBlockMenu');
+            menu.classList.toggle('hidden');
+            if (!menu.classList.contains('hidden')) {
+                setTimeout(() => {
+                    const close = (e) => { if (!menu.contains(e.target) && !e.target.closest('[onclick*="toggleBlockMenu"]')) { menu.classList.add('hidden'); document.removeEventListener('click', close); } };
+                    document.addEventListener('click', close);
+                }, 10);
+            }
+        }
+
+        function addBlock(type) {
+            const defaults = {
+                text: { text: '' },
+                image: { base64: null, caption: '', preview: null },
+                audio: { base64: null, fileName: '' },
+                poll: { title: '', options: ['', ''], selectableCount: 1 },
+                sticker: { base64: null, preview: null },
+                delay: { seconds: 5 },
+                presence: { presenceType: 'composing', seconds: 3 }
+            };
+            campaignBlocks.push({ id: Date.now() + Math.random(), type, config: { ...(defaults[type] || {}) } });
+            document.getElementById('addBlockMenu').classList.add('hidden');
+            renderBlocks();
+            updateCampaignSummary();
+        }
+
+        function removeBlock(idx) { campaignBlocks.splice(idx, 1); renderBlocks(); updateCampaignSummary(); }
+        function moveBlock(idx, dir) {
+            const n = idx + dir;
+            if (n < 0 || n >= campaignBlocks.length) return;
+            [campaignBlocks[idx], campaignBlocks[n]] = [campaignBlocks[n], campaignBlocks[idx]];
+            renderBlocks();
+        }
+        function updateBlockConfig(idx, key, val) { if (campaignBlocks[idx]) campaignBlocks[idx].config[key] = val; }
+
+        function insertBlockVar(idx, varName) {
+            const block = campaignBlocks[idx]; if (!block) return;
+            const field = block.type === 'image' ? 'caption' : 'text';
+            const ta = document.getElementById(`block_${block.id}`) || document.querySelector(`[data-block-id="${block.id}"]`);
+            if (ta) { const s = ta.selectionStart || ta.value.length; ta.value = ta.value.slice(0, s) + `{{${varName}}}` + ta.value.slice(s); block.config[field] = ta.value; ta.focus(); }
+            else { block.config[field] = (block.config[field] || '') + `{{${varName}}}`; renderBlocks(); }
+        }
+
+        function handleBlockImage(idx, ev) {
+            const f = ev.target.files[0]; if (!f) return;
+            const r = new FileReader();
+            r.onload = (e) => { campaignBlocks[idx].config.base64 = e.target.result; campaignBlocks[idx].config.preview = e.target.result; renderBlocks(); };
+            r.readAsDataURL(f);
+        }
+        function handleBlockAudio(idx, ev) {
+            const f = ev.target.files[0]; if (!f) return;
+            const r = new FileReader();
+            r.onload = (e) => { campaignBlocks[idx].config.base64 = e.target.result; campaignBlocks[idx].config.fileName = f.name; renderBlocks(); };
+            r.readAsDataURL(f);
+        }
+        function handleBlockSticker(idx, ev) {
+            const f = ev.target.files[0]; if (!f) return;
+            const r = new FileReader();
+            r.onload = (e) => { campaignBlocks[idx].config.base64 = e.target.result; campaignBlocks[idx].config.preview = e.target.result; renderBlocks(); };
+            r.readAsDataURL(f);
+        }
+
+        function addBlockPollOption(idx) {
+            const b = campaignBlocks[idx]; if (!b || b.config.options.length >= 12) return;
+            b.config.options.push(''); renderBlocks();
+        }
+        function removeBlockPollOption(idx, optIdx) {
+            const b = campaignBlocks[idx]; if (!b || b.config.options.length <= 2) return;
+            b.config.options.splice(optIdx, 1); renderBlocks();
+        }
+        function updateBlockPollOption(idx, optIdx, val) { if (campaignBlocks[idx]) campaignBlocks[idx].config.options[optIdx] = val; }
+
+        async function aiImproveBlockText(idx, field) {
+            const block = campaignBlocks[idx]; if (!block) return;
+            const key = field || (block.type === 'image' ? 'caption' : 'text');
+            const text = block.config[key];
+            if (!text || text.trim().length < 3) return alert('Digite um texto primeiro');
+            const modeLabels = ['Profissional', 'Amigável', 'Persuasivo', 'Conciso', 'Criativo', 'Formal'];
+            const modes = ['professional', 'friendly', 'persuasive', 'concise', 'creative', 'formal'];
+            const modeIdx = prompt('Escolha o estilo:\n' + modeLabels.map((l, i) => `${i+1}. ${l}`).join('\n') + '\n\nDigite o número:');
+            if (!modeIdx) return;
+            const mode = modes[parseInt(modeIdx) - 1] || 'professional';
+            try {
+                const res = await fetch('/api/anny/improve-text', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, mode }) });
+                const data = await res.json();
+                if (data.improved) { block.config[key] = data.improved; renderBlocks(); }
+                else alert('IA não retornou texto melhorado');
+            } catch (e) { alert('Erro IA: ' + e.message); }
+        }
+
+        function formatPhoneDisplay(phone) {
+            if (!phone) return '—';
+            const p = phone.replace(/\D/g, '');
+            if (p.length === 13) return `+${p.slice(0,2)} (${p.slice(2,4)}) ${p.slice(4,9)}-${p.slice(9)}`;
+            if (p.length === 12) return `+${p.slice(0,2)} (${p.slice(2,4)}) ${p.slice(4,8)}-${p.slice(8)}`;
+            return phone;
+        }
+
+        function renderBlocks() {
+            const container = document.getElementById('blocksContainer');
+            if (!container) return;
+            if (campaignBlocks.length === 0) {
+                container.innerHTML = `<div class="text-center py-6 text-slate-400 border-2 border-dashed border-slate-200 rounded-xl"><i data-lucide="layers" class="w-8 h-8 mx-auto mb-2 opacity-50"></i><p class="text-sm">Monte sua sequência de disparos</p><p class="text-xs mt-1">Adicione blocos: texto, imagem, áudio, enquete, delay...</p></div>`;
+                lucide.createIcons(); return;
+            }
+            container.innerHTML = campaignBlocks.map((block, idx) => renderBlockHTML(block, idx)).join('');
+            lucide.createIcons();
+        }
+
+        function renderBlockHTML(block, idx) {
+            const meta = {
+                text: { icon: 'type', border: 'border-blue-200', bg: 'bg-blue-50', ic: 'text-blue-500', label: 'Texto' },
+                image: { icon: 'image', border: 'border-green-200', bg: 'bg-green-50', ic: 'text-green-500', label: 'Imagem' },
+                audio: { icon: 'mic', border: 'border-emerald-200', bg: 'bg-emerald-50', ic: 'text-emerald-500', label: 'Áudio PTT' },
+                poll: { icon: 'bar-chart-3', border: 'border-purple-200', bg: 'bg-purple-50', ic: 'text-purple-500', label: 'Enquete' },
+                sticker: { icon: 'smile', border: 'border-amber-200', bg: 'bg-amber-50', ic: 'text-amber-500', label: 'Figurinha' },
+                delay: { icon: 'timer', border: 'border-orange-200', bg: 'bg-orange-50', ic: 'text-orange-500', label: 'Delay' },
+                presence: { icon: 'eye', border: 'border-cyan-200', bg: 'bg-cyan-50', ic: 'text-cyan-500', label: 'Presença' }
+            };
+            const m = meta[block.type] || { icon: 'file', border: 'border-slate-200', bg: 'bg-slate-50', ic: 'text-slate-500', label: block.type };
+            let content = '';
+            switch(block.type) {
+                case 'text':
+                    content = `<div class="relative"><textarea id="block_${block.id}" rows="3" class="input resize-none text-sm" placeholder="Mensagem... Use {{nome}} para personalizar" oninput="updateBlockConfig(${idx}, 'text', this.value)">${block.config.text || ''}</textarea><button onclick="aiImproveBlockText(${idx})" class="absolute top-2 right-2 p-1.5 rounded-lg hover:bg-purple-100 transition" title="IA: Melhorar texto"><i data-lucide="sparkles" class="w-4 h-4 text-purple-500"></i></button></div><div class="flex gap-1 mt-1 flex-wrap"><button onclick="insertBlockVar(${idx}, 'nome')" class="text-xs px-2 py-0.5 bg-slate-100 rounded hover:bg-slate-200">{{nome}}</button><button onclick="insertBlockVar(${idx}, 'cidade')" class="text-xs px-2 py-0.5 bg-slate-100 rounded hover:bg-slate-200">{{cidade}}</button><button onclick="insertBlockVar(${idx}, 'cupom')" class="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded hover:bg-amber-200">{{cupom}}</button><button onclick="insertBlockVar(${idx}, 'link')" class="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200">{{link}}</button></div>`;
+                    break;
+                case 'image':
+                    content = `<input type="file" accept="image/*" class="input text-sm" onchange="handleBlockImage(${idx}, event)">${block.config.preview ? `<img src="${block.config.preview}" class="w-16 h-16 object-cover rounded mt-2">` : ''}<div class="relative mt-2"><textarea data-block-id="${block.id}" rows="2" class="input resize-none text-sm" placeholder="Legenda (opcional)..." oninput="updateBlockConfig(${idx}, 'caption', this.value)">${block.config.caption || ''}</textarea><button onclick="aiImproveBlockText(${idx}, 'caption')" class="absolute top-2 right-2 p-1 rounded-lg hover:bg-purple-100 transition" title="IA: Melhorar legenda"><i data-lucide="sparkles" class="w-4 h-4 text-purple-500"></i></button></div>`;
+                    break;
+                case 'audio':
+                    content = `<input type="file" accept="audio/ogg,audio/mpeg,audio/mp4,audio/webm" class="input text-sm" onchange="handleBlockAudio(${idx}, event)">${block.config.fileName ? `<p class="text-xs text-emerald-600 mt-1">🎵 ${block.config.fileName}</p>` : ''}`;
+                    break;
+                case 'poll':
+                    const opts = block.config.options || ['', ''];
+                    content = `<input type="text" class="input text-sm mb-2" placeholder="Pergunta da enquete..." value="${block.config.title || ''}" oninput="updateBlockConfig(${idx}, 'title', this.value)"><div class="space-y-1">${opts.map((o, i) => `<div class="flex gap-1"><input type="text" class="input text-sm flex-1" placeholder="Opção ${i+1}" value="${o}" oninput="updateBlockPollOption(${idx}, ${i}, this.value)">${opts.length > 2 ? `<button onclick="removeBlockPollOption(${idx}, ${i})" class="text-red-400 hover:text-red-600 px-1"><i data-lucide="x" class="w-3 h-3"></i></button>` : ''}</div>`).join('')}</div>${opts.length < 12 ? `<button onclick="addBlockPollOption(${idx})" class="text-xs text-purple-600 mt-1 hover:text-purple-800">+ Opção</button>` : ''}`;
+                    break;
+                case 'sticker':
+                    content = `<input type="file" accept="image/webp,image/png" class="input text-sm" onchange="handleBlockSticker(${idx}, event)">${block.config.preview ? `<img src="${block.config.preview}" class="w-16 h-16 object-contain mt-2">` : ''}`;
+                    break;
+                case 'delay':
+                    content = `<div class="flex items-center gap-2"><input type="number" min="1" max="300" class="input text-sm w-24" value="${block.config.seconds || 5}" oninput="updateBlockConfig(${idx}, 'seconds', parseInt(this.value))"><span class="text-sm text-slate-500">segundos de espera</span></div>`;
+                    break;
+                case 'presence':
+                    content = `<div class="flex items-center gap-2"><select class="input text-sm w-40" onchange="updateBlockConfig(${idx}, 'presenceType', this.value)"><option value="composing" ${(block.config.presenceType||'composing')==='composing'?'selected':''}>Digitando...</option><option value="recording" ${block.config.presenceType==='recording'?'selected':''}>Gravando áudio...</option></select><input type="number" min="1" max="30" class="input text-sm w-20" value="${block.config.seconds || 3}" oninput="updateBlockConfig(${idx}, 'seconds', parseInt(this.value))"><span class="text-sm text-slate-500">seg</span></div>`;
+                    break;
+            }
+            return `<div class="p-3 rounded-xl border ${m.border} ${m.bg}"><div class="flex items-center justify-between mb-2"><div class="flex items-center gap-2"><span class="text-xs font-bold text-slate-400">#${idx+1}</span><i data-lucide="${m.icon}" class="w-4 h-4 ${m.ic}"></i><span class="text-sm font-medium text-slate-700">${m.label}</span></div><div class="flex items-center gap-1">${idx > 0 ? `<button onclick="moveBlock(${idx}, -1)" class="p-1 hover:bg-white rounded" title="Mover ↑"><i data-lucide="chevron-up" class="w-3.5 h-3.5 text-slate-400"></i></button>` : ''}${idx < campaignBlocks.length - 1 ? `<button onclick="moveBlock(${idx}, 1)" class="p-1 hover:bg-white rounded" title="Mover ↓"><i data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-400"></i></button>` : ''}<button onclick="removeBlock(${idx})" class="p-1 hover:bg-red-100 rounded" title="Remover"><i data-lucide="trash-2" class="w-3.5 h-3.5 text-red-400"></i></button></div></div>${content}</div>`;
+        }
+
+        // ============================
+        // MÓDULO 3: TIPO DE CAMPANHA + ENQUETES (LEGACY)
         // ============================
         function selectCampaignType(type) {
             selectedCampaignType = type;

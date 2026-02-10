@@ -3852,6 +3852,12 @@ app.post('/api/campaigns/segment', async (req, res) => {
     try {
         const { segment, minOrders, maxOrders, minSpent, maxSpent, inactiveDays, state, city } = req.body;
         
+        // Auto-sync se cache estiver vazio
+        if (!crmCache.clients || crmCache.clients.length === 0) {
+            console.log('[SEGMENT] Cache vazio — tentando auto-sync...');
+            await ensureCrmCache();
+        }
+        
         if (!crmCache.clients || crmCache.clients.length === 0) {
             return res.status(400).json({ error: 'Nenhum cliente carregado. Sincronize primeiro.' });
         }
@@ -3924,6 +3930,20 @@ app.post('/api/campaigns/segment', async (req, res) => {
                 case 'inativos_30':
                     // Inativos 30+ dias (último pedido há mais de 30 dias)
                     clients = clients.filter(c => c.daysSinceLastPurchase >= 30 && c.orderCount > 0);
+                    break;
+                case 'inactive_300':
+                    // Inativos 300+ dias (último pedido há mais de 300 dias)
+                    clients = clients.filter(c => c.daysSinceLastPurchase >= 300 && c.orderCount > 0);
+                    break;
+                case 'ticket_alto': {
+                    // Ticket médio acima da média global
+                    const allAvg = clients.reduce((s, c) => s + (c.orderCount > 0 ? c.totalSpent / c.orderCount : 0), 0) / (clients.filter(c => c.orderCount > 0).length || 1);
+                    clients = clients.filter(c => c.orderCount > 0 && (c.totalSpent / c.orderCount) > allAvg);
+                    break;
+                }
+                case 'recuperacao':
+                    // Risco de perda: 45-180 dias sem compra + já comprou antes
+                    clients = clients.filter(c => c.daysSinceLastPurchase >= 45 && c.daysSinceLastPurchase <= 180 && c.orderCount > 0);
                     break;
                 case 'todos':
                 default:
