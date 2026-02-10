@@ -2221,17 +2221,17 @@ app.post('/api/whatsapp/send-media', async (req, res) => {
                 break;
             case 'audio':
                 endpoint = 'sendWhatsAppAudio';
-                // Evolution API v2 - converter base64 em buffer direto
+                // Evolution API v2 - enviar áudio como base64 com encoding
                 let audioBase64 = media;
                 if (audioBase64.includes(',')) {
                     audioBase64 = audioBase64.split(',')[1]; // Pegar só o base64
                 }
                 
-                // Tentar enviar como base64 puro (sem data URI)
+                // Enviar base64 puro + encoding:true para conversão automática para ogg/opus
                 body.audio = audioBase64;
+                body.encoding = true; // CRÍTICO: Evolution API converte para ogg/opus (formato PTT)
                 
                 console.log('[WhatsApp] Áudio base64 length:', audioBase64.length);
-                console.log('[WhatsApp] Body sendo enviado:', JSON.stringify({...body, audio: 'BASE64_OMITIDO'}).slice(0, 100));
                 break;
             case 'document':
                 endpoint = 'sendMedia';

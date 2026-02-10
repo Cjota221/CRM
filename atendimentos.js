@@ -500,7 +500,43 @@ function appendRealtimeMessage(msg) {
     if (msg.mediaType === 'image' && msg.mediaUrl) {
         contentHtml = `<img src="${msg.mediaUrl}" class="rounded-lg max-w-full max-h-[300px] cursor-pointer" onclick="window.open('${msg.mediaUrl}','_blank')" loading="lazy" />` + (contentHtml ? `<p class="mt-1 text-sm">${contentHtml}</p>` : '');
     } else if (msg.mediaType === 'audio') {
-        contentHtml = `<div class="flex items-center gap-2"><span class="text-lg">🎧</span> <span>Áudio</span></div>`;
+        const audioUrl = msg.mediaUrl || (msg.raw?.message?.audioMessage?.playableUrl) || (msg.raw?.message?.audioMessage?.url) || '';
+        const duration = msg.raw?.message?.audioMessage?.seconds || 0;
+        const audioId = `audio-rt-${msg.id || Date.now()}`;
+        if (audioUrl) {
+            const minutes = Math.floor(duration / 60);
+            const seconds = Math.floor(duration % 60);
+            const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            contentHtml = `
+                <div class="audio-player-whatsapp flex items-center gap-2 p-2 rounded-lg bg-white/50 min-w-[200px]" data-audio-id="${audioId}">
+                    <button onclick="toggleAudioPlay('${audioId}', '${audioUrl}')" class="flex-shrink-0 w-9 h-9 rounded-full bg-emerald-500 hover:bg-emerald-600 flex items-center justify-center text-white transition shadow-sm">
+                        <i data-lucide="play" class="w-4 h-4 play-icon"></i>
+                        <i data-lucide="pause" class="w-4 h-4 pause-icon hidden"></i>
+                    </button>
+                    <div class="flex-1 flex flex-col gap-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                            <div class="flex-1 h-1 bg-slate-200 rounded-full overflow-hidden cursor-pointer audio-progress-bar" onclick="seekAudio(event, '${audioId}')">
+                                <div class="h-full bg-emerald-500 audio-progress" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2 text-xs text-slate-500">
+                            <span class="audio-time">0:00</span>
+                            <span>/</span>
+                            <span>${timeStr}</span>
+                            <button onclick="changePlaybackSpeed('${audioId}')" class="ml-auto text-[10px] font-medium text-emerald-600 hover:text-emerald-700 audio-speed">1x</button>
+                        </div>
+                    </div>
+                    <audio class="hidden" id="${audioId}" preload="metadata">
+                        <source src="${audioUrl}" type="audio/ogg; codecs=opus">
+                        <source src="${audioUrl}" type="audio/mpeg">
+                        <source src="${audioUrl}" type="audio/mp4">
+                    </audio>
+                </div>`;
+            // Refresh Lucide icons após inserir no DOM
+            setTimeout(() => { if (window.lucide) lucide.createIcons(); }, 100);
+        } else {
+            contentHtml = `<div class="flex items-center gap-2"><span class="text-lg">🎧</span> <span>Áudio (${duration}s)</span></div>`;
+        }
     } else if (msg.mediaType === 'video') {
         contentHtml = `<div class="flex items-center gap-2"><span class="text-lg">🎬</span> <span>${contentHtml || 'Vídeo'}</span></div>`;
     } else if (msg.mediaType === 'document') {
@@ -4210,7 +4246,7 @@ async function sendRecordedAudio() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                number: currentChatId,
+                number: currentRemoteJid || currentChatData?.remoteJid || currentChatId,
                 mediaType: 'audio',
                 media: base64,
                 mimetype: 'audio/ogg; codecs=opus' // Formato PTT do WhatsApp
@@ -4226,7 +4262,7 @@ async function sendRecordedAudio() {
         // Limpar e voltar ao estado normal
         discardAudio();
         
-        setTimeout(() => loadMessages(currentChatId), 1000);
+        setTimeout(() => loadMessages(currentRemoteJid || currentChatId), 1000);
         
     } catch (e) {
         console.error('Erro ao enviar áudio:', e);
