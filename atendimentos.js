@@ -1175,7 +1175,9 @@ async function openChat(chat) {
         console.log('Telefone formatado no header:', formattedPhone);
         
         if (headerWhatsAppLink && cleanPhone) {
-            headerWhatsAppLink.href = `https://wa.me/55${cleanPhone}`;
+            // Verificar se já tem DDI 55 para não duplicar
+            const waPhone = cleanPhone.startsWith('55') && cleanPhone.length >= 12 ? cleanPhone : `55${cleanPhone}`;
+            headerWhatsAppLink.href = `https://wa.me/${waPhone}`;
             headerWhatsAppLink.classList.remove('hidden');
         }
     }
@@ -1435,8 +1437,19 @@ function renderMessagesFromData(remoteJid, messages, isUpdate) {
             content = formatWhatsAppText(m.extendedTextMessage.text);
         } else if (m?.imageMessage) {
             const caption = m.imageMessage.caption || '';
-            const captionHtml = caption ? '<br>' + formatWhatsAppText(caption) : '';
-            content = `<div class="flex items-center gap-2"><span class="text-lg">📷</span> <span>Imagem${captionHtml}</span></div>`;
+            const captionHtml = caption ? '<p class="mt-1 text-sm">' + formatWhatsAppText(caption) + '</p>' : '';
+            const imgUrl = m.imageMessage.viewableUrl || m.imageMessage.url || '';
+            if (imgUrl) {
+                content = `<div class="image-message-container">
+                    <img src="${imgUrl}" alt="Imagem" class="rounded-lg max-w-full max-h-[300px] cursor-pointer object-cover" 
+                         onclick="window.open('${imgUrl}', '_blank')" 
+                         onerror="this.outerHTML='<div class=\'flex items-center gap-2\'><span class=\'text-lg\'>📷</span> <span>Imagem (indisponível)</span></div>'" 
+                         loading="lazy" />
+                    ${captionHtml}
+                </div>`;
+            } else {
+                content = `<div class="flex items-center gap-2"><span class="text-lg">📷</span> <span>Imagem${caption ? '<br>' + formatWhatsAppText(caption) : ''}</span></div>`;
+            }
         } else if (m?.videoMessage) {
             const caption = m.videoMessage.caption || '';
             const captionHtml = caption ? '<br>' + formatWhatsAppText(caption) : '';
@@ -1480,7 +1493,16 @@ function renderMessagesFromData(remoteJid, messages, isUpdate) {
             }
         } else if (m?.documentMessage) {
             const fileName = m.documentMessage.fileName || 'Documento';
-            content = `<div class="flex items-center gap-2"><span class="text-lg">📄</span> <span>${fileName}</span></div>`;
+            const docUrl = m.documentMessage.downloadUrl || m.documentMessage.url || '';
+            if (docUrl) {
+                content = `<div class="flex items-center gap-2 cursor-pointer hover:opacity-80" onclick="window.open('${docUrl}', '_blank')">
+                    <span class="text-lg">📄</span>
+                    <span class="underline text-blue-600">${fileName}</span>
+                    <span class="text-xs text-slate-400">⬇</span>
+                </div>`;
+            } else {
+                content = `<div class="flex items-center gap-2"><span class="text-lg">📄</span> <span>${fileName}</span></div>`;
+            }
         } else if (m?.stickerMessage) {
             content = `<div class="flex items-center gap-2"><span class="text-lg">✨</span> <span>Figurinha</span></div>`;
         } else if (m?.contactMessage) {

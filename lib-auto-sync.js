@@ -48,6 +48,8 @@
             if (result.clients?.length > 0) {
                 const clients = result.clients.map(c => ({
                     id: c.id, name: c.name, email: c.email, phone: c.phone,
+                    // Aliases FacilZap — garante que findClientByPhone encontre o cliente
+                    nome: c.name, telefone: c.phone, celular: c.phone, whatsapp: c.phone,
                     birthday: c.birthday, cpf: c.cpf, address: c.address,
                     address_number: c.address_number, address_complement: c.address_complement,
                     address_neighborhood: c.address_neighborhood, city: c.city, state: c.state,

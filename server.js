@@ -335,7 +335,7 @@ function enrichProducts(products) {
             ...p,
             preco,
             imagem: imagem || 'https://via.placeholder.com/300x300?text=Sem+Foto',
-            link_oficial: `${SITE_BASE_URL}/produto/${slug}`,
+            link_oficial: (SITE_BASE_URL && SITE_BASE_URL !== 'https://seusite.com.br') ? `${SITE_BASE_URL}/produto/${slug}` : (p.link || p.url || '#'),
             estoque,
             referencia,
             slug
@@ -355,9 +355,24 @@ const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'EB6B5AB56A35-43C4-B5
 const INSTANCE_NAME = process.env.INSTANCE_NAME || 'Cjota';
 const SITE_BASE_URL = process.env.SITE_BASE_URL || 'https://seusite.com.br'; // Para gerar links de produtos
 
-// Middleware
-app.use(cors());
-app.use(bodyParser.json({ limit: '1000mb' })); // Aumenta limite de JSON para sincronização grande
+// Middleware - CORS restrito às origens permitidas
+const ALLOWED_ORIGINS = [
+    'https://crmcjota.netlify.app',
+    'https://cjota-crm.9eo9b2.easypanel.host',
+    'http://localhost:3000',
+    'http://localhost:8080'
+];
+app.use(cors({
+    origin: function(origin, callback) {
+        // Permitir requests sem origin (mobile apps, curl, server-to-server)
+        if (!origin) return callback(null, true);
+        if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+        console.warn(`[CORS] Origem bloqueada: ${origin}`);
+        callback(new Error('Não permitido por CORS'));
+    },
+    credentials: true
+}));
+app.use(bodyParser.json({ limit: '50mb' })); // Limite razoável (reduzido de 1GB)
 
 // ============================================================================
 // ROTAS DE AUTENTICAÇÃO (ANTES do static middleware)
@@ -591,7 +606,7 @@ app.get('/api/facilzap-proxy', async (req, res) => {
                         estoque: p.stock != null ? p.stock : -1,
                         imagem: p.image || 'https://via.placeholder.com/300x300?text=Sem+Foto',
                         referencia: p.sku || p.codigo || '',
-                        link_oficial: `${SITE_BASE_URL}/produto/${p.id}`,
+                        link_oficial: (SITE_BASE_URL && SITE_BASE_URL !== 'https://seusite.com.br') ? `${SITE_BASE_URL}/produto/${p.id}` : '#',
                         slug: p.id
                     }));
                     console.log(`[FALLBACK] ✅ ${normalizedProducts.length} produtos do Supabase`);
@@ -629,7 +644,7 @@ app.get('/api/supabase-products', async (req, res) => {
             estoque: p.stock != null ? p.stock : -1,
             imagem: p.image || 'https://via.placeholder.com/300x300?text=Sem+Foto',
             referencia: p.sku || p.codigo || '',
-            link_oficial: `${SITE_BASE_URL}/produto/${p.id}`,
+            link_oficial: (SITE_BASE_URL && SITE_BASE_URL !== 'https://seusite.com.br') ? `${SITE_BASE_URL}/produto/${p.id}` : '#',
             slug: p.id,
             is_active: p.is_active,
             descricao: p.description || ''
@@ -1585,11 +1600,36 @@ app.post('/api/whatsapp/messages/fetch', async (req, res) => {
                 if (msg.message?.audioMessage) {
                     const audioMsg = msg.message.audioMessage;
                     if (audioMsg.url) {
-                        // URL direta da Evolution API (já acessível)
                         audioMsg.playableUrl = audioMsg.url;
                     } else if (msg.key?.id) {
-                        // Criar URL de proxy local para baixar o áudio
                         audioMsg.playableUrl = `/api/whatsapp/media/${msg.key.id}`;
+                    }
+                }
+                // Se tem imageMessage, gerar URL de visualização
+                if (msg.message?.imageMessage) {
+                    const imgMsg = msg.message.imageMessage;
+                    if (imgMsg.url) {
+                        imgMsg.viewableUrl = imgMsg.url;
+                    } else if (msg.key?.id) {
+                        imgMsg.viewableUrl = `/api/whatsapp/media/${msg.key.id}`;
+                    }
+                }
+                // Se tem documentMessage, gerar URL de download
+                if (msg.message?.documentMessage) {
+                    const docMsg = msg.message.documentMessage;
+                    if (docMsg.url) {
+                        docMsg.downloadUrl = docMsg.url;
+                    } else if (msg.key?.id) {
+                        docMsg.downloadUrl = `/api/whatsapp/media/${msg.key.id}`;
+                    }
+                }
+                // Se tem videoMessage, gerar URL de visualização
+                if (msg.message?.videoMessage) {
+                    const vidMsg = msg.message.videoMessage;
+                    if (vidMsg.url) {
+                        vidMsg.viewableUrl = vidMsg.url;
+                    } else if (msg.key?.id) {
+                        vidMsg.viewableUrl = `/api/whatsapp/media/${msg.key.id}`;
                     }
                 }
                 return msg;
@@ -1831,11 +1871,12 @@ app.post('/api/whatsapp/send-message', async (req, res) => {
         if (phoneNumber.includes('@g.us')) {
             // Para grupos, enviar como está
             phoneNumber = number;
-        }
-        // Manter @lid se for lead do Meta
-        if (phoneNumber.includes('@lid')) {
+        } else if (phoneNumber.includes('@lid')) {
             // Para @lid, enviar como está
             phoneNumber = number;
+        } else {
+            // Chat individual — normalizar DDI para garantir +55
+            phoneNumber = ensureDDI55(normalizePhoneServer(phoneNumber));
         }
         
         console.log(`[WhatsApp] Enviando mensagem para: ${phoneNumber}`);
@@ -1881,6 +1922,8 @@ app.post('/api/whatsapp/send-media', async (req, res) => {
         // Manter @g.us para grupos
         if (!phoneNumber.includes('@g.us') && !phoneNumber.includes('@lid')) {
             phoneNumber = phoneNumber.replace(/@.*/, '');
+            // Chat individual — normalizar DDI para garantir +55
+            phoneNumber = ensureDDI55(normalizePhoneServer(phoneNumber));
         }
         
         console.log(`[WhatsApp] Enviando ${mediaType} para: ${phoneNumber}`);
@@ -3675,9 +3718,10 @@ app.post('/api/cart-recovery/bulk', async (req, res) => {
  */
 app.get('/api/coupons/active', async (req, res) => {
     try {
-        // Tentar buscar do Supabase
-        if (supabase) {
-            const { data, error } = await supabase
+        // Criar cliente Supabase se configurado
+        if (SUPABASE_SERVICE_KEY) {
+            const supaClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+            const { data, error } = await supaClient
                 .from('coupons')
                 .select('*')
                 .eq('is_active', true);
