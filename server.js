@@ -2053,6 +2053,34 @@ app.post('/api/whatsapp/send-message', async (req, res) => {
             return res.status(400).json({ error: data.response?.message || data.message || data.error || 'Erro ao enviar mensagem' });
         }
         
+        // ====== EMITIR VIA SOCKET.IO para Central de Atendimento ======
+        const sentMsg = {
+            id: data.key?.id || `crm-sent-${Date.now()}`,
+            remoteJid: phoneNum.includes('@') ? phoneNum : phoneNum + '@s.whatsapp.net',
+            fromMe: true,
+            text: rawText,
+            timestamp: Math.floor(Date.now() / 1000),
+            source: req.body.source || 'crm-dashboard'
+        };
+        io.emit('new-message', sentMsg);
+        const jid = sentMsg.remoteJid;
+        io.to('chat:' + jid).emit('chat-message', sentMsg);
+        console.log(`[WhatsApp] 📡 Mensagem emitida via Socket.io para ${jid}`);
+        
+        // ====== LOG NO SUPABASE (fire-and-forget) ======
+        try {
+            const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+            await sb.from('crm_sent_messages').insert({
+                phone: phoneNum,
+                message: rawText,
+                source: req.body.source || 'crm-dashboard',
+                evolution_response: JSON.stringify(data).slice(0, 500),
+                sent_at: new Date().toISOString()
+            });
+        } catch (logErr) {
+            console.warn('[WhatsApp] Log Supabase falhou (não-crítico):', logErr.message);
+        }
+        
         res.json({ success: true, ...data });
     } catch (error) {
         console.error('[WhatsApp] Erro ao enviar:', error.message);

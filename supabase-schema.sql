@@ -211,4 +211,17 @@ ON CONFLICT (id) DO NOTHING;
 -- CONCLUÍDO!
 -- ============================================================================
 
+-- Tabela de Log de Mensagens Enviadas (CRM → WhatsApp)
+CREATE TABLE IF NOT EXISTS crm_sent_messages (
+    id BIGSERIAL PRIMARY KEY,
+    phone TEXT NOT NULL,
+    message TEXT NOT NULL,
+    source TEXT DEFAULT 'crm-dashboard', -- 'crm-dashboard', 'cart-recovery', 'coupon', 'campaign', 'ai-vigilante'
+    evolution_response TEXT,
+    sent_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_sent_messages_phone ON crm_sent_messages(phone);
+CREATE INDEX IF NOT EXISTS idx_sent_messages_source ON crm_sent_messages(source);
+
 SELECT 'Tabelas criadas com sucesso!' as status;

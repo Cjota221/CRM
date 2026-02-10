@@ -29,6 +29,106 @@ function safeWaPhone(raw) {
     return cleaned;
 }
 
+// ============================================================================
+// ENVIO VIA EVOLUTION API (rota interna — substitui window.open(wa.me))
+// ============================================================================
+
+/**
+ * Envia mensagem via rota interna /api/whatsapp/send-message (Evolution API).
+ * Garante DDI 55, trata 9º dígito, loga no Supabase, e notifica Socket.io.
+ *
+ * @param {string} phone - Telefone bruto (qualquer formato)
+ * @param {string} message - Texto da mensagem
+ * @param {object} [opts] - Opções adicionais
+ * @param {string} [opts.source='crm-dashboard'] - Origem do envio (para log)
+ * @param {boolean} [opts.silent=false] - Se true, não mostra toast
+ * @param {string} [opts.clientName=''] - Nome do cliente (para toast)
+ * @returns {Promise<{success: boolean, error?: string}>}
+ */
+async function sendViaEvolution(phone, message, opts = {}) {
+    const { source = 'crm-dashboard', silent = false, clientName = '' } = opts;
+
+    if (!phone) {
+        if (!silent) showToast('Cliente não possui telefone cadastrado', 'error');
+        return { success: false, error: 'Sem telefone' };
+    }
+    if (!message) {
+        if (!silent) showToast('Mensagem vazia', 'error');
+        return { success: false, error: 'Mensagem vazia' };
+    }
+
+    // Normalizar telefone: limpar → garantir DDI 55
+    const formatted = safeWaPhone(phone);
+    if (!formatted || formatted.length < 12) {
+        if (!silent) showToast('Número de telefone inválido', 'error');
+        return { success: false, error: 'Telefone inválido: ' + phone };
+    }
+
+    try {
+        if (!silent) showToast('📤 Enviando mensagem...', 'info');
+
+        const res = await fetch('/api/whatsapp/send-message', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ number: formatted, text: message, source })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok || data.error) {
+            const errMsg = data.error || 'Erro desconhecido';
+            console.error('[Evolution] Falha:', errMsg);
+            if (!silent) showToast(`❌ Falha ao enviar: ${errMsg}`, 'error');
+            return { success: false, error: errMsg };
+        }
+
+        console.log(`[Evolution] ✅ Mensagem enviada para ${formatted} (source: ${source})`);
+        if (!silent) {
+            const label = clientName ? `para ${clientName}` : `para ${formatted}`;
+            showToast(`✅ Mensagem enviada ${label}!`, 'success');
+        }
+        return { success: true, data };
+
+    } catch (err) {
+        console.error('[Evolution] Erro de rede:', err.message);
+        if (!silent) showToast('❌ Erro de conexão ao enviar', 'error');
+        return { success: false, error: err.message };
+    }
+}
+window.sendViaEvolution = sendViaEvolution;
+
+/**
+ * Gerar template de recuperação de carrinho abandonado.
+ * Inclui nome do cliente, lista de produtos, link de checkout, e call-to-action.
+ */
+function buildCartRecoveryTemplate(cart) {
+    const nome = cart.cliente?.nome?.split(' ')[0] || 'amiga';
+    const produtos = (cart.produtos || []);
+    const produtosList = produtos.map(p => {
+        let line = `  • ${p.nome}`;
+        if (p.variacao) line += ` (${p.variacao})`;
+        if (p.preco) line += ` — R$ ${parseFloat(p.preco).toFixed(2)}`;
+        return line;
+    }).join('\n');
+
+    const valor = (cart.valor_total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+    const linkCarrinho = cart.link_carrinho || 'https://cjotarasteirinhas.com.br';
+
+    return `Oi ${nome}! 💕
+
+Vi que você deixou umas rasteirinhas lindas no carrinho! 👀
+
+${produtosList}
+
+💰 Total: *R$ ${valor}*
+
+🛒 Finalize sua compra aqui: ${linkCarrinho}
+
+🎟️ Use o cupom *QUINTOU* e ganhe desconto especial!
+
+Se tiver qualquer dúvida, é só me chamar aqui! A Anne está de plantão pra te ajudar 😊`;
+}
+
 function showToast(message, type = 'info', duration = 3000) {
     const container = document.getElementById('toast-container');
     const toast = document.createElement('div');
@@ -2043,12 +2143,18 @@ function setupClientCardListeners() {
         btn.addEventListener('click', () => viewClientDetails(btn.dataset.id));
     });
 
-    // WhatsApp
+    // WhatsApp — enviar via Evolution API (rota interna)
     document.querySelectorAll('.whatsapp-button').forEach(btn => {
         btn.addEventListener('click', () => {
             const phone = btn.dataset.phone?.replace(/\D/g, '');
             if (phone) {
-                window.open(`https://wa.me/${safeWaPhone(phone)}`, '_blank');
+                // Abrir modal de WhatsApp com o cliente
+                const clientId = btn.closest('[data-id]')?.dataset?.id || btn.closest('.bg-white')?.querySelector('.view-details-button')?.dataset?.id;
+                if (clientId) {
+                    openWhatsAppModal(clientId);
+                } else {
+                    sendViaEvolution(phone, 'Olá! Tudo bem? 😊', { source: 'crm-dashboard' });
+                }
             } else {
                 showToast('Cliente não possui telefone cadastrado.', 'error');
             }
@@ -2185,10 +2291,10 @@ function viewClientDetails(clientId) {
         <!-- Ações Rápidas -->
         <div class="flex gap-2 mb-4">
             ${client.phone ? `
-                <a href="https://wa.me/${safeWaPhone(client.phone)}" target="_blank" 
-                   class="flex-1 bg-green-600 hover:bg-green-700 text-white text-center py-2 px-4 rounded-lg font-medium">
+                <button onclick="openWhatsAppModal('${client.id}')"
+                   class="flex-1 bg-green-600 hover:bg-green-700 text-white text-center py-2 px-4 rounded-lg font-medium cursor-pointer">
                     <i class="fab fa-whatsapp mr-2"></i>Enviar WhatsApp
-                </a>
+                </button>
             ` : `
                 <button disabled class="flex-1 bg-gray-300 text-gray-500 py-2 px-4 rounded-lg font-medium cursor-not-allowed">
                     <i class="fab fa-whatsapp mr-2"></i>Sem telefone
@@ -2234,7 +2340,7 @@ function viewClientDetails(clientId) {
             <div>
                 <strong class="text-gray-600 block"><i class="fas fa-phone fa-fw mr-2 text-gray-400"></i>Telefone:</strong>
                 ${escapeHtml(client.phone || 'N/A')}
-                ${client.phone ? `<a href="https://wa.me/${safeWaPhone(client.phone)}" target="_blank" class="ml-2 text-green-600 hover:text-green-700"><i class="fab fa-whatsapp"></i></a>` : ''}
+                ${client.phone ? `<span onclick="openWhatsAppModal('${client.id}')" class="ml-2 text-green-600 hover:text-green-700 cursor-pointer"><i class="fab fa-whatsapp"></i></span>` : ''}
             </div>
             <div>
                 <strong class="text-gray-600 block"><i class="fas fa-id-card fa-fw mr-2 text-gray-400"></i>CPF/CNPJ:</strong>
@@ -2591,7 +2697,7 @@ function viewOrderDetails(orderId) {
                         <p>
                             ${escapeHtml(fullClient?.phone || order.clientPhone || 'N/A')}
                             ${(fullClient?.phone || order.clientPhone) ? 
-                                `<a href="https://wa.me/${safeWaPhone(fullClient?.phone || order.clientPhone)}" target="_blank" class="ml-2 text-green-600"><i class="fab fa-whatsapp"></i></a>` : ''}
+                                `<span onclick="sendViaEvolution('${safeWaPhone(fullClient?.phone || order.clientPhone)}', 'Olá! Tudo bem? Sobre seu pedido...', {source: 'crm-dashboard'})" class="ml-2 text-green-600 cursor-pointer hover:text-green-700"><i class="fab fa-whatsapp"></i></span>` : ''}
                         </p>
                     </div>
                     <div>
@@ -2873,33 +2979,20 @@ function generateBasicMessage() {
     document.getElementById('whatsapp-message').value = message;
 }
 
-function sendWhatsApp() {
+async function sendWhatsApp() {
     if (!currentWhatsAppClient) return;
     
-    const phone = (currentWhatsAppClient.phone || '').replace(/\D/g, '');
+    const phone = currentWhatsAppClient.phone || '';
     const message = document.getElementById('whatsapp-message').value;
     
-    if (!phone) {
-        showToast('Cliente não possui telefone cadastrado', 'error');
-        return;
+    const result = await sendViaEvolution(phone, message, {
+        source: 'crm-dashboard',
+        clientName: currentWhatsAppClient.name?.split(' ')[0] || ''
+    });
+    
+    if (result.success) {
+        closeModal('whatsapp-modal');
     }
-    
-    if (!message) {
-        showToast('Digite uma mensagem', 'error');
-        return;
-    }
-    
-    // Formatar número para WhatsApp (adicionar 55 se necessário)
-    let formattedPhone = phone;
-    if (phone.length === 10 || phone.length === 11) {
-        formattedPhone = '55' + phone;
-    }
-    
-    const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
-    window.open(whatsappUrl, '_blank');
-    
-    closeModal('whatsapp-modal');
-    showToast('Abrindo WhatsApp...', 'success');
 }
 
 // ============================================================================
@@ -4096,8 +4189,8 @@ function generateClientCoupon(clientId) {
     const msg = `Olá ${client.name.split(' ')[0]}! 🎉\n\nPreparei um cupom EXCLUSIVO pra você:\n\n🎟️ Código: *${code}*\n💰 Desconto: *${discount}%*\n📅 Válido por 30 dias\n\nAproveite! 😊`;
     
     if (client.phone) {
-        window.open(`https://wa.me/${safeWaPhone(client.phone)}?text=${encodeURIComponent(msg)}`, '_blank');
-        showToast(`Cupom ${code} criado e WhatsApp aberto!`, 'success');
+        sendViaEvolution(client.phone, msg, { source: 'coupon', clientName: client.name?.split(' ')[0] });
+        showToast(`Cupom ${code} criado e mensagem enviada!`, 'success');
     } else {
         // Copiar código para clipboard
         navigator.clipboard.writeText(code);
@@ -4422,7 +4515,7 @@ const WebhookManager = {
         return `Há ${Math.floor(diff / 86400)} dias`;
     },
     
-    // Enviar mensagem de recuperação
+    // Enviar mensagem de recuperação via Evolution API
     sendRecoveryMessage(cartId) {
         const cart = this.getAbandonedCarts().find(c => c.id === cartId);
         if (!cart) return;
@@ -4433,19 +4526,11 @@ const WebhookManager = {
             return;
         }
         
-        const produtos = (cart.produtos || []).map(p => p.nome).join(', ');
-        const message = `Olá ${cart.cliente?.nome || ''}!
-
-Vi que você deixou alguns itens no carrinho:
-${produtos}
-
-Valor total: R$ ${(cart.valor_total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-
-Posso te ajudar a finalizar sua compra? 🛒`;
-
-        const cleanPhone = phone.replace(/\D/g, '');
-        const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
-        window.open(whatsappUrl, '_blank');
+        // Usar template de recuperação com produtos, link e cupom
+        const message = buildCartRecoveryTemplate(cart);
+        const clientName = cart.cliente?.nome?.split(' ')[0] || '';
+        
+        sendViaEvolution(phone, message, { source: 'cart-recovery', clientName });
     },
     
     // Simular recebimento de webhook (para testes)
@@ -4686,7 +4771,7 @@ const CouponManager = {
         const client = Storage.getClients().find(c => c.id == clientId);
         if (!client?.phone) { showToast('Sem telefone', 'error'); return; }
         const msg = `Olá ${client.name}! Você ainda não usou seu cupom: ${couponCode}`;
-        window.open(`https://wa.me/${safeWaPhone(client.phone)}?text=${encodeURIComponent(msg)}`, '_blank');
+        sendViaEvolution(client.phone, msg, { source: 'coupon', clientName: client.name?.split(' ')[0] });
     }
 };
 window.CouponManager = CouponManager;
@@ -4935,16 +5020,18 @@ Exemplo de resposta:
         const msg = document.getElementById('bulk-message-text').value;
         const coupon = document.getElementById('bulk-coupon-select').value;
         if (!msg) { showToast('Preencha a mensagem', 'error'); return; }
-        let sent = 0;
+        let sent = 0, failed = 0;
+        showToast(`📤 Disparando para ${selected.length} clientes...`, 'info');
         for (const client of selected) {
-            if (!client.phone) continue;
+            if (!client.phone) { failed++; continue; }
             let m = msg.replace(/{nome}/g, client.name?.split(' ')[0] || '').replace(/{cupom}/g, coupon);
             if (coupon) CouponManager.assignCoupon(client.id, coupon, client.name);
-            window.open(`https://wa.me/${safeWaPhone(client.phone)}?text=${encodeURIComponent(m)}`, '_blank');
-            sent++;
-            await new Promise(r => setTimeout(r, 500));
+            const result = await sendViaEvolution(client.phone, m, { source: 'campaign', silent: true });
+            if (result.success) sent++; else failed++;
+            // Delay de 1.5s entre mensagens para não sobrecarregar a API
+            await new Promise(r => setTimeout(r, 1500));
         }
-        showToast(`${sent} mensagens!`, 'success');
+        showToast(`✅ ${sent} enviadas${failed > 0 ? `, ${failed} falharam` : ''}`, sent > 0 ? 'success' : 'error');
         document.getElementById('bulk-whatsapp-modal').classList.add('hidden');
     }
 };
@@ -5440,8 +5527,7 @@ const AIVigilante = {
         
         const firstName = client.name?.split(' ')[0] || 'amiga';
         const msg = `Oi ${firstName}! 💕\n\nSentimos MUITO sua falta aqui na CJOTA!\n\nPreparei um cupom EXCLUSIVO pra você: *${code}*\n\nÉ só usar no próximo pedido! 🎁\n\nPosso te ajudar com algo?`;
-        window.open(`https://wa.me/${safeWaPhone(client.phone)}?text=${encodeURIComponent(msg)}`, '_blank');
-        showToast(`Cupom ${code} enviado para ${firstName}!`, 'success');
+        sendViaEvolution(client.phone, msg, { source: 'ai-vigilante', clientName: firstName });
     },
     
     sendReminder(clientId) {
@@ -5451,7 +5537,7 @@ const AIVigilante = {
         
         const firstName = client.name?.split(' ')[0] || 'amiga';
         const msg = `Oi ${firstName}! Tudo bem? 😊\n\nPassando pra avisar que chegaram NOVIDADES lindas aqui!\n\nQuer dar uma olhadinha? Posso te mandar as fotos! 📸`;
-        window.open(`https://wa.me/${safeWaPhone(client.phone)}?text=${encodeURIComponent(msg)}`, '_blank');
+        sendViaEvolution(client.phone, msg, { source: 'ai-vigilante', clientName: firstName });
     },
     
     // ========== EXPORTAÇÕES ==========
