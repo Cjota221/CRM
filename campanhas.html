@@ -278,9 +278,13 @@
                     </div>
                     
                     <div id="groupSelector" class="hidden mt-3">
-                        <select id="targetGroup" class="input">
-                            <option value="">Selecione um grupo...</option>
-                        </select>
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-medium text-slate-500">Grupos WhatsApp (<span id="selectedGroupsCount">0</span> selecionados)</span>
+                            <button type="button" onclick="toggleAllGroups()" class="text-xs text-purple-600 hover:text-purple-800 font-medium">Marcar/Desmarcar todos</button>
+                        </div>
+                        <div id="groupCheckboxes" class="max-h-48 overflow-y-auto border border-slate-200 rounded-lg p-2 space-y-1 bg-white">
+                            <p class="text-xs text-slate-400 p-2">Carregando grupos...</p>
+                        </div>
                     </div>
                     <!-- Preview da segmentação -->
                     <div id="segmentPreview" class="hidden mt-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
@@ -348,21 +352,36 @@
                         <div>
                             <h4 class="font-medium text-slate-800">Modo Conta-Gotas (Anti-Ban)</h4>
                             <p class="text-xs text-slate-500 mt-1">O sistema distribui os envios em pequenos lotes para evitar bloqueio do WhatsApp.</p>
-                            <div class="mt-3 grid grid-cols-2 gap-3">
+                            <div class="mt-3 grid grid-cols-3 gap-3">
+                                <div>
+                                    <label class="block text-xs text-slate-500 mb-1">Intervalo entre msgs</label>
+                                    <select id="messageDelay" class="input text-sm" onchange="updateCampaignSummary()">
+                                        <option value="3" selected>2-4 segundos</option>
+                                        <option value="6">5-8 segundos</option>
+                                        <option value="12">10-15 segundos</option>
+                                        <option value="25">20-30 segundos</option>
+                                    </select>
+                                </div>
                                 <div>
                                     <label class="block text-xs text-slate-500 mb-1">Mensagens por lote</label>
-                                    <select id="batchSize" class="input text-sm">
-                                        <option value="10">10 mensagens</option>
-                                        <option value="15" selected>15 mensagens</option>
+                                    <select id="batchSize" class="input text-sm" onchange="updateCampaignSummary()">
+                                        <option value="5">5 mensagens</option>
+                                        <option value="10" selected>10 mensagens</option>
+                                        <option value="15">15 mensagens</option>
                                         <option value="20">20 mensagens</option>
+                                        <option value="30">30 mensagens</option>
                                     </select>
                                 </div>
                                 <div>
                                     <label class="block text-xs text-slate-500 mb-1">Intervalo entre lotes</label>
-                                    <select id="batchInterval" class="input text-sm">
-                                        <option value="15">15 minutos</option>
-                                        <option value="20" selected>20 minutos</option>
+                                    <select id="batchInterval" class="input text-sm" onchange="updateCampaignSummary()">
+                                        <option value="5">5 minutos</option>
+                                        <option value="10">10 minutos</option>
+                                        <option value="15" selected>15 minutos</option>
+                                        <option value="20">20 minutos</option>
                                         <option value="30">30 minutos</option>
+                                        <option value="45">45 minutos</option>
+                                        <option value="60">60 minutos</option>
                                     </select>
                                 </div>
                             </div>
@@ -643,12 +662,42 @@
                 const res = await fetch(`${API_BASE}/whatsapp/groups`);
                 allGroups = await res.json();
                 
-                const select = document.getElementById('targetGroup');
-                select.innerHTML = '<option value="">Selecione um grupo...</option>' +
-                    allGroups.map(g => `<option value="${g.remoteJid}">${g.name} (${g.participantsCount || '?'} membros)</option>`).join('');
+                const container = document.getElementById('groupCheckboxes');
+                if (allGroups.length === 0) {
+                    container.innerHTML = '<p class="text-xs text-slate-400 p-2">Nenhum grupo encontrado</p>';
+                    return;
+                }
+                container.innerHTML = allGroups.map(g => `
+                    <label class="flex items-center gap-2 p-1.5 rounded hover:bg-slate-50 cursor-pointer">
+                        <input type="checkbox" class="group-checkbox w-4 h-4 rounded" value="${g.remoteJid}" data-name="${g.name}" onchange="updateSelectedGroupsCount()">
+                        <span class="text-sm text-slate-700 truncate">${g.name}</span>
+                        <span class="text-xs text-slate-400 ml-auto">${g.participantsCount || '?'} membros</span>
+                    </label>
+                `).join('');
             } catch (e) {
                 console.error('Erro ao carregar grupos:', e);
             }
+        }
+
+        function toggleAllGroups() {
+            const boxes = document.querySelectorAll('.group-checkbox');
+            const allChecked = Array.from(boxes).every(b => b.checked);
+            boxes.forEach(b => b.checked = !allChecked);
+            updateSelectedGroupsCount();
+        }
+
+        function updateSelectedGroupsCount() {
+            const count = document.querySelectorAll('.group-checkbox:checked').length;
+            const el = document.getElementById('selectedGroupsCount');
+            if (el) el.textContent = count;
+            updateCampaignSummary();
+        }
+
+        function getSelectedGroups() {
+            return Array.from(document.querySelectorAll('.group-checkbox:checked')).map(cb => ({
+                jid: cb.value,
+                name: cb.dataset.name
+            }));
         }
 
         // ============================
@@ -897,16 +946,29 @@
             let contacts = segmentedContacts.map(c => ({ id: c.id, name: c.name, phone: c.phone }));
             
             if (selectedAudience === 'group') {
-                const groupJid = document.getElementById('targetGroup').value;
-                if (!groupJid) return alert('Selecione um grupo');
-                // Contatos do grupo serão gerenciados no servidor
-                const group = allGroups.find(g => g.remoteJid === groupJid);
-                if (group && group.participants) {
-                    contacts = group.participants.map(p => ({
-                        id: p.id,
-                        name: p.pushName || p.id.split('@')[0],
-                        phone: p.id.split('@')[0]
-                    }));
+                const selectedGroups = getSelectedGroups();
+                if (selectedGroups.length === 0) return alert('Selecione pelo menos um grupo');
+                contacts = [];
+                for (const sg of selectedGroups) {
+                    const group = allGroups.find(g => g.remoteJid === sg.jid);
+                    if (group && group.participants) {
+                        group.participants.forEach(p => {
+                            contacts.push({
+                                id: p.id,
+                                name: p.pushName || p.id.split('@')[0],
+                                phone: p.id.split('@')[0],
+                                groupJid: sg.jid,
+                                groupName: sg.name
+                            });
+                        });
+                    } else {
+                        contacts.push({
+                            id: sg.jid,
+                            name: sg.name,
+                            phone: sg.jid,
+                            isGroup: true
+                        });
+                    }
                 }
             }
             
@@ -924,8 +986,10 @@
                         message,
                         contacts,
                         segment: selectedAudience,
+                        targetGroups: selectedAudience === 'group' ? getSelectedGroups().map(g => g.jid) : [],
                         batchSize: parseInt(document.getElementById('batchSize').value),
                         batchInterval: parseInt(document.getElementById('batchInterval').value),
+                        messageDelay: parseInt(document.getElementById('messageDelay').value),
                         scheduledAt: scheduledAt,
                         couponCode: couponCode,
                         imageUrl: campaignImageBase64 || null
@@ -1190,6 +1254,9 @@
                 btn.classList.remove('border-primary-500', 'bg-primary-50');
                 btn.classList.add('border-slate-200');
             });
+            // Reset group checkboxes
+            document.querySelectorAll('.group-checkbox').forEach(cb => cb.checked = false);
+            updateSelectedGroupsCount();
         }
 
         function toggleSchedule() {
@@ -1224,10 +1291,28 @@
         }
 
         function updateCampaignSummary() {
-            const count = segmentedContacts.length || 0;
+            let count = segmentedContacts.length || 0;
             const batchSize = parseInt(document.getElementById('batchSize').value) || 10;
-            const interval = parseInt(document.getElementById('batchInterval').value) || 20;
-            
+            const interval = parseInt(document.getElementById('batchInterval').value) || 15;
+
+            // Multi-group count
+            if (selectedAudience === 'group') {
+                const selGroups = getSelectedGroups();
+                count = 0;
+                selGroups.forEach(sg => {
+                    const g = allGroups.find(x => x.remoteJid === sg.jid);
+                    count += (g && g.participantsCount) ? g.participantsCount : 1;
+                });
+                const batches = Math.ceil(count / batchSize);
+                const totalMinutes = batches * interval;
+                const hours = Math.floor(totalMinutes / 60);
+                const mins = totalMinutes % 60;
+                document.getElementById('campaignSummary').textContent = selGroups.length > 0
+                    ? `${selGroups.length} grupo(s) · ${count} msgs · ${batches} lotes · ~${hours}h${mins.toString().padStart(2, '0')}min`
+                    : 'Selecione pelo menos um grupo';
+                return;
+            }
+
             const batches = Math.ceil(count / batchSize);
             const totalMinutes = batches * interval;
             const hours = Math.floor(totalMinutes / 60);

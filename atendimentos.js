@@ -4919,17 +4919,26 @@ async function loadCampaignData() {
         const groups = (allChats || []).filter(c => c.isGroup || (c.remoteJid && c.remoteJid.includes('@g.us')) || (c.id && String(c.id).includes('@g.us')));
         console.log(`[Campanha] Grupos encontrados: ${groups.length} de ${allChats.length} chats`);
         
-        const select = document.getElementById('targetGroup');
-        if (select) {
-            const jid = c => c.remoteJid || c.id || '';
-            select.innerHTML = '<option value="">Selecione um grupo...</option>' +
-                groups.map(g => {
+        const checkboxContainer = document.getElementById('groupCheckboxes');
+        if (checkboxContainer) {
+            if (groups.length === 0) {
+                checkboxContainer.innerHTML = '<p class="text-sm text-slate-400">Nenhum grupo encontrado</p>';
+            } else {
+                checkboxContainer.innerHTML = groups.map(g => {
                     const groupJid = g.remoteJid || g.id || '';
                     const groupName = g.name || g.subject || formatPhone(groupJid);
                     const count = g.participantsCount || g.size || '?';
-                    return `<option value="${groupJid}">${groupName} (${count} participantes)</option>`;
+                    return `<label class="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-100 cursor-pointer">
+                        <input type="checkbox" class="group-checkbox w-4 h-4 rounded text-emerald-500" value="${groupJid}" data-name="${groupName}" onchange="updateSelectedGroupsCount()">
+                        <span class="text-sm text-slate-700 flex-1 truncate">👥 ${groupName}</span>
+                        <span class="text-xs text-slate-400">${count} membros</span>
+                    </label>`;
                 }).join('');
+            }
         }
+
+        const countGroupsEl = document.getElementById('countGroups');
+        if (countGroupsEl) countGroupsEl.textContent = `${groups.length} grupos disponíveis`;
         
         // Se allChats ainda vazio, tentar carregar do servidor
         if (allChats.length === 0) {
@@ -4937,14 +4946,17 @@ async function loadCampaignData() {
             await loadChats();
             // Re-executar após carregar
             const freshGroups = (allChats || []).filter(c => c.isGroup || (c.remoteJid && c.remoteJid.includes('@g.us')));
-            if (freshGroups.length > 0 && select) {
-                select.innerHTML = '<option value="">Selecione um grupo...</option>' +
-                    freshGroups.map(g => {
-                        const groupJid = g.remoteJid || g.id || '';
-                        const groupName = g.name || g.subject || formatPhone(groupJid);
-                        const count = g.participantsCount || g.size || '?';
-                        return `<option value="${groupJid}">${groupName} (${count} participantes)</option>`;
-                    }).join('');
+            if (freshGroups.length > 0 && checkboxContainer) {
+                checkboxContainer.innerHTML = freshGroups.map(g => {
+                    const groupJid = g.remoteJid || g.id || '';
+                    const groupName = g.name || g.subject || formatPhone(groupJid);
+                    const count = g.participantsCount || g.size || '?';
+                    return `<label class="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-100 cursor-pointer">
+                        <input type="checkbox" class="group-checkbox w-4 h-4 rounded text-emerald-500" value="${groupJid}" data-name="${groupName}" onchange="updateSelectedGroupsCount()">
+                        <span class="text-sm text-slate-700 flex-1 truncate">👥 ${groupName}</span>
+                        <span class="text-xs text-slate-400">${count} membros</span>
+                    </label>`;
+                }).join('');
                 console.log(`[Campanha] Grupos após reload: ${freshGroups.length}`);
             }
         }
@@ -4969,6 +4981,27 @@ function selectAudience(type) {
     
     document.getElementById('groupSelector').classList.toggle('hidden', type !== 'group');
     updateCampaignSummary();
+}
+
+function toggleAllGroups() {
+    const checkboxes = document.querySelectorAll('.group-checkbox');
+    const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+    checkboxes.forEach(cb => cb.checked = !allChecked);
+    updateSelectedGroupsCount();
+}
+
+function updateSelectedGroupsCount() {
+    const checked = document.querySelectorAll('.group-checkbox:checked').length;
+    const el = document.getElementById('selectedGroupsCount');
+    if (el) el.textContent = `${checked} grupo${checked !== 1 ? 's' : ''} selecionado${checked !== 1 ? 's' : ''}`;
+    updateCampaignSummary();
+}
+
+function getSelectedGroups() {
+    return Array.from(document.querySelectorAll('.group-checkbox:checked')).map(cb => ({
+        jid: cb.value,
+        name: cb.dataset.name || 'Grupo'
+    }));
 }
 
 function toggleSchedule() {
@@ -5009,8 +5042,12 @@ function updateCampaignSummary() {
     let count = 0;
     if (selectedAudience === 'all') count = allClients.length;
     else if (selectedAudience === 'group') {
-        // Grupo: 1 mensagem direta no grupo
-        document.getElementById('campaignSummary').textContent = '1 mensagem no grupo selecionado';
+        const selected = getSelectedGroups();
+        if (selected.length === 0) {
+            document.getElementById('campaignSummary').textContent = 'Selecione pelo menos 1 grupo';
+            return;
+        }
+        document.getElementById('campaignSummary').textContent = `${selected.length} grupo${selected.length > 1 ? 's' : ''} selecionado${selected.length > 1 ? 's' : ''} • ${selected.length} mensagen${selected.length > 1 ? 's' : ''}`;
         return;
     }
     else {
@@ -5046,6 +5083,9 @@ function closeNewCampaign() {
         btn.classList.remove('border-primary-500', 'bg-primary-50');
         btn.classList.add('border-slate-200');
     });
+    document.getElementById('groupSelector').classList.add('hidden');
+    document.querySelectorAll('.group-checkbox').forEach(cb => cb.checked = false);
+    updateSelectedGroupsCount();
 }
 
 async function saveCampaign() {
@@ -5085,12 +5125,10 @@ async function saveCampaign() {
             return avg >= 500;
         }).map(c => ({ id: c.id, name: c.nome, phone: c.telefone || c.celular }));
     } else if (selectedAudience === 'group') {
-        // Para grupo: enviar mensagem diretamente para o grupo (1 mensagem)
-        const groupJid = document.getElementById('targetGroup').value;
-        if (!groupJid) return alert('Selecione um grupo');
-        const groupChat = (allChats || []).find(c => (c.remoteJid || c.id) === groupJid);
-        const groupName = groupChat?.name || groupChat?.subject || 'Grupo';
-        contacts = [{ id: groupJid, name: groupName, phone: groupJid }];
+        // Para grupos: enviar mensagem para cada grupo selecionado
+        const selectedGroups = getSelectedGroups();
+        if (selectedGroups.length === 0) return alert('Selecione pelo menos um grupo');
+        contacts = selectedGroups.map(g => ({ id: g.jid, name: g.name, phone: g.jid }));
     }
     
     const campaign = {
@@ -5099,9 +5137,10 @@ async function saveCampaign() {
         message,
         image: campaignImageBase64,
         audience: selectedAudience,
-        targetGroup: selectedAudience === 'group' ? document.getElementById('targetGroup').value : null,
+        targetGroups: selectedAudience === 'group' ? getSelectedGroups().map(g => g.jid) : [],
         batchSize: parseInt(document.getElementById('batchSize').value),
         batchInterval: parseInt(document.getElementById('batchInterval').value),
+        messageDelay: parseInt(document.getElementById('messageDelay')?.value || '5'),
         scheduledFor: scheduleTime,
         status: scheduled ? 'scheduled' : 'running',
         createdAt: Date.now(),
@@ -5306,8 +5345,10 @@ async function processCampaignBatch(id) {
             
             campaign.sent++;
             
-            // Delay entre mensagens (2-5 segundos)
-            await new Promise(r => setTimeout(r, 2000 + Math.random() * 3000));
+            // Delay entre mensagens (customizável via messageDelay)
+            const baseDelay = (campaign.messageDelay || 5) * 1000;
+            const jitter = baseDelay * 0.6; // 60% de variação
+            await new Promise(r => setTimeout(r, baseDelay + Math.random() * jitter));
             
         } catch (e) {
             console.error('Erro ao enviar:', e);

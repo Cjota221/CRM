@@ -970,14 +970,19 @@
                         </button>
                         <button onclick="selectAudience('group')" class="audience-btn p-4 rounded-xl border-2 border-slate-200 text-left hover:border-primary-500 transition-colors" data-audience="group">
                             <i data-lucide="message-circle" class="w-5 h-5 text-emerald-500 mb-2"></i>
-                            <p class="font-medium text-slate-700">Grupo WhatsApp</p>
-                            <p class="text-xs text-slate-400">Selecionar grupo</p>
+                            <p class="font-medium text-slate-700">Grupos WhatsApp</p>
+                            <p id="countGroups" class="text-xs text-slate-400">Selecionar grupos</p>
                         </button>
                     </div>
                     <div id="groupSelector" class="hidden mt-3">
-                        <select id="targetGroup" class="input">
-                            <option value="">Selecione um grupo...</option>
-                        </select>
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="text-sm font-medium text-slate-700">Selecione os grupos:</label>
+                            <button onclick="toggleAllGroups()" class="text-xs text-primary-600 hover:text-primary-700 font-medium">Marcar/Desmarcar todos</button>
+                        </div>
+                        <div id="groupCheckboxes" class="max-h-[200px] overflow-y-auto space-y-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                            <p class="text-sm text-slate-400">Carregando grupos...</p>
+                        </div>
+                        <p id="selectedGroupsCount" class="text-xs text-slate-500 mt-2">0 grupos selecionados</p>
                     </div>
                 </div>
                 
@@ -1019,24 +1024,39 @@
                 <div class="p-4 bg-blue-50 rounded-xl">
                     <div class="flex items-start gap-3">
                         <i data-lucide="shield-check" class="w-5 h-5 text-blue-500 mt-0.5"></i>
-                        <div>
+                        <div class="w-full">
                             <h4 class="font-medium text-slate-800">Modo Conta-Gotas (Anti-Ban)</h4>
                             <p class="text-xs text-slate-500 mt-1">Distribui os envios em pequenos lotes para evitar bloqueio.</p>
-                            <div class="mt-3 grid grid-cols-2 gap-3">
+                            <div class="mt-3 grid grid-cols-3 gap-3">
                                 <div>
                                     <label class="block text-xs text-slate-500 mb-1">Mensagens por lote</label>
-                                    <select id="batchSize" class="input text-sm">
+                                    <select id="batchSize" class="input text-sm" onchange="updateCampaignSummary()">
+                                        <option value="5">5 mensagens</option>
                                         <option value="10">10 mensagens</option>
                                         <option value="15" selected>15 mensagens</option>
                                         <option value="20">20 mensagens</option>
+                                        <option value="30">30 mensagens</option>
                                     </select>
                                 </div>
                                 <div>
                                     <label class="block text-xs text-slate-500 mb-1">Intervalo entre lotes</label>
-                                    <select id="batchInterval" class="input text-sm">
+                                    <select id="batchInterval" class="input text-sm" onchange="updateCampaignSummary()">
+                                        <option value="5">5 minutos</option>
+                                        <option value="10">10 minutos</option>
                                         <option value="15">15 minutos</option>
                                         <option value="20" selected>20 minutos</option>
                                         <option value="30">30 minutos</option>
+                                        <option value="45">45 minutos</option>
+                                        <option value="60">1 hora</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-slate-500 mb-1">Delay entre msgs</label>
+                                    <select id="messageDelay" class="input text-sm">
+                                        <option value="2">2-4 seg (rápido)</option>
+                                        <option value="5" selected>5-8 seg (seguro)</option>
+                                        <option value="10">10-15 seg (lento)</option>
+                                        <option value="20">20-30 seg (ultra-safe)</option>
                                     </select>
                                 </div>
                             </div>
