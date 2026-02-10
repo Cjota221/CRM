@@ -3028,6 +3028,28 @@ app.get('/api/evolution/messages', (req, res) => {
     res.json({ messages: filtered, total: filtered.length });
 });
 
+// API: Check rápido de novidades (endpoint leve para polling)
+// Retorna apenas contagem e timestamp — cliente decide se precisa recarregar
+app.get('/api/evolution/check-new', (req, res) => {
+    const since = req.query.since ? parseInt(req.query.since) : 0;
+    const newMessages = since > 0 
+        ? realtimeMessages.filter(m => new Date(m.receivedAt).getTime() > since)
+        : [];
+    
+    // Retornar contagem por chat (sem payload pesado)
+    const byChatCount = {};
+    newMessages.forEach(m => {
+        byChatCount[m.jid] = (byChatCount[m.jid] || 0) + 1;
+    });
+    
+    res.json({ 
+        newCount: newMessages.length,
+        byChat: byChatCount,
+        lastMessageAt: realtimeMessages[0]?.receivedAt || null,
+        socketClients: io.engine?.clientsCount || 0
+    });
+});
+
 // API: Verificar/alterar modo do chat (IA ou Humano)
 app.get('/api/evolution/chat-mode/:jid', (req, res) => {
     const jid = req.params.jid;
@@ -4044,7 +4066,14 @@ app.post('/api/coupons/create', async (req, res) => {
 // SOCKET.IO — CONEXÕES EM TEMPO REAL
 // ============================================================================
 io.on('connection', (socket) => {
-    console.log(`[SOCKET.IO] Cliente conectado: ${socket.id}`);
+    console.log(`[SOCKET.IO] Cliente conectado: ${socket.id} (total: ${io.engine?.clientsCount || '?'})`);
+    
+    // Enviar estado atual ao connectar (sync imediato)
+    socket.emit('sync-state', {
+        pendingMessages: realtimeMessages.length,
+        lastMessageAt: realtimeMessages[0]?.receivedAt || null,
+        connectedAt: new Date().toISOString()
+    });
     
     // Cliente se inscreve em um chat específico
     socket.on('join-chat', (jid) => {

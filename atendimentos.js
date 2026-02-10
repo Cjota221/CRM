@@ -120,9 +120,17 @@ let socket = null;
 let _socketReconnectAttempts = 0;
 let _lastDisconnectTime = null;
 
+// Controle de refresh periódico da lista de chats
+let _chatListRefreshInterval = null;
+let _lastChatListRefresh = 0;
+const CHAT_LIST_REFRESH_INTERVAL = 15000; // 15 segundos
+const CHAT_LIST_REFRESH_ON_RECONNECT_DELAY = 500; // 500ms após reconexão
+
 function initSocket() {
     if (typeof io === 'undefined') {
         console.warn('[SOCKET.IO] Biblioteca não carregada, usando fallback de polling');
+        // Sem Socket.IO → polling agressivo como fallback
+        startChatListPolling(10000);
         return;
     }
     
@@ -131,23 +139,35 @@ function initSocket() {
         reconnection: true,
         reconnectionAttempts: Infinity,
         reconnectionDelay: 1000,
-        reconnectionDelayMax: 10000,
-        timeout: 20000
+        reconnectionDelayMax: 5000,
+        timeout: 15000
     });
     
     socket.on('connect', () => {
         console.log(`[SOCKET.IO] ✅ Conectado: ${socket.id}`);
         _socketReconnectAttempts = 0;
+        updateSocketStatusUI(true);
         
         // Re-entrar no chat atual se houver
         if (currentRemoteJid) {
             socket.emit('join-chat', currentRemoteJid);
         }
         
-        // Se houve desconexão, recarregar mensagens do chat ativo (delta sync)
-        if (_lastDisconnectTime && currentRemoteJid) {
-            console.log('[SOCKET.IO] Reconectado — recarregando mensagens...');
-            loadMessages(currentRemoteJid, true);
+        // Se houve desconexão, recarregar TUDO (lista + chat ativo)
+        if (_lastDisconnectTime) {
+            const offlineTime = Date.now() - _lastDisconnectTime;
+            console.log(`[SOCKET.IO] Reconectado após ${Math.round(offlineTime/1000)}s offline — sincronizando...`);
+            
+            // Refresh da lista de chats (pega mensagens perdidas)
+            setTimeout(() => {
+                refreshChatListBackground();
+            }, CHAT_LIST_REFRESH_ON_RECONNECT_DELAY);
+            
+            // Recarregar mensagens do chat ativo
+            if (currentRemoteJid) {
+                loadMessages(currentRemoteJid, true);
+            }
+            
             _lastDisconnectTime = null;
         }
     });
@@ -155,18 +175,22 @@ function initSocket() {
     socket.on('disconnect', (reason) => {
         console.warn(`[SOCKET.IO] ⚠️ Desconectado: ${reason}`);
         _lastDisconnectTime = Date.now();
+        updateSocketStatusUI(false);
     });
     
     socket.on('reconnect_attempt', (attempt) => {
         _socketReconnectAttempts = attempt;
-        if (attempt % 5 === 0) {
+        if (attempt % 3 === 0) {
             console.log(`[SOCKET.IO] Tentativa de reconexão #${attempt}...`);
         }
     });
     
     // ======== MENSAGEM NOVA EM TEMPO REAL ========
     socket.on('new-message', (msg) => {
+        console.log(`[SOCKET.IO] Nova mensagem: ${msg.fromMe ? 'ENVIADA' : 'RECEBIDA'} em ${msg.jid}`);
+        
         // Atualizar lista de chats (badge, preview, ordenação)
+        // Se o chat não existir na lista, adicionar automaticamente
         updateChatListWithNewMessage(msg);
         
         // Se a mensagem é do chat aberto, renderizar instantaneamente
@@ -198,16 +222,92 @@ function initSocket() {
     
     // ======== STATUS DE MENSAGEM (lido/entregue) ========
     socket.on('message-status', (data) => {
-        // Atualizar ícones de status nas mensagens (✓✓ azul, etc.)
-        // Implementação futura: marcar mensagens como lidas
+        updateMessageStatusIcons(data);
     });
     
-    // Keep-alive customizado a cada 30s
+    // Keep-alive customizado a cada 25s
     setInterval(() => {
         if (socket && socket.connected) {
             socket.emit('ping-crm');
         }
-    }, 30000);
+    }, 25000);
+    
+    // Iniciar refresh periódico da lista de chats (backup ao socket)
+    startChatListPolling(CHAT_LIST_REFRESH_INTERVAL);
+}
+
+/**
+ * Indicador visual do estado do Socket.IO na UI
+ */
+function updateSocketStatusUI(connected) {
+    const indicator = document.getElementById('socketStatusIndicator');
+    if (!indicator) return;
+    if (connected) {
+        indicator.className = 'w-2 h-2 rounded-full bg-green-500';
+        indicator.title = 'Tempo real ativo';
+    } else {
+        indicator.className = 'w-2 h-2 rounded-full bg-yellow-500 animate-pulse';
+        indicator.title = 'Reconectando...';
+    }
+}
+
+/**
+ * Atualizar ícones de status de mensagem (✓, ✓✓, ✓✓ azul)
+ */
+function updateMessageStatusIcons(data) {
+    if (!data || !data.keyId) return;
+    const msgEl = document.querySelector(`[data-msg-id="${data.keyId}"]`);
+    if (!msgEl) return;
+    const statusEl = msgEl.querySelector('.msg-status');
+    if (statusEl) {
+        if (data.status === 'READ') statusEl.innerHTML = '<span class="text-blue-500">✓✓</span>';
+        else if (data.status === 'DELIVERY_ACK') statusEl.textContent = '✓✓';
+        else if (data.status === 'SERVER_ACK') statusEl.textContent = '✓';
+    }
+}
+
+/**
+ * Refresh periódico leve da lista de chats (polling de segurança).
+ * Roda a cada N ms; quando Socket.IO está ativo, faz refresh leve.
+ * Quando desconectado, faz refresh mais agressivo.
+ */
+function startChatListPolling(intervalMs) {
+    if (_chatListRefreshInterval) clearInterval(_chatListRefreshInterval);
+    
+    _chatListRefreshInterval = setInterval(() => {
+        const now = Date.now();
+        // Evitar refresh se acabou de fazer um
+        if (now - _lastChatListRefresh < 8000) return;
+        
+        // Se Socket.IO conectado, refresh leve a cada 15s
+        // Se desconectado, refresh a cada ciclo
+        if (!socket || !socket.connected) {
+            console.log('[POLLING] Socket desconectado — refresh da lista...');
+            refreshChatListBackground();
+        } else {
+            // Com socket ativo, refresh leve a cada 30s como backup
+            if (now - _lastChatListRefresh > 30000) {
+                refreshChatListBackground();
+            }
+        }
+    }, intervalMs);
+}
+
+/**
+ * Refresh da lista de chats em background (sem travar UI)
+ * Usa delta sync: compara com a lista atual e só atualiza diferenças
+ */
+async function refreshChatListBackground() {
+    _lastChatListRefresh = Date.now();
+    
+    try {
+        // Usar o chatLoader que já tem delta sync com IndexedDB
+        if (window.chatLoader) {
+            await window.chatLoader.loadAllChats(false);
+        }
+    } catch (err) {
+        console.warn('[REFRESH] Erro no refresh background:', err.message);
+    }
 }
 
 /**
@@ -263,20 +363,101 @@ function appendRealtimeMessage(msg) {
 }
 
 /**
- * Atualizar lista de chats quando uma mensagem nova chega
+ * Atualizar lista de chats quando uma mensagem nova chega.
+ * Se o chat NÃO existe na lista, cria um item temporário e agenda refresh completo.
  */
 function updateChatListWithNewMessage(msg) {
-    const chatItem = document.querySelector(`[data-chat-key="${msg.jid}"]`);
+    if (!msg || !msg.jid) return;
+    
+    // Tentar encontrar por data-chat-key (pode usar createChatKey se existir)
+    const chatKey = typeof createChatKey === 'function' ? createChatKey(msg.jid) : msg.jid;
+    let chatItem = document.querySelector(`[data-chat-key="${chatKey}"]`);
+    
+    // Se não encontrou, tentar variações do JID (com/sem @s.whatsapp.net)
+    if (!chatItem) {
+        chatItem = document.querySelector(`[data-chat-key="${msg.jid}"]`);
+    }
+    
+    const chatsList = document.getElementById('chatsList');
+    
+    if (!chatItem && chatsList) {
+        // ======== CHAT NOVO: Criar item temporário na lista ========
+        console.log(`[REALTIME] Chat novo detectado: ${msg.pushName || msg.jid}`);
+        
+        const displayName = msg.pushName || msg.jid.replace('@s.whatsapp.net', '').replace('@g.us', '');
+        const initial = (displayName || '?').charAt(0).toUpperCase();
+        const preview = msg.text ? msg.text.substring(0, 50) : '[Mídia]';
+        const timeStr = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        const isGroup = msg.isGroup || msg.jid.includes('@g.us');
+        
+        chatItem = document.createElement('div');
+        chatItem.className = 'chat-item p-3 border-b hover:bg-gray-50 cursor-pointer transition select-none chat-new-highlight';
+        chatItem.setAttribute('data-chat-key', chatKey);
+        chatItem.innerHTML = `
+            <div class="flex gap-3">
+                <div class="flex-shrink-0">
+                    <div class="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-white font-bold">
+                        ${isGroup ? '👥' : initial}
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="font-semibold text-gray-900 truncate">${escapeHtml(displayName)}</span>
+                    </div>
+                    <div class="chat-preview text-sm text-gray-600 truncate">${escapeHtml(preview)}</div>
+                </div>
+                <div class="flex-shrink-0 flex flex-col items-end gap-1">
+                    <span class="chat-time text-xs text-gray-500">${timeStr}</span>
+                    <span class="unread-badge inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-emerald-500 rounded-full">1</span>
+                </div>
+            </div>
+        `;
+        
+        // Click handler — abrir o chat
+        chatItem.onclick = () => {
+            const chatObj = {
+                remoteJid: msg.jid,
+                id: msg.jid,
+                displayName: displayName,
+                isGroup: isGroup,
+                cleanPhone: msg.jid.replace('@s.whatsapp.net', '').replace('@g.us', '')
+            };
+            if (typeof window.openChat === 'function') {
+                window.openChat(chatObj);
+            }
+        };
+        
+        // Inserir no TOPO da lista
+        chatsList.insertBefore(chatItem, chatsList.firstChild);
+        
+        // Flash animation para chamar atenção
+        chatItem.style.animation = 'chatNewPulse 1s ease-out';
+        
+        // Agendar refresh completo para enriquecer o chat (foto, dados CRM, etc.)
+        clearTimeout(updateChatListWithNewMessage._refreshTimer);
+        updateChatListWithNewMessage._refreshTimer = setTimeout(() => {
+            refreshChatListBackground();
+        }, 3000);
+        
+        return; // Já tratado - sair
+    }
+    
     if (!chatItem) return;
     
-    // Atualizar preview
-    const preview = chatItem.querySelector('.chat-preview, .text-slate-500');
+    // ======== CHAT EXISTENTE: Atualizar in-place ========
+    
+    // Atualizar preview (buscar variáveis classes possíveis)
+    const preview = chatItem.querySelector('.chat-preview') 
+                 || chatItem.querySelector('.text-slate-500')
+                 || chatItem.querySelector('.text-gray-600.truncate');
     if (preview) {
         preview.textContent = msg.text ? msg.text.substring(0, 50) : '[Mídia]';
     }
     
     // Atualizar horário
-    const time = chatItem.querySelector('.chat-time, .text-xs.text-slate-400');
+    const time = chatItem.querySelector('.chat-time') 
+              || chatItem.querySelector('.text-xs.text-slate-400')
+              || chatItem.querySelector('.text-xs.text-gray-500');
     if (time) {
         time.textContent = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     }
@@ -285,18 +466,34 @@ function updateChatListWithNewMessage(msg) {
     const chatList = chatItem.parentElement;
     if (chatList && chatList.firstChild !== chatItem) {
         chatList.insertBefore(chatItem, chatList.firstChild);
+        // Animação sutil ao mover
+        chatItem.style.animation = 'none';
+        chatItem.offsetHeight; // Force reflow
+        chatItem.style.animation = 'chatSlideIn 0.3s ease-out';
     }
     
     // Badge de não-lida se não é o chat ativo
     if (msg.jid !== currentRemoteJid && !msg.fromMe) {
-        const badge = chatItem.querySelector('.unread-badge');
+        let badge = chatItem.querySelector('.unread-badge');
         if (badge) {
             const count = parseInt(badge.textContent || '0') + 1;
             badge.textContent = count;
             badge.classList.remove('hidden');
+        } else {
+            // Criar badge se não existir
+            const timeContainer = chatItem.querySelector('.flex-shrink-0.flex.flex-col') 
+                               || chatItem.querySelector('.flex-shrink-0:last-child');
+            if (timeContainer) {
+                const newBadge = document.createElement('span');
+                newBadge.className = 'unread-badge inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-emerald-500 rounded-full';
+                newBadge.textContent = '1';
+                timeContainer.appendChild(newBadge);
+            }
         }
     }
 }
+// Timer para debounce do refresh
+updateChatListWithNewMessage._refreshTimer = null;
 
 /**
  * Notificação de nova mensagem (toast + som)
@@ -312,6 +509,31 @@ function showNewMessageNotification(msg) {
         audio.volume = 0.3;
         audio.play().catch(() => {});
     } catch (e) {}
+}
+
+/**
+ * Obter timestamp da última mensagem exibida no container
+ * Usado para polling inteligente: só re-buscar se parece haver gap
+ */
+function getLastDisplayedMessageTime() {
+    const container = document.getElementById('messagesContainer');
+    if (!container) return null;
+    const allMsgs = container.querySelectorAll('[data-msg-id]');
+    if (allMsgs.length === 0) return null;
+    const lastMsg = allMsgs[allMsgs.length - 1];
+    // Tentar pegar do data attribute ou do timestamp no texto
+    const timeText = lastMsg.querySelector('.text-\\[10px\\], .text-xs.text-slate-400, .text-xs.text-gray-400');
+    if (timeText) {
+        // Parsear HH:MM do horário
+        const match = timeText.textContent.match(/(\d{2}):(\d{2})/);
+        if (match) {
+            const now = new Date();
+            const msgDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), parseInt(match[1]), parseInt(match[2]));
+            return msgDate.getTime();
+        }
+    }
+    // Fallback: retornar null (vai fazer polling normal)
+    return null;
 }
 
 // ============================================================================
@@ -1522,14 +1744,22 @@ async function openChat(chat) {
     }
     _previousChatJid = remoteJidParam;
     
-    // Fallback: polling lento (30s) caso Socket.io esteja desconectado
+    // Fallback: polling de mensagens do chat ativo (10s se desconectado, 20s se conectado)
     if (chatRefreshInterval) clearInterval(chatRefreshInterval);
     chatRefreshInterval = setInterval(() => {
-        // Só fazer polling se Socket.io NÃO estiver conectado
+        if (!currentRemoteJid) return;
         if (!socket || !socket.connected) {
+            // Socket desconectado: polling agressivo a cada 10s
             loadMessages(currentRemoteJid, true);
+        } else {
+            // Socket conectado: polling de segurança a cada 20s (pega msgs perdidas)
+            // Só faz se última mensagem no DOM tem mais de 15s
+            const lastMsgTime = getLastDisplayedMessageTime();
+            if (lastMsgTime && (Date.now() - lastMsgTime) > 15000) {
+                loadMessages(currentRemoteJid, true);
+            }
         }
-    }, 30000);
+    }, 10000);
 }
 
 // Renderizar info do grupo no painel lateral

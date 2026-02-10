@@ -160,6 +160,27 @@
         .connection-disconnected { background-color: #ef4444; }
         .connection-error { background-color: #ef4444; }
         
+        /* Animação de novo chat aparecendo na lista */
+        @keyframes chatNewPulse {
+            0% { background-color: #d1fae5; transform: scale(1.02); }
+            50% { background-color: #a7f3d0; }
+            100% { background-color: transparent; transform: scale(1); }
+        }
+        @keyframes chatSlideIn {
+            from { opacity: 0.6; transform: translateY(-8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .chat-new-highlight {
+            background-color: #d1fae5;
+            transition: background-color 2s ease-out;
+        }
+        /* Animação de mensagem nova entrando */
+        @keyframes msgSlideIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .msg-animate-in { animation: msgSlideIn 0.3s ease-out; }
+        
         /* Toolbar buttons hover */
         .toolbar-btn:hover {
             transform: translateY(-1px);
@@ -234,6 +255,8 @@
                     <span id="connectionText" class="text-sm font-medium text-slate-600">Verificando...</span>
                     <span id="connectionSubtext" class="text-[10px] text-slate-400 hidden">Última verificação: agora</span>
                 </div>
+                <!-- Indicador Socket.IO (ponto pequeno) -->
+                <div id="socketStatusIndicator" class="w-2 h-2 rounded-full bg-gray-400" title="Socket.IO desconectado"></div>
             </div>
             <button onclick="disconnectWhatsapp()" class="btn btn-secondary text-sm py-2 text-red-600 hover:bg-red-50" title="Desconectar WhatsApp atual">
                 <i data-lucide="log-out" class="w-4 h-4"></i>

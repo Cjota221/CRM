@@ -96,10 +96,10 @@ class ChatLoadingSystem {
      *   Passo 5: Merge no IDB + re-renderizar
      */
     async loadAllChats(forceRefresh = false) {
-        // Evitar reload muito rápido
+        // Evitar reload muito rápido (mínimo 5s entre refreshes, a menos que forçado)
         const now = Date.now();
-        if (!forceRefresh && this.lastLoadTime && (now - this.lastLoadTime) < 2000) {
-            console.log('[ChatLoader] Reload muito rápido, usando cache');
+        const MIN_INTERVAL = forceRefresh ? 1000 : 5000;
+        if (!forceRefresh && this.lastLoadTime && (now - this.lastLoadTime) < MIN_INTERVAL) {
             return this.allChats;
         }
         
