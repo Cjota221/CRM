@@ -1587,6 +1587,7 @@ app.get('/api/whatsapp/all-chats', async (req, res) => {
             
             return {
                 ...chat,
+                remoteJid: jid, // GARANTIR que remoteJid está sempre presente
                 name: name || 'Desconhecido',
                 pushName: name || chat.pushName,
                 profilePicUrl,

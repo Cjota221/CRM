@@ -4894,29 +4894,59 @@ async function loadCampaignData() {
         document.getElementById('countAll').textContent = `${allClients.length} contatos`;
         
         // Calcular inativos (90+ dias)
-        const ninetyDaysAgo = Date.now() - (90 * 24 * 60 * 60 * 1000);
-        const inactive = allClients.filter(c => {
-            const clientOrders = allOrders.filter(o => o.cliente_id == c.id).sort((a,b) => new Date(b.data) - new Date(a.data));
-            if (clientOrders.length === 0) return true;
-            return new Date(clientOrders[0].data).getTime() < ninetyDaysAgo;
-        });
-        document.getElementById('countInactive').textContent = `${inactive.length} contatos`;
+        try {
+            const ninetyDaysAgo = Date.now() - (90 * 24 * 60 * 60 * 1000);
+            const inactive = allClients.filter(c => {
+                const clientOrders = (allOrders || []).filter(o => o.cliente_id == c.id).sort((a,b) => new Date(b.data) - new Date(a.data));
+                if (clientOrders.length === 0) return true;
+                return new Date(clientOrders[0].data).getTime() < ninetyDaysAgo;
+            });
+            document.getElementById('countInactive').textContent = `${inactive.length} contatos`;
+        } catch(e) { console.warn('[Campanha] Erro ao calcular inativos:', e); }
         
         // VIPs (ticket médio > 500)
-        const vips = allClients.filter(c => {
-            const clientOrders = allOrders.filter(o => o.cliente_id == c.id);
-            const total = clientOrders.reduce((sum, o) => sum + parseFloat(o.total || 0), 0);
-            const avg = clientOrders.length > 0 ? total / clientOrders.length : 0;
-            return avg >= 500;
-        });
-        document.getElementById('countVip').textContent = `${vips.length} contatos`;
+        try {
+            const vips = allClients.filter(c => {
+                const clientOrders = (allOrders || []).filter(o => o.cliente_id == c.id);
+                const total = clientOrders.reduce((sum, o) => sum + parseFloat(o.total || 0), 0);
+                const avg = clientOrders.length > 0 ? total / clientOrders.length : 0;
+                return avg >= 500;
+            });
+            document.getElementById('countVip').textContent = `${vips.length} contatos`;
+        } catch(e) { console.warn('[Campanha] Erro ao calcular VIPs:', e); }
         
-        // Carregar grupos no seletor
-        const groups = allChats.filter(c => c.remoteJid.includes('@g.us'));
+        // Carregar grupos no seletor — usar isGroup flag (mais confiável que testar remoteJid)
+        const groups = (allChats || []).filter(c => c.isGroup || (c.remoteJid && c.remoteJid.includes('@g.us')) || (c.id && String(c.id).includes('@g.us')));
+        console.log(`[Campanha] Grupos encontrados: ${groups.length} de ${allChats.length} chats`);
+        
         const select = document.getElementById('targetGroup');
         if (select) {
+            const jid = c => c.remoteJid || c.id || '';
             select.innerHTML = '<option value="">Selecione um grupo...</option>' +
-                groups.map(g => `<option value="${g.remoteJid}">${g.name || formatPhone(g.remoteJid)} (${g.participantsCount || '?'} participantes)</option>`).join('');
+                groups.map(g => {
+                    const groupJid = g.remoteJid || g.id || '';
+                    const groupName = g.name || g.subject || formatPhone(groupJid);
+                    const count = g.participantsCount || g.size || '?';
+                    return `<option value="${groupJid}">${groupName} (${count} participantes)</option>`;
+                }).join('');
+        }
+        
+        // Se allChats ainda vazio, tentar carregar do servidor
+        if (allChats.length === 0) {
+            console.warn('[Campanha] allChats vazio, recarregando...');
+            await loadChats();
+            // Re-executar após carregar
+            const freshGroups = (allChats || []).filter(c => c.isGroup || (c.remoteJid && c.remoteJid.includes('@g.us')));
+            if (freshGroups.length > 0 && select) {
+                select.innerHTML = '<option value="">Selecione um grupo...</option>' +
+                    freshGroups.map(g => {
+                        const groupJid = g.remoteJid || g.id || '';
+                        const groupName = g.name || g.subject || formatPhone(groupJid);
+                        const count = g.participantsCount || g.size || '?';
+                        return `<option value="${groupJid}">${groupName} (${count} participantes)</option>`;
+                    }).join('');
+                console.log(`[Campanha] Grupos após reload: ${freshGroups.length}`);
+            }
         }
     } catch (e) {
         console.error('Erro ao carregar dados para campanhas:', e);
@@ -4978,7 +5008,11 @@ function updateCampaignSummary() {
     
     let count = 0;
     if (selectedAudience === 'all') count = allClients.length;
-    else if (selectedAudience === 'group') count = '?';
+    else if (selectedAudience === 'group') {
+        // Grupo: 1 mensagem direta no grupo
+        document.getElementById('campaignSummary').textContent = '1 mensagem no grupo selecionado';
+        return;
+    }
     else {
         const el = document.getElementById(`count${selectedAudience.charAt(0).toUpperCase() + selectedAudience.slice(1)}`);
         count = el ? parseInt(el.textContent) || 0 : 0;
@@ -5039,17 +5073,24 @@ async function saveCampaign() {
     } else if (selectedAudience === 'inactive') {
         const ninetyDaysAgo = Date.now() - (90 * 24 * 60 * 60 * 1000);
         contacts = allClients.filter(c => {
-            const clientOrders = allOrders.filter(o => o.cliente_id == c.id).sort((a,b) => new Date(b.data) - new Date(a.data));
+            const clientOrders = (allOrders || []).filter(o => o.cliente_id == c.id).sort((a,b) => new Date(b.data) - new Date(a.data));
             if (clientOrders.length === 0) return true;
             return new Date(clientOrders[0].data).getTime() < ninetyDaysAgo;
         }).map(c => ({ id: c.id, name: c.nome, phone: c.telefone || c.celular }));
     } else if (selectedAudience === 'vip') {
         contacts = allClients.filter(c => {
-            const clientOrders = allOrders.filter(o => o.cliente_id == c.id);
+            const clientOrders = (allOrders || []).filter(o => o.cliente_id == c.id);
             const total = clientOrders.reduce((sum, o) => sum + parseFloat(o.total || 0), 0);
             const avg = clientOrders.length > 0 ? total / clientOrders.length : 0;
             return avg >= 500;
         }).map(c => ({ id: c.id, name: c.nome, phone: c.telefone || c.celular }));
+    } else if (selectedAudience === 'group') {
+        // Para grupo: enviar mensagem diretamente para o grupo (1 mensagem)
+        const groupJid = document.getElementById('targetGroup').value;
+        if (!groupJid) return alert('Selecione um grupo');
+        const groupChat = (allChats || []).find(c => (c.remoteJid || c.id) === groupJid);
+        const groupName = groupChat?.name || groupChat?.subject || 'Grupo';
+        contacts = [{ id: groupJid, name: groupName, phone: groupJid }];
     }
     
     const campaign = {
@@ -5252,7 +5293,10 @@ async function processCampaignBatch(id) {
         try {
             let text = campaign.message.replace(/\{\{nome\}\}/gi, contact.name || 'Cliente');
             
-            const phone = contact.phone.replace(/\D/g, '');
+            // Para grupos (@g.us), enviar o JID como está; para contatos, limpar o telefone
+            const phone = contact.phone.includes('@g.us') 
+                ? contact.phone 
+                : contact.phone.replace(/\D/g, '');
             
             await fetch(`${API_BASE}/whatsapp/send-message`, {
                 method: 'POST',
