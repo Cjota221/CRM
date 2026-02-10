@@ -1,14 +1,23 @@
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-require('dotenv').config(); // Carrega variáveis de ambiente do arquivo .env
+require('dotenv').config();
 const fetch = require('node-fetch');
 const path = require('path');
+const http = require('http');
 const https = require('https');
 const crypto = require('crypto');
 const fs = require('fs');
+const { Server: SocketIO } = require('socket.io');
 
 const app = express();
+const server = http.createServer(app);
+const io = new SocketIO(server, {
+    cors: { origin: '*' },
+    pingInterval: 25000,
+    pingTimeout: 60000,
+    transports: ['websocket', 'polling']
+});
 const PORT = 3000;
 
 // ============================================================================
@@ -106,7 +115,7 @@ const ConnectionMonitor = {
     lastConnected: null,
     reconnectAttempts: 0,
     maxReconnectAttempts: 5,
-    checkInterval: 5 * 60 * 1000, // 5 minutos
+    checkInterval: 2 * 60 * 1000, // 2 minutos (reduzido de 5 para detectar desconexões mais rápido)
     reconnectDelay: 30 * 1000, // 30 segundos entre tentativas
     errorLog: [],
     isReconnecting: false,
@@ -443,6 +452,27 @@ app.use(cors({
     credentials: true
 }));
 app.use(bodyParser.json({ limit: '50mb' })); // Limite razoável (reduzido de 1GB)
+
+// ============================================================================
+// PRIORIZAÇÃO DE TRÁFEGO — Rotas de mensagens têm prioridade máxima
+// ============================================================================
+// Webhook da Evolution e rotas de mensagens: sem timeout, processamento imediato
+app.use((req, res, next) => {
+    const isHighPriority = 
+        req.path === '/api/evolution/webhook' ||
+        req.path === '/api/whatsapp/send-message' ||
+        req.path === '/api/whatsapp/messages/fetch' ||
+        req.path === '/api/evolution/messages';
+    
+    if (isHighPriority) {
+        // Sem timeout para rotas críticas
+        req.setTimeout(0);
+        res.setTimeout(0);
+        // Header para indicar prioridade (útil para proxies)
+        res.setHeader('X-Priority', 'high');
+    }
+    next();
+});
 
 // ============================================================================
 // ROTAS DE AUTENTICAÇÃO (ANTES do static middleware)
@@ -989,6 +1019,10 @@ async function attemptAutoReconnect() {
         if (status.connected) {
             console.log('[AUTO-RECONNECT] ✅ Reconectado com sucesso!');
             ConnectionMonitor.isReconnecting = false;
+            // Delta sync: buscar mensagens perdidas durante a desconexão
+            deltaSync().catch(e => console.warn('[DELTA SYNC] Erro pós-reconnect:', e.message));
+            // Notificar frontend via Socket.io
+            io.emit('connection-update', { state: 'open', timestamp: new Date().toISOString() });
             return true;
         }
         
@@ -1017,7 +1051,7 @@ let healthCheckInterval = null;
 function startHealthCheck() {
     if (healthCheckInterval) clearInterval(healthCheckInterval);
     
-    console.log('[HEALTH CHECK] Iniciando monitoramento de conexão (intervalo: 5min)');
+    console.log('[HEALTH CHECK] Iniciando monitoramento de conexão (intervalo: 2min)');
     
     // Verificar imediatamente
     checkWhatsAppConnection().then(status => {
@@ -2849,7 +2883,12 @@ app.post('/api/evolution/webhook', (req, res) => {
                     realtimeMessages.unshift(realtimeMsg);
                     if (realtimeMessages.length > 500) realtimeMessages = realtimeMessages.slice(0, 500);
                     
-                    console.log(`[MSG ${fromMe ? 'ENVIADA' : 'RECEBIDA'}] ${pushName || jid}: ${text.substring(0, 80)}`);
+                    // ======== PUSH INSTANTÂNEO VIA SOCKET.IO ========
+                    io.emit('new-message', realtimeMsg);
+                    // Também emitir para a sala específica do chat
+                    io.to(`chat:${jid}`).emit('chat-message', realtimeMsg);
+                    
+                    console.log(`[MSG ${fromMe ? 'ENVIADA' : 'RECEBIDA'}] ${pushName || jid}: ${text.substring(0, 80)}`);                    
                 });
                 break;
             }
@@ -2857,6 +2896,8 @@ app.post('/api/evolution/webhook', (req, res) => {
             case 'messages.update':
             case 'MESSAGES_UPDATE': {
                 console.log('[EVOLUTION WEBHOOK] Status de mensagem atualizado');
+                // Propagar status (lido, entregue, etc.) para o frontend
+                io.emit('message-status', payload.data || payload);
                 break;
             }
             
@@ -2864,8 +2905,14 @@ app.post('/api/evolution/webhook', (req, res) => {
             case 'CONNECTION_UPDATE': {
                 const state = payload.data?.state || payload.state;
                 console.log(`[EVOLUTION WEBHOOK] Conexão: ${state}`);
+                
+                // Push instantâneo do status para o frontend
+                io.emit('connection-update', { state, timestamp: new Date().toISOString() });
+                
                 if (state === 'open') {
                     ConnectionMonitor.updateStatus('connected', 'Webhook confirmou conexão');
+                    // Delta sync: buscar mensagens perdidas durante a desconexão
+                    deltaSync().catch(e => console.warn('[DELTA SYNC] Erro pós-reconexão:', e.message));
                 } else if (state === 'close') {
                     ConnectionMonitor.updateStatus('disconnected', 'Webhook reportou desconexão');
                 }
@@ -3936,13 +3983,142 @@ app.post('/api/coupons/create', async (req, res) => {
     }
 });
 
-app.listen(PORT, () => {
+// ============================================================================
+// SOCKET.IO — CONEXÕES EM TEMPO REAL
+// ============================================================================
+io.on('connection', (socket) => {
+    console.log(`[SOCKET.IO] Cliente conectado: ${socket.id}`);
+    
+    // Cliente se inscreve em um chat específico
+    socket.on('join-chat', (jid) => {
+        socket.join(`chat:${jid}`);
+        console.log(`[SOCKET.IO] ${socket.id} entrou no chat: ${jid}`);
+    });
+    
+    // Cliente sai de um chat
+    socket.on('leave-chat', (jid) => {
+        socket.leave(`chat:${jid}`);
+    });
+    
+    // Ping/pong keep-alive customizado
+    socket.on('ping-crm', () => {
+        socket.emit('pong-crm', { ts: Date.now() });
+    });
+    
+    socket.on('disconnect', (reason) => {
+        console.log(`[SOCKET.IO] Cliente desconectado: ${socket.id} (${reason})`);
+    });
+});
+
+// ============================================================================
+// REGISTRAR WEBHOOK NA EVOLUTION API (auto-setup)
+// ============================================================================
+async function registerEvolutionWebhook() {
+    try {
+        // Detectar URL pública do servidor
+        const PUBLIC_URL = process.env.PUBLIC_URL || process.env.EASYPANEL_URL || `https://cjota-crm.9eo9b2.easypanel.host`;
+        const webhookUrl = `${PUBLIC_URL}/api/evolution/webhook`;
+        
+        console.log(`[WEBHOOK] Registrando webhook na Evolution API: ${webhookUrl}`);
+        
+        const response = await fetch(`${EVOLUTION_URL}/webhook/set/${INSTANCE_NAME}`, {
+            method: 'POST',
+            headers: { 'apikey': EVOLUTION_API_KEY, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                url: webhookUrl,
+                webhook_by_events: false,
+                webhook_base64: false,
+                events: [
+                    'MESSAGES_UPSERT',
+                    'MESSAGES_UPDATE',
+                    'CONNECTION_UPDATE',
+                    'SEND_MESSAGE'
+                ]
+            })
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            console.log(`[WEBHOOK] ✅ Webhook registrado com sucesso:`, data?.webhook?.url || webhookUrl);
+        } else {
+            const errorText = await response.text();
+            console.warn(`[WEBHOOK] ⚠️ Falha ao registrar (${response.status}):`, errorText);
+        }
+    } catch (error) {
+        console.warn(`[WEBHOOK] ⚠️ Erro ao registrar webhook:`, error.message);
+    }
+}
+
+// ============================================================================
+// DELTA SYNC — Buscar mensagens perdidas desde última conexão
+// ============================================================================
+async function deltaSync(sinceTimestamp) {
+    try {
+        const since = sinceTimestamp || (Date.now() - 5 * 60 * 1000); // últimos 5 min por padrão
+        console.log(`[DELTA SYNC] Buscando mensagens desde ${new Date(since).toISOString()}`);
+        
+        const response = await fetch(`${EVOLUTION_URL}/chat/findMessages/${INSTANCE_NAME}`, {
+            method: 'POST',
+            headers: { 'apikey': EVOLUTION_API_KEY, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                where: {
+                    timestamp: { $gte: Math.floor(since / 1000) }
+                },
+                limit: 200
+            })
+        });
+        
+        if (!response.ok) {
+            console.warn(`[DELTA SYNC] Falha HTTP ${response.status}`);
+            return 0;
+        }
+        
+        const data = await response.json();
+        const messages = Array.isArray(data) ? data : (data?.messages?.records || data?.messages || []);
+        let synced = 0;
+        
+        messages.forEach(msg => {
+            const key = msg.key || {};
+            const jid = key.remoteJid || '';
+            const existingIds = new Set(realtimeMessages.map(m => m.id));
+            if (!existingIds.has(key.id)) {
+                const realtimeMsg = {
+                    id: key.id || `delta_${Date.now()}_${synced}`,
+                    jid,
+                    fromMe: key.fromMe || false,
+                    pushName: msg.pushName || '',
+                    text: msg.message?.conversation || msg.message?.extendedTextMessage?.text || '',
+                    timestamp: msg.messageTimestamp || Math.floor(Date.now() / 1000),
+                    receivedAt: new Date().toISOString(),
+                    isGroup: jid.includes('@g.us'),
+                    raw: msg
+                };
+                realtimeMessages.unshift(realtimeMsg);
+                io.emit('new-message', realtimeMsg);
+                synced++;
+            }
+        });
+        
+        if (realtimeMessages.length > 500) realtimeMessages = realtimeMessages.slice(0, 500);
+        console.log(`[DELTA SYNC] ✅ ${synced} mensagens novas sincronizadas de ${messages.length} encontradas`);
+        return synced;
+    } catch (error) {
+        console.error(`[DELTA SYNC] Erro:`, error.message);
+        return 0;
+    }
+}
+
+server.listen(PORT, () => {
     console.log(`Servidor rodando em http://localhost:${PORT}`);
     console.log('Central de Atendimento pronta.');
     console.log('Anny AI disponível em /api/anny');
     console.log(`Evolution API: ${EVOLUTION_URL} (instância: ${INSTANCE_NAME})`);
     console.log(`Webhook Evolution: http://localhost:${PORT}/api/evolution/webhook`);
+    console.log(`Socket.IO: ws://localhost:${PORT} (real-time ativo)`);
     
     // Iniciar monitoramento de conexão WhatsApp
     startHealthCheck();
+    
+    // Registrar webhook na Evolution API automaticamente
+    setTimeout(() => registerEvolutionWebhook(), 3000);
 });

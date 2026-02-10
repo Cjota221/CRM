@@ -76,6 +76,7 @@ let currentFilter = 'all'; // 'all', 'unread', 'waiting', 'groups', 'sales', 'va
 let currentTagFilter = null;
 let chatRefreshInterval = null;
 let connectionCheckInterval = null;
+let _previousChatJid = null; // Para leave-chat do Socket.io
 
 // Sistema de Tags
 let allTags = JSON.parse(localStorage.getItem('crm_tags') || '[]');
@@ -111,6 +112,207 @@ let recordedAudioUrl = null;
 let audioElement = null;
 
 const API_BASE = '/api';
+
+// ============================================================================
+// SOCKET.IO — CONEXÃO EM TEMPO REAL COM O SERVIDOR
+// ============================================================================
+let socket = null;
+let _socketReconnectAttempts = 0;
+let _lastDisconnectTime = null;
+
+function initSocket() {
+    if (typeof io === 'undefined') {
+        console.warn('[SOCKET.IO] Biblioteca não carregada, usando fallback de polling');
+        return;
+    }
+    
+    socket = io({
+        transports: ['websocket', 'polling'],
+        reconnection: true,
+        reconnectionAttempts: Infinity,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 10000,
+        timeout: 20000
+    });
+    
+    socket.on('connect', () => {
+        console.log(`[SOCKET.IO] ✅ Conectado: ${socket.id}`);
+        _socketReconnectAttempts = 0;
+        
+        // Re-entrar no chat atual se houver
+        if (currentRemoteJid) {
+            socket.emit('join-chat', currentRemoteJid);
+        }
+        
+        // Se houve desconexão, recarregar mensagens do chat ativo (delta sync)
+        if (_lastDisconnectTime && currentRemoteJid) {
+            console.log('[SOCKET.IO] Reconectado — recarregando mensagens...');
+            loadMessages(currentRemoteJid, true);
+            _lastDisconnectTime = null;
+        }
+    });
+    
+    socket.on('disconnect', (reason) => {
+        console.warn(`[SOCKET.IO] ⚠️ Desconectado: ${reason}`);
+        _lastDisconnectTime = Date.now();
+    });
+    
+    socket.on('reconnect_attempt', (attempt) => {
+        _socketReconnectAttempts = attempt;
+        if (attempt % 5 === 0) {
+            console.log(`[SOCKET.IO] Tentativa de reconexão #${attempt}...`);
+        }
+    });
+    
+    // ======== MENSAGEM NOVA EM TEMPO REAL ========
+    socket.on('new-message', (msg) => {
+        // Atualizar lista de chats (badge, preview, ordenação)
+        updateChatListWithNewMessage(msg);
+        
+        // Se a mensagem é do chat aberto, renderizar instantaneamente
+        if (currentRemoteJid && msg.jid === currentRemoteJid) {
+            appendRealtimeMessage(msg);
+        } else if (!msg.fromMe) {
+            // Notificação visual de nova mensagem em outro chat
+            showNewMessageNotification(msg);
+        }
+    });
+    
+    // ======== STATUS DE CONEXÃO WHATSAPP ========
+    socket.on('connection-update', (data) => {
+        console.log(`[SOCKET.IO] Conexão WhatsApp: ${data.state}`);
+        const dot = document.getElementById('connectionDot');
+        const text = document.getElementById('connectionText');
+        if (dot && text) {
+            if (data.state === 'open') {
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500';
+                text.textContent = 'Conectado';
+                text.className = 'text-xs font-medium text-emerald-600';
+            } else {
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-red-500';
+                text.textContent = 'Desconectado';
+                text.className = 'text-xs font-medium text-red-600';
+            }
+        }
+    });
+    
+    // ======== STATUS DE MENSAGEM (lido/entregue) ========
+    socket.on('message-status', (data) => {
+        // Atualizar ícones de status nas mensagens (✓✓ azul, etc.)
+        // Implementação futura: marcar mensagens como lidas
+    });
+    
+    // Keep-alive customizado a cada 30s
+    setInterval(() => {
+        if (socket && socket.connected) {
+            socket.emit('ping-crm');
+        }
+    }, 30000);
+}
+
+/**
+ * Renderizar uma mensagem instantaneamente no chat aberto (sem re-fetch completo)
+ */
+function appendRealtimeMessage(msg) {
+    const container = document.getElementById('messagesContainer');
+    if (!container) return;
+    
+    // Evitar duplicatas
+    if (container.querySelector(`[data-msg-id="${msg.id}"]`)) return;
+    
+    const isMe = msg.fromMe;
+    const time = new Date(msg.timestamp * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    
+    // Formatar texto (com suporte a links e formatação WhatsApp)
+    let contentHtml = '';
+    if (msg.text) {
+        contentHtml = typeof formatWhatsAppText === 'function' ? formatWhatsAppText(msg.text) : escapeHtml(msg.text);
+    }
+    if (msg.mediaType === 'image' && msg.mediaUrl) {
+        contentHtml = `<img src="${msg.mediaUrl}" class="rounded-lg max-w-full max-h-[300px] cursor-pointer" onclick="window.open('${msg.mediaUrl}','_blank')" loading="lazy" />` + (contentHtml ? `<p class="mt-1 text-sm">${contentHtml}</p>` : '');
+    } else if (msg.mediaType === 'audio') {
+        contentHtml = `<div class="flex items-center gap-2"><span class="text-lg">🎧</span> <span>Áudio</span></div>`;
+    } else if (msg.mediaType === 'video') {
+        contentHtml = `<div class="flex items-center gap-2"><span class="text-lg">🎬</span> <span>${contentHtml || 'Vídeo'}</span></div>`;
+    } else if (msg.mediaType === 'document') {
+        contentHtml = `<div class="flex items-center gap-2"><span class="text-lg">📄</span> <span>${contentHtml || 'Documento'}</span></div>`;
+    }
+    
+    if (!contentHtml) contentHtml = '<span class="text-slate-400 italic">Mensagem sem conteúdo</span>';
+    
+    const bubble = document.createElement('div');
+    bubble.setAttribute('data-msg-id', msg.id);
+    bubble.className = `flex ${isMe ? 'justify-end' : 'justify-start'} mb-2 msg-animate-in`;
+    bubble.innerHTML = `
+        <div class="max-w-[75%] ${isMe ? 'bg-emerald-100 rounded-tl-2xl rounded-tr-sm rounded-bl-2xl rounded-br-2xl' : 'bg-white rounded-tl-sm rounded-tr-2xl rounded-bl-2xl rounded-br-2xl'} px-3 py-2 shadow-sm">
+            ${!isMe && msg.pushName ? `<p class="text-xs font-semibold text-emerald-700 mb-0.5">${escapeHtml(msg.pushName)}</p>` : ''}
+            <div class="text-sm text-slate-800 break-words">${contentHtml}</div>
+            <p class="text-[10px] text-slate-400 text-right mt-0.5">${time}${isMe ? ' ✓✓' : ''}</p>
+        </div>
+    `;
+    
+    container.appendChild(bubble);
+    container.scrollTop = container.scrollHeight;
+    
+    // Atualizar cache
+    if (window.chatLoader && msg.raw) {
+        const cached = window.chatLoader.getCachedMessages(currentRemoteJid) || [];
+        cached.push(msg.raw);
+        window.chatLoader.setCachedMessages(currentRemoteJid, cached);
+    }
+}
+
+/**
+ * Atualizar lista de chats quando uma mensagem nova chega
+ */
+function updateChatListWithNewMessage(msg) {
+    const chatItem = document.querySelector(`[data-chat-key="${msg.jid}"]`);
+    if (!chatItem) return;
+    
+    // Atualizar preview
+    const preview = chatItem.querySelector('.chat-preview, .text-slate-500');
+    if (preview) {
+        preview.textContent = msg.text ? msg.text.substring(0, 50) : '[Mídia]';
+    }
+    
+    // Atualizar horário
+    const time = chatItem.querySelector('.chat-time, .text-xs.text-slate-400');
+    if (time) {
+        time.textContent = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    }
+    
+    // Mover para o topo da lista
+    const chatList = chatItem.parentElement;
+    if (chatList && chatList.firstChild !== chatItem) {
+        chatList.insertBefore(chatItem, chatList.firstChild);
+    }
+    
+    // Badge de não-lida se não é o chat ativo
+    if (msg.jid !== currentRemoteJid && !msg.fromMe) {
+        const badge = chatItem.querySelector('.unread-badge');
+        if (badge) {
+            const count = parseInt(badge.textContent || '0') + 1;
+            badge.textContent = count;
+            badge.classList.remove('hidden');
+        }
+    }
+}
+
+/**
+ * Notificação de nova mensagem (toast + som)
+ */
+function showNewMessageNotification(msg) {
+    const name = msg.pushName || msg.jid.replace('@s.whatsapp.net', '');
+    const text = msg.text ? msg.text.substring(0, 60) : '[Mídia]';
+    showToast(`💬 ${name}: ${text}`, 'info');
+    
+    // Som de notificação (se disponível)
+    try {
+        const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQ==');
+        audio.volume = 0.3;
+        audio.play().catch(() => {});
+    } catch (e) {}
+}
 
 // ============================================================================
 // INTERCEPTOR DE SESSÃO EXPIRADA (401)
@@ -423,6 +625,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         checkConnection(),
         initializeApp()
     ]);
+
+    // 1.5. Iniciar Socket.io para mensagens em tempo real
+    initSocket();
 
     // 2. Carregar dados do CRM (Clientes/Produtos/Pedidos)
     loadCRMData();
@@ -1284,9 +1489,24 @@ async function openChat(chat) {
     console.log('✅ Chat aberto com sucesso');
     console.log('==================================\n');
     
-    // Auto refresh (simples - polling a cada 5s)
+    // ======== REAL-TIME: Inscrever no chat via Socket.io ========
+    if (socket && socket.connected) {
+        // Sair do chat anterior
+        if (_previousChatJid && _previousChatJid !== remoteJidParam) {
+            socket.emit('leave-chat', _previousChatJid);
+        }
+        socket.emit('join-chat', remoteJidParam);
+    }
+    _previousChatJid = remoteJidParam;
+    
+    // Fallback: polling lento (30s) caso Socket.io esteja desconectado
     if (chatRefreshInterval) clearInterval(chatRefreshInterval);
-    chatRefreshInterval = setInterval(() => loadMessages(currentRemoteJid, true), 10000);
+    chatRefreshInterval = setInterval(() => {
+        // Só fazer polling se Socket.io NÃO estiver conectado
+        if (!socket || !socket.connected) {
+            loadMessages(currentRemoteJid, true);
+        }
+    }, 30000);
 }
 
 // Renderizar info do grupo no painel lateral
@@ -4571,9 +4791,9 @@ function startConnectionMonitoring() {
     // Verificar imediatamente
     checkConnectionStatus();
     
-    // Verificar a cada 30 segundos
+    // Verificar a cada 60 segundos (Socket.io cuida do real-time, isso é fallback)
     if (connectionCheckInterval) clearInterval(connectionCheckInterval);
-    connectionCheckInterval = setInterval(checkConnectionStatus, 30000);
+    connectionCheckInterval = setInterval(checkConnectionStatus, 60000);
 }
 
 // Mostrar modal de detalhes de conexão
