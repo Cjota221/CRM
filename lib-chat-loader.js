@@ -278,7 +278,7 @@ class ChatLoadingSystem {
     }
     
     /**
-     * Renderizar lista de chats na tela
+     * Renderizar lista de chats na tela (paginados - 20 por vez)
      */
     renderChatsList() {
         const container = document.getElementById('chatsList');
@@ -292,11 +292,27 @@ class ChatLoadingSystem {
             return;
         }
         
-        // Renderizar cada chat
-        this.filteredChats.forEach(chat => {
+        // Delegar para a função global renderChatsList que tem paginação
+        if (typeof window.renderChatsList === 'function') {
+            // Sincronizar allChats global para o filtro funcionar
+            if (typeof window.allChats !== 'undefined') {
+                window.allChats = this.allChats;
+            }
+            window.renderChatsList(this.filteredChats);
+            return;
+        }
+        
+        // Fallback: renderizar com paginação local
+        const PAGE = 20;
+        const fragment = document.createDocumentFragment();
+        const toRender = this.filteredChats.slice(0, PAGE);
+        
+        toRender.forEach(chat => {
             const element = this.createChatElement(chat);
-            container.appendChild(element);
+            fragment.appendChild(element);
         });
+        
+        container.appendChild(fragment);
         
         // Re-inicializar ícones (lucide)
         if (window.lucide) {

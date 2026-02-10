@@ -163,39 +163,59 @@ function ensureDDI55(phone) {
 }
 
 /**
- * Buscar cliente por telefone no cache com lógica fuzzy
- * Verifica TODOS os campos de telefone (não short-circuit)
- * Faz match exato + fuzzy (últimos 9 dígitos)
+ * Buscar cliente por telefone no cache com lógica fuzzy + 9º dígito
+ * Hierarquia: match exato → últimos 9 dígitos → últimos 8 dígitos (ignora 9ºdígito)
+ * Também tenta variações com/sem 9º dígito brasileiro
  */
 function findClientByPhone(normalizedPhone) {
     if (!crmCache.clients || crmCache.clients.length === 0) return null;
     if (!normalizedPhone || normalizedPhone.length < 8) return null;
     
     const last9 = normalizedPhone.slice(-9);
+    const last8 = normalizedPhone.slice(-8);
     
-    // Primeiro: match exato em qualquer campo
-    let client = crmCache.clients.find(c => {
-        const phones = [
-            normalizePhoneServer(c.telefone),
-            normalizePhoneServer(c.celular),
-            normalizePhoneServer(c.phone),
-            normalizePhoneServer(c.whatsapp)
-        ].filter(p => p.length >= 8);
-        return phones.some(p => p === normalizedPhone);
-    });
-    
-    // Segundo: fuzzy match (últimos 9 dígitos) caso exato falhe
-    if (!client) {
-        client = crmCache.clients.find(c => {
-            const phones = [
-                normalizePhoneServer(c.telefone),
-                normalizePhoneServer(c.celular),
-                normalizePhoneServer(c.phone),
-                normalizePhoneServer(c.whatsapp)
-            ].filter(p => p.length >= 8);
-            return phones.some(p => p.slice(-9) === last9);
-        });
+    // Gerar variações com/sem 9º dígito
+    const searchVariations = [normalizedPhone];
+    if (normalizedPhone.length === 11 && normalizedPhone.charAt(2) === '9') {
+        searchVariations.push(normalizedPhone.substring(0, 2) + normalizedPhone.substring(3));
     }
+    if (normalizedPhone.length === 10) {
+        searchVariations.push(normalizedPhone.substring(0, 2) + '9' + normalizedPhone.substring(2));
+    }
+    
+    // Helper: extrair todos os telefones limpos de um cliente
+    const getClientPhones = (c) => [
+        normalizePhoneServer(c.telefone),
+        normalizePhoneServer(c.celular),
+        normalizePhoneServer(c.phone),
+        normalizePhoneServer(c.whatsapp)
+    ].filter(p => p.length >= 8);
+    
+    // ETAPA 1: Match exato em qualquer campo (incluindo variações)
+    let client = crmCache.clients.find(c => {
+        const phones = getClientPhones(c);
+        return phones.some(p => searchVariations.includes(p));
+    });
+    if (client) return client;
+    
+    // ETAPA 2: Match por últimos 9 dígitos
+    client = crmCache.clients.find(c => {
+        const phones = getClientPhones(c);
+        return phones.some(p => p.slice(-9) === last9);
+    });
+    if (client) return client;
+    
+    // ETAPA 3: Match por últimos 8 dígitos (ignora 9ºdígito completamente)
+    client = crmCache.clients.find(c => {
+        const phones = getClientPhones(c);
+        return phones.some(p => {
+            if (p.slice(-8) !== last8) return false;
+            // Confirmar DDD compatível (se ambos têm)
+            const dddSearch = normalizedPhone.length >= 10 ? normalizedPhone.substring(0, 2) : '';
+            const dddClient = p.length >= 10 ? p.substring(0, 2) : '';
+            return !dddSearch || !dddClient || dddSearch === dddClient;
+        });
+    });
     
     return client;
 }
@@ -492,9 +512,97 @@ app.get('/api/facilzap-proxy', async (req, res) => {
             products: productsEnriched,
             lastUpdate: new Date()
         };
+        
+        // Sync fire-and-forget: salvar produtos no Supabase para persistência
+        if (SUPABASE_SERVICE_KEY && productsEnriched.length > 0) {
+            try {
+                const supaSync = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+                const supaProducts = productsEnriched.map(p => ({
+                    id: String(p.id),
+                    codigo: p.codigo || p.referencia || '',
+                    name: p.nome || p.name || 'Produto',
+                    description: p.descricao || p.description || '',
+                    sku: p.referencia || p.sku || '',
+                    price: p.preco || 0,
+                    stock: p.estoque != null ? p.estoque : -1,
+                    is_active: p.ativo !== false && p.estoque !== 0,
+                    manages_stock: (p.estoque != null && p.estoque >= 0),
+                    image: p.imagem || '',
+                    images: p.imagens ? JSON.stringify(p.imagens) : '[]',
+                    updated_at: new Date().toISOString()
+                }));
+                await supaSync.from('products').upsert(supaProducts, { onConflict: 'id' });
+                console.log(`[Supabase] ✅ ${supaProducts.length} produtos sincronizados ao Supabase`);
+            } catch (syncErr) {
+                console.warn('[Supabase] Sync produtos fire-and-forget falhou:', syncErr.message);
+            }
+        }
     } catch (error) {
         console.error(error);
+        
+        // FALLBACK: Se FacilZap falhar, tentar carregar do Supabase
+        if (SUPABASE_SERVICE_KEY) {
+            try {
+                console.log('[FALLBACK] Tentando carregar produtos do Supabase...');
+                const supaFallback = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+                const { data: supaProducts } = await supaFallback.from('products').select('*').eq('is_active', true);
+                if (supaProducts && supaProducts.length > 0) {
+                    const normalizedProducts = supaProducts.map(p => ({
+                        id: p.id,
+                        nome: p.name,
+                        preco: parseFloat(p.price || 0),
+                        estoque: p.stock != null ? p.stock : -1,
+                        imagem: p.image || 'https://via.placeholder.com/300x300?text=Sem+Foto',
+                        referencia: p.sku || p.codigo || '',
+                        link_oficial: `${SITE_BASE_URL}/produto/${p.id}`,
+                        slug: p.id
+                    }));
+                    console.log(`[FALLBACK] ✅ ${normalizedProducts.length} produtos do Supabase`);
+                    return res.json({ 
+                        clients: crmCache.clients || [], 
+                        orders: crmCache.orders || [], 
+                        products: normalizedProducts,
+                        source: 'supabase-fallback'
+                    });
+                }
+            } catch (fbErr) {
+                console.warn('[FALLBACK] Supabase também falhou:', fbErr.message);
+            }
+        }
+        
         res.status(500).json({ error: error.message });
+    }
+});
+
+// Endpoint dedicado: produtos do Supabase (sidebar products)
+app.get('/api/supabase-products', async (req, res) => {
+    if (!SUPABASE_SERVICE_KEY) {
+        // Sem Supabase configurado, usar cache do FacilZap
+        return res.json({ products: crmCache.products || [], source: 'facilzap-cache' });
+    }
+    try {
+        const supa = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+        const { data, error } = await supa.from('products').select('*').order('updated_at', { ascending: false });
+        if (error) throw error;
+        
+        const products = (data || []).map(p => ({
+            id: p.id,
+            nome: p.name,
+            preco: parseFloat(p.price || 0),
+            estoque: p.stock != null ? p.stock : -1,
+            imagem: p.image || 'https://via.placeholder.com/300x300?text=Sem+Foto',
+            referencia: p.sku || p.codigo || '',
+            link_oficial: `${SITE_BASE_URL}/produto/${p.id}`,
+            slug: p.id,
+            is_active: p.is_active,
+            descricao: p.description || ''
+        }));
+        
+        res.json({ products, source: 'supabase', count: products.length });
+    } catch (err) {
+        console.error('[Supabase Products]', err.message);
+        // Fallback para cache FacilZap
+        res.json({ products: crmCache.products || [], source: 'facilzap-fallback' });
     }
 });
 
@@ -2673,24 +2781,48 @@ app.get('/api/client-brain/:phone', async (req, res) => {
         const daysSinceLastPurchase = lastPurchaseDate ? 
             Math.floor((new Date() - lastPurchaseDate) / (1000 * 60 * 60 * 24)) : 999;
         
-        // Determinar status
-        let status, statusColor, statusEmoji;
-        if (clientOrders.length >= 5) {
+        // Frequência: tempo médio entre compras (ciclo de recompra)
+        let avgDaysBetweenPurchases = 0;
+        if (sortedOrders.length >= 2) {
+            const orderDates = sortedOrders.map(o => new Date(o.data).getTime()).sort((a, b) => a - b);
+            let totalGap = 0;
+            for (let i = 1; i < orderDates.length; i++) {
+                totalGap += orderDates[i] - orderDates[i - 1];
+            }
+            avgDaysBetweenPurchases = Math.round(totalGap / ((orderDates.length - 1) * 86400000));
+        }
+        
+        // Determinar status de fidelidade
+        let status, statusColor, statusEmoji, loyaltyTag;
+        if (clientOrders.length >= 5 || totalSpent >= 2000) {
             status = 'Cliente VIP';
             statusColor = 'purple';
             statusEmoji = '👑';
+            loyaltyTag = 'VIP';
+        } else if (clientOrders.length >= 3 && daysSinceLastPurchase <= 90) {
+            status = 'Cliente Fiel';
+            statusColor = 'green';
+            statusEmoji = '💎';
+            loyaltyTag = 'Cliente Fiel';
         } else if (clientOrders.length >= 2) {
             status = 'Cliente Recorrente';
             statusColor = 'green';
             statusEmoji = '⭐';
+            loyaltyTag = daysSinceLastPurchase > 90 ? 'Inativo' : 'Recorrente';
         } else if (clientOrders.length === 1) {
             status = 'Cliente';
             statusColor = 'blue';
             statusEmoji = '✅';
+            loyaltyTag = daysSinceLastPurchase > 120 ? 'Inativo' : 'Cliente';
         } else {
             status = 'Lead Cadastrado';
             statusColor = 'gray';
             statusEmoji = '📝';
+            loyaltyTag = 'Lead';
+        }
+        // Sobrescrever loyaltyTag se inativo há muito tempo
+        if (daysSinceLastPurchase > 180 && clientOrders.length > 0) {
+            loyaltyTag = 'Inativo';
         }
         
         // Produtos mais comprados (frequência)
@@ -2707,6 +2839,30 @@ app.get('/api/client-brain/:phone', async (req, res) => {
             .sort((a, b) => b[1] - a[1])
             .slice(0, 5)
             .map(([name, qty]) => ({ name, qty }));
+        
+        // Últimos 3 produtos comprados (cronológico, com link do pedido)
+        const recentProducts = [];
+        for (const order of sortedOrders) {
+            const items = order.itens || order.products || [];
+            for (const item of items) {
+                if (recentProducts.length >= 3) break;
+                const pName = item.nome || item.name || item.produto || 'Produto';
+                // Buscar link do produto no catálogo
+                const catalogProduct = (crmCache.products || []).find(p => 
+                    (p.nome || '').toLowerCase() === pName.toLowerCase() ||
+                    (p.name || '').toLowerCase() === pName.toLowerCase()
+                );
+                recentProducts.push({
+                    name: pName,
+                    orderId: order.id || order.codigo,
+                    orderDate: order.data,
+                    price: parseFloat(item.preco || item.valor || order.valor_total || 0),
+                    link: catalogProduct?.link_oficial || null,
+                    image: catalogProduct?.imagem || null
+                });
+            }
+            if (recentProducts.length >= 3) break;
+        }
         
         // Últimos 3 pedidos resumidos
         const recentOrders = sortedOrders.slice(0, 3).map(o => ({
@@ -2752,15 +2908,18 @@ app.get('/api/client-brain/:phone', async (req, res) => {
             status,
             statusColor,
             statusEmoji,
+            loyaltyTag,
             metrics: {
                 totalSpent: totalSpent.toFixed(2),
                 avgTicket: avgTicket.toFixed(2),
                 ordersCount: clientOrders.length,
                 lastPurchaseDate: lastPurchaseDate?.toISOString(),
-                daysSinceLastPurchase
+                daysSinceLastPurchase,
+                avgDaysBetweenPurchases
             },
             orders: recentOrders,
             products: frequentProducts,
+            recentProducts,
             insight,
             recommendation
         });

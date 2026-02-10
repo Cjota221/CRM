@@ -40,6 +40,61 @@ function normalizePhone(raw) {
 }
 
 /**
+ * COMPARAR TELEFONES IGNORANDO O 9º DÍGITO (Brasil)
+ * Resolve divergência: DB salva com 9 (629822237075) vs API envia sem 9 (5562822237075)
+ * @param {string} phoneA - Telefone normalizado A
+ * @param {string} phoneB - Telefone normalizado B
+ * @returns {boolean}
+ */
+function phonesMatch(phoneA, phoneB) {
+    if (!phoneA || !phoneB) return false;
+    const a = normalizePhone(phoneA);
+    const b = normalizePhone(phoneB);
+    
+    // Match exato
+    if (a === b) return true;
+    
+    // Match por últimos 8 dígitos (ignora DDI + DDD + 9ºdígito)
+    if (a.length >= 8 && b.length >= 8 && a.slice(-8) === b.slice(-8)) {
+        // Confirmar que o DDD é compatível (primeiros 2 dígitos sem DDI)
+        const dddA = a.length >= 10 ? a.substring(0, 2) : '';
+        const dddB = b.length >= 10 ? b.substring(0, 2) : '';
+        if (!dddA || !dddB || dddA === dddB) return true;
+    }
+    
+    // Match por últimos 9 dígitos (caso um tenha 9ºdígito e outro não DDD diferente)
+    if (a.length >= 9 && b.length >= 9 && a.slice(-9) === b.slice(-9)) return true;
+    
+    return false;
+}
+
+/**
+ * Gerar variações do telefone para busca no banco (com/sem 9º dígito)
+ * @param {string} phone - Telefone normalizado
+ * @returns {string[]} - Array de variações possíveis
+ */
+function phoneVariations(phone) {
+    if (!phone) return [];
+    const norm = normalizePhone(phone);
+    const variations = [norm];
+    
+    // Se tem 11 dígitos (DDD + 9 + 8 dígitos) → gerar versão sem 9
+    if (norm.length === 11 && norm.charAt(2) === '9') {
+        variations.push(norm.substring(0, 2) + norm.substring(3)); // Remove 9º dígito
+    }
+    
+    // Se tem 10 dígitos (DDD + 8 dígitos) → gerar versão com 9
+    if (norm.length === 10) {
+        variations.push(norm.substring(0, 2) + '9' + norm.substring(2)); // Adiciona 9º dígito
+    }
+    
+    // Versão com DDI 55
+    variations.push('55' + norm);
+    
+    return [...new Set(variations)];
+}
+
+/**
  * Extrair número puro de um JID (remoteJid da Evolution API)
  * @param {string} jid - "556299998888@s.whatsapp.net" ou "1234567890@g.us"
  * @returns {string} - "62999998888"
@@ -86,16 +141,25 @@ class DataLayer {
     }
     
     /**
-     * Buscar cliente no Supabase pelo telefone
+     * Buscar cliente no Supabase pelo telefone (com normalização do 9º dígito)
      * @param {string} phone - Número normalizado (ex: "62999998888")
      * @returns {Promise<Object|null>}
      */
     async fetchClientByPhone(phone) {
         if (!phone) return null;
         
-        // Se está em cache, retornar imediatamente
+        // Checar cache: tentar phone exato + variações com/sem 9ºdígito
         if (this.clientCache.has(phone)) {
             return this.clientCache.get(phone);
+        }
+        // Checar variações no cache local
+        const variations = typeof phoneVariations === 'function' ? phoneVariations(phone) : [phone];
+        for (const v of variations) {
+            if (this.clientCache.has(v)) {
+                const cached = this.clientCache.get(v);
+                this.clientCache.set(phone, cached); // Alias
+                return cached;
+            }
         }
         
         // Se já está buscando, não fazer requisição duplicada
@@ -126,9 +190,13 @@ class DataLayer {
             
             const client = await response.json();
             
-            // Guardar em cache
+            // Guardar em cache (com todas as variações de telefone)
             if (client && client.id) {
                 this.clientCache.set(phone, client);
+                // Cachear todas as variações de telefone deste cliente
+                if (typeof phoneVariations === 'function') {
+                    phoneVariations(phone).forEach(v => this.clientCache.set(v, client));
+                }
                 console.log(`[DataLayer] ✅ Cliente encontrado: ${phone} → ${client.name}`);
                 return client;
             }
@@ -313,6 +381,8 @@ function getClientStatusBadge(status) {
 
 // Exportar para uso global
 window.normalizePhone = normalizePhone;
+window.phonesMatch = phonesMatch;
+window.phoneVariations = phoneVariations;
 window.extractPhoneFromJid = extractPhoneFromJid;
 window.isGroupJid = isGroupJid;
 window.createChatKey = createChatKey;

@@ -666,7 +666,7 @@ async function loadCRMData() {
             } catch(e) { /* cache inválido */ }
         }
         
-        // Buscar dados frescos da API
+        // Buscar dados frescos da API (FacilZap + Supabase sync)
         const res = await fetch(`${API_BASE}/facilzap-proxy`);
         const data = await res.json();
         
@@ -682,7 +682,34 @@ async function loadCRMData() {
             try { localStorage.setItem('crm_products_cache', JSON.stringify(allProducts)); } catch(e) {}
         }
         
-        console.log(`CRM Carregado: ${allClients.length} clientes, ${allOrders.length} pedidos, ${allProducts.length} produtos.`);
+        console.log(`CRM Carregado: ${allClients.length} clientes, ${allOrders.length} pedidos, ${allProducts.length} produtos (fonte: ${data.source || 'facilzap'}).`);
+        
+        // Tentar enriquecer com dados do Supabase (mais atualizados)
+        try {
+            const supaRes = await fetch(`${API_BASE}/supabase-products`);
+            const supaData = await supaRes.json();
+            if (supaData.products && supaData.products.length > 0 && supaData.source === 'supabase') {
+                // Merge: Supabase é fonte primária, FacilZap enriquece com slug/link
+                const supaMap = new Map(supaData.products.map(p => [String(p.id), p]));
+                allProducts = allProducts.map(p => {
+                    const supa = supaMap.get(String(p.id));
+                    if (supa) {
+                        return { ...p, estoque: supa.estoque, preco: supa.preco || p.preco, is_active: supa.is_active };
+                    }
+                    return p;
+                });
+                // Adicionar produtos que existem só no Supabase
+                supaData.products.forEach(sp => {
+                    if (!allProducts.find(p => String(p.id) === String(sp.id))) {
+                        allProducts.push(sp);
+                    }
+                });
+                console.log(`[CRM] Produtos enriquecidos com Supabase (${supaData.count} registros)`);
+                try { localStorage.setItem('crm_products_cache', JSON.stringify(allProducts)); } catch(e) {}
+            }
+        } catch(supaErr) {
+            console.warn('[CRM] Enriquecimento Supabase falhou (ok):', supaErr.message);
+        }
     } catch (e) {
         console.error('Erro ao carregar CRM:', e);
         // Se falhou mas tem cache, não mostrar erro
@@ -772,9 +799,16 @@ async function loadChats() {
     }
 }
 
+// Pagination state
+const CHATS_PAGE_SIZE = 20;
+let _renderedChatsCount = 0;
+let _currentFilteredChats = [];
+let _scrollListenerAttached = false;
+
 function renderChatsList(chats) {
     const listEl = document.getElementById('chatsList');
     listEl.innerHTML = '';
+    _renderedChatsCount = 0;
     
     if (!Array.isArray(chats) || chats.length === 0) {
         listEl.innerHTML = '<p class="text-center text-gray-400 text-sm p-4">Nenhuma conversa encontrada.</p>';
@@ -865,7 +899,45 @@ function renderChatsList(chats) {
         return;
     }
     
-    filteredChats.forEach(chat => {
+    // Guardar lista filtrada para paginação e renderizar primeira página
+    _currentFilteredChats = filteredChats;
+    _renderedChatsCount = 0;
+    _renderNextPage(listEl);
+    
+    // Attach infinite scroll listener (apenas uma vez)
+    if (!_scrollListenerAttached) {
+        _scrollListenerAttached = true;
+        listEl.addEventListener('scroll', function() {
+            if (_renderedChatsCount >= _currentFilteredChats.length) return;
+            // Quando chegar a 200px do fundo, carregar mais
+            const { scrollTop, scrollHeight, clientHeight } = listEl;
+            if (scrollTop + clientHeight >= scrollHeight - 200) {
+                _renderNextPage(listEl);
+            }
+        });
+    }
+}
+
+/**
+ * Renderizar próxima página de chats (CHATS_PAGE_SIZE por vez)
+ */
+function _renderNextPage(listEl) {
+    if (!listEl) listEl = document.getElementById('chatsList');
+    if (!listEl) return;
+    
+    // Remover sentinel anterior (se existir)
+    const oldSentinel = listEl.querySelector('.chat-load-more');
+    if (oldSentinel) oldSentinel.remove();
+    
+    const start = _renderedChatsCount;
+    const end = Math.min(start + CHATS_PAGE_SIZE, _currentFilteredChats.length);
+    
+    if (start >= _currentFilteredChats.length) return;
+    
+    const fragment = document.createDocumentFragment();
+    
+    for (let i = start; i < end; i++) {
+        const chat = _currentFilteredChats[i];
         const chatId = chat.id || chat.remoteJid;
         
         // DEBUG: Ver dados do chat
@@ -1012,8 +1084,21 @@ function renderChatsList(chats) {
                 </div>
             </div>
         `;
-        listEl.appendChild(div);
-    });
+        fragment.appendChild(div);
+    }
+    
+    listEl.appendChild(fragment);
+    _renderedChatsCount = end;
+    
+    // Se houver mais chats, mostrar indicador
+    if (end < _currentFilteredChats.length) {
+        const sentinel = document.createElement('div');
+        sentinel.className = 'chat-load-more text-center py-3 text-xs text-slate-400';
+        sentinel.innerHTML = `<span class="animate-pulse">Rolando... (+${_currentFilteredChats.length - end} conversas)</span>`;
+        listEl.appendChild(sentinel);
+    }
+    
+    console.log(`[Pagination] Renderizados ${_renderedChatsCount}/${_currentFilteredChats.length} chats`);
 }
 
 // ============================================================================
@@ -1906,7 +1991,38 @@ function renderClientPanelBrain(brainData, phone) {
     };
     const gradientColor = statusColors[brainData.statusColor] || 'from-emerald-500 to-emerald-600';
     
-    // Produtos frequentes HTML
+    // Badge de fidelidade
+    const loyaltyTag = brainData.loyaltyTag || brainData.status;
+    const loyaltyBadges = {
+        'VIP': { bg: 'bg-purple-100 text-purple-700', icon: '👑' },
+        'Cliente Fiel': { bg: 'bg-emerald-100 text-emerald-700', icon: '💎' },
+        'Recorrente': { bg: 'bg-blue-100 text-blue-700', icon: '⭐' },
+        'Cliente': { bg: 'bg-green-100 text-green-700', icon: '✅' },
+        'Inativo': { bg: 'bg-red-100 text-red-700', icon: '⚠️' },
+        'Lead': { bg: 'bg-slate-100 text-slate-600', icon: '📝' }
+    };
+    const loyaltyBadge = loyaltyBadges[loyaltyTag] || loyaltyBadges['Cliente'];
+    
+    // Frequência / Ciclo de recompra
+    const avgCycle = metrics.avgDaysBetweenPurchases || 0;
+    const frequencyText = avgCycle > 0 ? `A cada ~${avgCycle} dias` : 'Sem dados suficientes';
+    
+    // Últimos 3 produtos comprados (cronológico, com links)
+    const recentProductsHtml = brainData.recentProducts && brainData.recentProducts.length > 0 
+        ? brainData.recentProducts.map(p => `
+            <div class="flex items-center gap-2 py-2 border-b border-slate-100 last:border-0">
+                ${p.image ? `<img src="${p.image}" class="w-8 h-8 rounded object-cover flex-shrink-0" onerror="this.style.display='none'">` : '<div class="w-8 h-8 rounded bg-slate-100 flex items-center justify-center flex-shrink-0"><i data-lucide="package" class="w-4 h-4 text-slate-400"></i></div>'}
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm text-slate-700 truncate font-medium">${escapeHtml(p.name)}</p>
+                    <p class="text-xs text-slate-400">${p.orderDate ? new Date(p.orderDate).toLocaleDateString('pt-BR') : ''} · R$ ${parseFloat(p.price || 0).toFixed(2)}</p>
+                </div>
+                ${p.link ? `<a href="${p.link}" target="_blank" class="text-emerald-500 hover:text-emerald-700 flex-shrink-0" title="Ver produto"><i data-lucide="external-link" class="w-3.5 h-3.5"></i></a>` : ''}
+                ${p.orderId ? `<button onclick="showOrderDetails('${p.orderId}')" class="text-purple-500 hover:text-purple-700 flex-shrink-0" title="Ver pedido #${p.orderId}"><i data-lucide="receipt" class="w-3.5 h-3.5"></i></button>` : ''}
+            </div>
+        `).join('')
+        : '<p class="text-xs text-slate-400 text-center py-2">Sem histórico de compras</p>';
+    
+    // Produtos frequentes (agregado)   
     const productsHtml = brainData.products && brainData.products.length > 0 
         ? brainData.products.map(p => `
             <div class="flex justify-between items-center py-1.5 border-b border-slate-100 last:border-0">
@@ -1914,12 +2030,12 @@ function renderClientPanelBrain(brainData, phone) {
                 <span class="text-xs text-slate-400 ml-2">${p.qty}x</span>
             </div>
         `).join('')
-        : '<p class="text-xs text-slate-400 text-center py-2">Sem histórico de produtos</p>';
+        : '';
     
     // Últimos pedidos HTML
     const ordersHtml = brainData.orders && brainData.orders.length > 0
         ? brainData.orders.map(o => `
-            <div class="p-3 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
+            <div class="p-3 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer" onclick="showOrderDetails('${o.id}')">
                 <div class="flex justify-between items-start mb-1">
                     <span class="font-medium text-slate-800 text-sm">#${o.id}</span>
                     <span class="font-bold text-emerald-600 text-sm">R$ ${parseFloat(o.total).toFixed(2)}</span>
@@ -1936,7 +2052,7 @@ function renderClientPanelBrain(brainData, phone) {
         <div class="space-y-4">
             <!-- Header do Cliente com Status -->
             <div class="bg-gradient-to-br ${gradientColor} rounded-xl p-4 text-white">
-                <div class="flex items-center gap-3 mb-3">
+                <div class="flex items-center gap-3 mb-2">
                     <div class="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center text-2xl font-bold backdrop-blur">
                         ${client.name.charAt(0).toUpperCase()}
                     </div>
@@ -1945,48 +2061,59 @@ function renderClientPanelBrain(brainData, phone) {
                         <p class="text-sm opacity-90">${brainData.statusEmoji} ${brainData.status}</p>
                     </div>
                 </div>
-                <p class="text-sm opacity-90">${brainData.insight}</p>
+                <!-- Tag de Fidelidade -->
+                <div class="flex items-center gap-2 mt-1">
+                    <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-white/25 backdrop-blur">${loyaltyBadge.icon} ${loyaltyTag}</span>
+                    ${metrics.daysSinceLastPurchase > 90 && metrics.ordersCount > 0 ? '<span class="px-2 py-1 rounded-full text-xs font-medium bg-red-400/30">⏰ Reativar!</span>' : ''}
+                </div>
+                <p class="text-sm opacity-80 mt-2">${brainData.insight}</p>
             </div>
             
-            <!-- KPIs -->
-            <div class="grid grid-cols-3 gap-2">
-                <div class="bg-slate-50 p-3 rounded-xl text-center">
-                    <p class="text-xs text-slate-500 mb-1">Pedidos</p>
-                    <p class="text-xl font-bold text-slate-800">${metrics.ordersCount}</p>
+            <!-- Mini CRM: KPIs Grid -->
+            <div class="grid grid-cols-2 gap-2">
+                <div class="bg-gradient-to-br from-emerald-50 to-emerald-100 p-3 rounded-xl">
+                    <p class="text-[10px] uppercase tracking-wider text-emerald-600 font-semibold mb-1">LTV (Total Gasto)</p>
+                    <p class="text-xl font-bold text-emerald-700">R$ ${parseInt(metrics.totalSpent).toLocaleString('pt-BR')}</p>
                 </div>
-                <div class="bg-slate-50 p-3 rounded-xl text-center">
-                    <p class="text-xs text-slate-500 mb-1">Ticket</p>
-                    <p class="text-lg font-bold text-emerald-600">R$ ${parseInt(metrics.avgTicket)}</p>
+                <div class="bg-gradient-to-br from-blue-50 to-blue-100 p-3 rounded-xl">
+                    <p class="text-[10px] uppercase tracking-wider text-blue-600 font-semibold mb-1">Ticket Médio</p>
+                    <p class="text-xl font-bold text-blue-700">R$ ${parseInt(metrics.avgTicket).toLocaleString('pt-BR')}</p>
                 </div>
-                <div class="bg-slate-50 p-3 rounded-xl text-center">
-                    <p class="text-xs text-slate-500 mb-1">Total</p>
-                    <p class="text-lg font-bold text-blue-600">R$ ${parseInt(metrics.totalSpent)}</p>
+                <div class="bg-gradient-to-br from-purple-50 to-purple-100 p-3 rounded-xl">
+                    <p class="text-[10px] uppercase tracking-wider text-purple-600 font-semibold mb-1">Frequência</p>
+                    <p class="text-lg font-bold text-purple-700">${metrics.ordersCount} pedidos</p>
+                    <p class="text-[10px] text-purple-500">${frequencyText}</p>
+                </div>
+                <div class="bg-gradient-to-br from-amber-50 to-amber-100 p-3 rounded-xl">
+                    <p class="text-[10px] uppercase tracking-wider text-amber-600 font-semibold mb-1">Última Compra</p>
+                    <p class="text-lg font-bold text-amber-700">${metrics.lastPurchaseDate ? metrics.daysSinceLastPurchase + 'd' : '—'}</p>
+                    <p class="text-[10px] text-amber-500">${metrics.lastPurchaseDate ? new Date(metrics.lastPurchaseDate).toLocaleDateString('pt-BR') : 'Nunca comprou'}</p>
                 </div>
             </div>
             
-            <!-- Última Compra -->
-            ${metrics.lastPurchaseDate ? `
-                <div class="bg-gradient-to-r from-slate-50 to-slate-100 p-3 rounded-xl flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm">
-                        <i data-lucide="calendar" class="w-5 h-5 text-slate-500"></i>
-                    </div>
-                    <div>
-                        <p class="text-xs text-slate-500">Última compra</p>
-                        <p class="font-semibold text-slate-800">${new Date(metrics.lastPurchaseDate).toLocaleDateString('pt-BR')} <span class="text-slate-400 font-normal">(${metrics.daysSinceLastPurchase}d)</span></p>
-                    </div>
+            <!-- Histórico Recente: Últimos 3 Produtos -->
+            <div class="border border-slate-200 rounded-xl p-3">
+                <h4 class="font-semibold text-slate-800 text-sm flex items-center gap-2 mb-2">
+                    <i data-lucide="clock" class="w-4 h-4 text-blue-500"></i>
+                    Últimas Compras
+                </h4>
+                <div class="max-h-40 overflow-y-auto">
+                    ${recentProductsHtml}
                 </div>
-            ` : ''}
+            </div>
             
-            <!-- Produtos Frequentes -->
+            ${productsHtml ? `
+            <!-- Produtos Favoritos (frequência) -->
             <div class="border border-slate-200 rounded-xl p-3">
                 <h4 class="font-semibold text-slate-800 text-sm flex items-center gap-2 mb-2">
                     <i data-lucide="star" class="w-4 h-4 text-amber-500"></i>
                     Produtos Favoritos
                 </h4>
-                <div class="max-h-32 overflow-y-auto">
+                <div class="max-h-28 overflow-y-auto">
                     ${productsHtml}
                 </div>
             </div>
+            ` : ''}
             
             <!-- Últimos Pedidos -->
             <div>
@@ -2013,6 +2140,10 @@ function renderClientPanelBrain(brainData, phone) {
             
             <!-- Ações -->
             <div class="flex flex-col gap-2 pt-2 border-t border-slate-100">
+                <button onclick="openProductModal()" class="w-full btn btn-primary text-sm">
+                    <i data-lucide="package" class="w-4 h-4"></i>
+                    Enviar Produto
+                </button>
                 <button onclick="generateCoupon('${client.id}')" class="w-full btn btn-secondary text-sm">
                     <i data-lucide="ticket" class="w-4 h-4"></i>
                     Gerar Cupom Exclusivo
