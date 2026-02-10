@@ -1344,6 +1344,86 @@ app.get('/api/whatsapp/chats', async (req, res) => {
     }
 });
 
+// 3.0.1 Resolver @lid → telefone real via Evolution API
+app.get('/api/whatsapp/resolve-lid/:lid', async (req, res) => {
+    try {
+        const lidJid = req.params.lid; // ex: "5162684936293@lid" ou "5162684936293"
+        const fullLid = lidJid.includes('@lid') ? lidJid : `${lidJid}@lid`;
+        
+        console.log(`[resolve-lid] Resolvendo: ${fullLid}`);
+        
+        // Estratégia 1: Buscar nos contatos da Evolution API
+        const contactsResp = await fetch(`${EVOLUTION_URL}/chat/findContacts/${INSTANCE_NAME}`, {
+            method: 'POST',
+            headers: evolutionHeaders,
+            body: JSON.stringify({ where: { id: fullLid } })
+        }).catch(() => null);
+        
+        if (contactsResp && contactsResp.ok) {
+            const contacts = await contactsResp.json();
+            const list = Array.isArray(contacts) ? contacts : (contacts.data || []);
+            
+            for (const c of list) {
+                // O contato pode ter um 'id' ou 'remoteJid' alternativo com @s.whatsapp.net
+                const altId = c.remoteJidAlt || c.id;
+                if (altId && altId.includes('@s.whatsapp.net')) {
+                    const phone = altId.replace('@s.whatsapp.net', '');
+                    console.log(`[resolve-lid] ✅ Resolvido via findContacts: ${fullLid} → ${phone}`);
+                    return res.json({ resolved: true, phone, name: c.pushName || c.name || null, source: 'findContacts' });
+                }
+            }
+        }
+        
+        // Estratégia 2: Buscar nos chats recentes — o lastMessage pode ter remoteJidAlt
+        const chatsResp = await fetch(`${EVOLUTION_URL}/chat/findChats/${INSTANCE_NAME}`, {
+            method: 'POST',
+            headers: evolutionHeaders,
+            body: JSON.stringify({ where: { remoteJid: fullLid } })
+        }).catch(() => null);
+        
+        if (chatsResp && chatsResp.ok) {
+            const chats = await chatsResp.json();
+            const chatList = Array.isArray(chats) ? chats : (chats.data || []);
+            
+            for (const chat of chatList) {
+                const altJid = chat.lastMessage?.key?.remoteJidAlt || chat.remoteJidAlt;
+                if (altJid && altJid.includes('@s.whatsapp.net')) {
+                    const phone = altJid.replace('@s.whatsapp.net', '');
+                    console.log(`[resolve-lid] ✅ Resolvido via findChats: ${fullLid} → ${phone}`);
+                    return res.json({ resolved: true, phone, name: chat.pushName || chat.name || null, source: 'findChats' });
+                }
+            }
+        }
+        
+        // Estratégia 3: Buscar nas mensagens recentes do chat @lid
+        const msgsResp = await fetch(`${EVOLUTION_URL}/chat/findMessages/${INSTANCE_NAME}`, {
+            method: 'POST',
+            headers: evolutionHeaders,
+            body: JSON.stringify({ where: { key: { remoteJid: fullLid } }, limit: 5 })
+        }).catch(() => null);
+        
+        if (msgsResp && msgsResp.ok) {
+            const msgs = await msgsResp.json();
+            const msgList = Array.isArray(msgs) ? msgs : (msgs.data || msgs.messages || []);
+            
+            for (const msg of msgList) {
+                const altJid = msg.key?.remoteJidAlt || msg.remoteJidAlt;
+                if (altJid && altJid.includes('@s.whatsapp.net')) {
+                    const phone = altJid.replace('@s.whatsapp.net', '');
+                    console.log(`[resolve-lid] ✅ Resolvido via findMessages: ${fullLid} → ${phone}`);
+                    return res.json({ resolved: true, phone, name: msg.pushName || null, source: 'findMessages' });
+                }
+            }
+        }
+        
+        console.warn(`[resolve-lid] ❌ Não foi possível resolver: ${fullLid}`);
+        res.json({ resolved: false, phone: null, name: null, lid: fullLid });
+    } catch (error) {
+        console.error('[resolve-lid] Erro:', error);
+        res.status(500).json({ error: error.message, resolved: false });
+    }
+});
+
 // 3.1 Listar Grupos
 app.get('/api/whatsapp/groups', async (req, res) => {
     try {

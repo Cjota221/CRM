@@ -137,6 +137,7 @@ let currentChatId = null;
 let currentClient = null;
 let currentChatData = null; // Dados completos do chat atual
 let currentRemoteJid = null; // CRÍTICO: Rastreia qual remoteJid está sendo exibido para validação
+const _lidPhoneCache = {}; // Cache local: @lid JID → telefone real resolvido
 let allClients = JSON.parse(localStorage.getItem('crm_all_clients') || '[]'); // Restaura clientes salvos localmente
 let allProducts = [];
 let allOrders = [];
@@ -2706,9 +2707,75 @@ function openClientSidebar() {
 }
 
 function findAndRenderClientCRM(chatId) {
-    // chatId vem como "5594984121802@s.whatsapp.net" ou "556282237075@s.whatsapp.net"
+    // chatId vem como "5594984121802@s.whatsapp.net" ou "556282237075@s.whatsapp.net" ou "5162684936293@lid"
     const panel = document.getElementById('crmDataContainer');
     
+    // ====== @lid: Resolver telefone real antes de buscar no CRM ======
+    const isLidJid = chatId && chatId.includes('@lid');
+    if (isLidJid) {
+        // Verificar se já temos o telefone real do chat (enviado pelo servidor)
+        const knownPhone = currentChatData?.phone;
+        if (knownPhone) {
+            console.log(`[CRM Brain] @lid resolvido via chat.phone: ${knownPhone}`);
+            return _findAndRenderClientCRM_withPhone(chatId, knownPhone, panel);
+        }
+        
+        // Verificar cache local de resoluções @lid
+        const cachedPhone = _lidPhoneCache[chatId];
+        if (cachedPhone) {
+            console.log(`[CRM Brain] @lid resolvido via cache local: ${cachedPhone}`);
+            return _findAndRenderClientCRM_withPhone(chatId, cachedPhone, panel);
+        }
+        
+        // Chamar endpoint de resolução
+        panel.innerHTML = `
+            <div class="flex items-center justify-center py-8 text-slate-400">
+                <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-500 mr-2"></div>
+                <span class="text-sm">Resolvendo lead (anúncio)...</span>
+            </div>
+        `;
+        
+        fetch(`${API_BASE}/whatsapp/resolve-lid/${encodeURIComponent(chatId)}`)
+            .then(r => r.json())
+            .then(result => {
+                // Verificar se ainda estamos no mesmo chat
+                if (currentRemoteJid !== chatId) return;
+                
+                if (result.resolved && result.phone) {
+                    console.log(`[CRM Brain] @lid resolvido via API: ${chatId} → ${result.phone}`);
+                    _lidPhoneCache[chatId] = result.phone;
+                    
+                    // Atualizar header com telefone real
+                    const headerNumber = document.getElementById('headerNumber');
+                    if (headerNumber) headerNumber.innerText = formatPhone(result.phone);
+                    
+                    _findAndRenderClientCRM_withPhone(chatId, result.phone, panel);
+                } else {
+                    console.warn(`[CRM Brain] @lid não resolvido: ${chatId}`);
+                    panel.innerHTML = `
+                        <div class="p-4 text-center text-slate-400 text-sm">
+                            <i class="fas fa-ad text-2xl mb-2 text-blue-400"></i>
+                            <p class="font-medium text-slate-500">Lead de Anúncio</p>
+                            <p class="mt-1">Telefone real não disponível ainda.</p>
+                            <p class="mt-1 text-xs">O número será resolvido quando o lead enviar uma nova mensagem.</p>
+                        </div>
+                    `;
+                }
+            })
+            .catch(err => {
+                console.error('[CRM Brain] Erro ao resolver @lid:', err);
+                if (currentRemoteJid !== chatId) return;
+                panel.innerHTML = `
+                    <div class="p-4 text-center text-red-400 text-sm">
+                        <i class="fas fa-exclamation-triangle text-xl mb-2"></i>
+                        <p>Erro ao resolver lead de anúncio</p>
+                    </div>
+                `;
+            });
+        return;
+    }
+    
+    // ====== Fluxo normal (não @lid) ======
     // Usar normalizePhone centralizado (lib-data-layer.js)
     const whatsappPhone = chatId.replace('@s.whatsapp.net', '').replace(/\D/g, '');
     const normalizedPhone = (typeof normalizePhone === 'function') ? normalizePhone(chatId) : whatsappPhone;
@@ -2754,6 +2821,36 @@ function findAndRenderClientCRM(chatId) {
     _fetchAndRenderBrain(chatId, whatsappPhone, normalizedPhone, whatsappName);
 }
 
+/** Helper: Após resolver @lid, executar fluxo CRM Brain com o telefone real */
+function _findAndRenderClientCRM_withPhone(chatId, realPhone, panel) {
+    const whatsappPhone = realPhone.replace(/\D/g, '');
+    const normalizedPhone = (typeof normalizePhone === 'function') ? normalizePhone(realPhone) : whatsappPhone;
+    const whatsappName = currentChatData?.pushName || currentChatData?.name || 'Lead (Anúncio)';
+    
+    console.log(`[CRM Brain] @lid → telefone real: "${whatsappPhone}" normalized: "${normalizedPhone}"`);
+    
+    // Usar SWR normalmente com o telefone real como chave
+    const cacheKey = `lid:${chatId}:${whatsappPhone}`;
+    const cache = (typeof CRMCache !== 'undefined') ? CRMCache.get(cacheKey) : { data: null, status: 'miss' };
+    
+    if (cache.data && cache.status !== 'miss') {
+        console.log(`[CRM Brain] ⚡ @lid Cache ${cache.status}: renderizando`);
+        _renderBrainData(cache.data, whatsappPhone, normalizedPhone, whatsappName);
+        if (cache.status === 'stale') {
+            _revalidateInBackground(cacheKey, whatsappPhone, normalizedPhone, whatsappName, cache.data);
+        }
+        return;
+    }
+    
+    // Cache miss — buscar no servidor
+    panel.innerHTML = `
+        <div class="flex items-center justify-center py-8">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500"></div>
+        </div>
+    `;
+    _fetchAndRenderBrain(cacheKey, whatsappPhone, normalizedPhone, whatsappName);
+}
+
 /** Buscar no servidor e renderizar (usado tanto no miss quanto como fallback) */
 function _fetchAndRenderBrain(chatId, whatsappPhone, normalizedPhone, whatsappName) {
     const _requestChatId = currentRemoteJid; // captura no momento do disparo
@@ -2784,10 +2881,14 @@ function _fetchAndRenderBrain(chatId, whatsappPhone, normalizedPhone, whatsappNa
 /** Renderizar brainData no painel (reutiliza lógica existente) */
 function _renderBrainData(data, whatsappPhone, normalizedPhone, whatsappName) {
     // ★ GUARD: Verificar se o telefone ainda corresponde ao chat ativo
-    const activePhone = currentRemoteJid ? currentRemoteJid.replace('@s.whatsapp.net','').replace('@lid','').replace(/\D/g,'') : '';
-    if (activePhone && whatsappPhone && !activePhone.includes(whatsappPhone.slice(-9)) && !whatsappPhone.includes(activePhone.slice(-9))) {
-        console.warn('[CRM Brain] ⚠️ Telefone diverge do chat ativo, abortando render', { whatsappPhone, activePhone });
-        return;
+    // Para @lid, não comparar dígitos (são IDs internos, não telefones)
+    const isLidActive = currentRemoteJid && currentRemoteJid.includes('@lid');
+    if (!isLidActive) {
+        const activePhone = currentRemoteJid ? currentRemoteJid.replace('@s.whatsapp.net','').replace(/\D/g,'') : '';
+        if (activePhone && whatsappPhone && !activePhone.includes(whatsappPhone.slice(-9)) && !whatsappPhone.includes(activePhone.slice(-9))) {
+            console.warn('[CRM Brain] ⚠️ Telefone diverge do chat ativo, abortando render', { whatsappPhone, activePhone });
+            return;
+        }
     }
     if (!data.found) {
         const localResult = tryLocalClientMatch(normalizedPhone);
@@ -4085,7 +4186,10 @@ async function executeQuickReplyBlocks(qr) {
     if (!currentChatId || !currentChatData) return alert('Selecione um chat primeiro');
     
     const remoteJid = currentChatData?.remoteJid || currentChatId;
-    const phone = remoteJid.replace('@s.whatsapp.net', '').replace('@lid', '');
+    const isLidQR = remoteJid && remoteJid.includes('@lid');
+    const phone = isLidQR 
+        ? (currentChatData?.phone || _lidPhoneCache[remoteJid] || '')
+        : remoteJid.replace('@s.whatsapp.net', '');
     const blocks = qr.blocks || [];
     
     // Variáveis de substituição
