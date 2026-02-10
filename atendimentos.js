@@ -995,10 +995,35 @@ if (quickReplies.length === 0) {
     scheduleCloudSave();
 }
 
+// Helper: Carregar clients do IndexedDB (mesma DB crm_storage_v1 usada por script.js / lib-auto-sync.js)
+function _loadClientsFromIDB() {
+    return new Promise((resolve) => {
+        try {
+            const req = indexedDB.open('crm_storage_v1', 1);
+            req.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains('data')) {
+                    db.createObjectStore('data', { keyPath: 'key' });
+                }
+            };
+            req.onsuccess = (e) => {
+                try {
+                    const db = e.target.result;
+                    const tx = db.transaction('data', 'readonly');
+                    const getReq = tx.objectStore('data').get('crm_clients');
+                    getReq.onsuccess = () => resolve(getReq.result?.value || null);
+                    getReq.onerror = () => resolve(null);
+                } catch { resolve(null); }
+            };
+            req.onerror = () => resolve(null);
+        } catch { resolve(null); }
+    });
+}
+
 // Inicialização
 document.addEventListener('DOMContentLoaded', async () => {
     // 0. Escutar evento de dados carregados do Supabase para atualizar variáveis
-    window.addEventListener('crm-cloud-loaded', () => {
+    window.addEventListener('crm-cloud-loaded', async () => {
         console.log('[Atendimento] Recarregando dados do Supabase...');
         allTags = JSON.parse(localStorage.getItem('crm_tags') || '[]');
         chatTags = JSON.parse(localStorage.getItem('crm_chat_tags') || '{}');
@@ -1006,9 +1031,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         snoozedChats = JSON.parse(localStorage.getItem('crm_snoozed') || '{}');
         clientNotes = JSON.parse(localStorage.getItem('crm_client_notes') || '{}');
         scheduledMessages = JSON.parse(localStorage.getItem('crm_scheduled') || '[]');
-        // Recarregar clientes do localStorage imediatamente (allClients em memória)
+        // Recarregar clientes — tenta localStorage, senão IndexedDB (crm_storage_v1)
         try {
-            const freshClients = JSON.parse(localStorage.getItem('crm_clients') || '[]');
+            let freshClients = JSON.parse(localStorage.getItem('crm_clients') || '[]');
+            // Se localStorage estiver vazio ou com versão mínima, tentar IndexedDB
+            if (freshClients.length === 0 || (freshClients.length > 0 && !freshClients[0].products)) {
+                try {
+                    const idbClients = await _loadClientsFromIDB();
+                    if (idbClients && idbClients.length > freshClients.length) {
+                        freshClients = idbClients;
+                        console.log(`[Atendimento] Clientes carregados do IndexedDB: ${freshClients.length}`);
+                    }
+                } catch {}
+            }
             if (freshClients.length > 0) {
                 allClients = freshClients;
                 console.log(`[Atendimento] allClients atualizado: ${allClients.length} clientes`);

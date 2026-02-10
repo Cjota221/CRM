@@ -416,6 +416,20 @@ const Storage = {
         return this.load(this.KEYS.CLIENTS, []);
     },
 
+    // Carrega clients com fallback IndexedDB (chamado uma vez na inicialização)
+    async getClientsWithFallback() {
+        const local = this.load(this.KEYS.CLIENTS, []);
+        // Se localStorage vazio ou versão mínima (sem products), tentar IDB
+        if (local.length === 0 || (local.length > 0 && !local[0].products)) {
+            const idb = await this._loadFromIDB(this.KEYS.CLIENTS);
+            if (idb && idb.length > 0 && idb.length >= local.length) {
+                console.log(`[Storage] Clientes enriquecidos do IndexedDB: ${idb.length}`);
+                return idb;
+            }
+        }
+        return local;
+    },
+
     saveClients(clients) {
         // Compactar antes de salvar para minimizar uso de espaço
         const compacted = this._compactClients(clients);
@@ -3636,7 +3650,17 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Renderizar dados existentes
     renderAll();
-    
+
+    // Hidratar clientes do IndexedDB se localStorage tem versão mínima
+    Storage.getClientsWithFallback().then(fullClients => {
+        const current = Storage.getClients();
+        if (fullClients.length > current.length || (fullClients.length > 0 && fullClients[0].products && (!current[0] || !current[0].products))) {
+            Storage.save(Storage.KEYS.CLIENTS, fullClients); // pode falhar se quota, mas dados já estão em memória
+            renderAll(); // re-renderizar com dados completos
+            console.log('[CRM] Clientes enriquecidos do IndexedDB aplicados');
+        }
+    }).catch(() => {});
+
     // Inicializar importador de legado
     initLegacyImporter();
     
