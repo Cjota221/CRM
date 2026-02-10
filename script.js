@@ -699,6 +699,11 @@ REGRAS IMPORTANTES:
 • Mensagens devem ter no máximo 300 caracteres para melhor leitura no WhatsApp.`;
 
 async function callAI(apiKey, prompt, maxRetries = 3) {
+    if (!apiKey || apiKey.trim().length < 10) {
+        showToast('⚠️ API Key do Groq não configurada. Vá em Configurações.', 'error', 5000);
+        throw new Error('API Key do Groq não configurada. Vá em Configurações.');
+    }
+
     let lastError = null;
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -719,6 +724,13 @@ async function callAI(apiKey, prompt, maxRetries = 3) {
                     max_tokens: 2000
                 })
             });
+
+            // 401 = chave inválida/expirada — não faz sentido retries
+            if (response.status === 401) {
+                console.error('[Groq] 🔑 API Key inválida ou expirada (401)');
+                showToast('🔑 API Key do Groq inválida ou expirada. Gere uma nova em console.groq.com e atualize em Configurações.', 'error', 8000);
+                throw new Error('API Key do Groq inválida ou expirada. Gere uma nova em console.groq.com');
+            }
 
             if (response.status === 429) {
                 const waitTime = 10;
