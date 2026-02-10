@@ -29,7 +29,7 @@ class ChatLoadingSystem {
         
         // Cache de mensagens em memória (hot-cache sobre o IndexedDB)
         this._messagesCache = new Map(); // remoteJid -> { messages, timestamp, hash }
-        this._MSG_CACHE_TTL = 60000; // 60s (IDB é persistente, memory cache é atalho)
+        this._MSG_CACHE_TTL = 300000; // 5 min (msgs novas via appendRealtimeMessage atualizam cache incrementalmente)
     }
     
     /**

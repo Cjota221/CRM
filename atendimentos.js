@@ -449,14 +449,13 @@ function startChatListPolling(intervalMs) {
         // Evitar refresh se acabou de fazer um
         if (now - _lastChatListRefresh < 8000) return;
         
-        // Se Socket.IO conectado, refresh leve a cada 15s
-        // Se desconectado, refresh a cada ciclo
+        // Socket desconectado: refresh imediato
         if (!socket || !socket.connected) {
             console.log('[POLLING] Socket desconectado — refresh da lista...');
             refreshChatListBackground();
         } else {
-            // Com socket ativo, refresh leve a cada 30s como backup
-            if (now - _lastChatListRefresh > 30000) {
+            // Com socket ativo, refresh leve a cada 60s (apenas backup, msgs novas já atualizam via new-message)
+            if (now - _lastChatListRefresh > 60000) {
                 refreshChatListBackground();
             }
         }
@@ -1978,22 +1977,17 @@ async function openChat(chat) {
     }
     _previousChatJid = remoteJidParam;
     
-    // Fallback: polling de mensagens do chat ativo (10s se desconectado, 20s se conectado)
+    // Fallback: polling APENAS quando Socket.IO está desconectado (intervalo 30s)
+    // Com socket conectado, confiamos 100% no push real-time (new-message event)
     if (chatRefreshInterval) clearInterval(chatRefreshInterval);
     chatRefreshInterval = setInterval(() => {
         if (!currentRemoteJid) return;
         if (!socket || !socket.connected) {
-            // Socket desconectado: polling agressivo a cada 10s
+            // Socket desconectado: polling fallback a cada 30s
             loadMessages(currentRemoteJid, true);
-        } else {
-            // Socket conectado: polling de segurança a cada 20s (pega msgs perdidas)
-            // Só faz se última mensagem no DOM tem mais de 15s
-            const lastMsgTime = getLastDisplayedMessageTime();
-            if (lastMsgTime && (Date.now() - lastMsgTime) > 15000) {
-                loadMessages(currentRemoteJid, true);
-            }
         }
-    }, 10000);
+        // Socket conectado: NÃO fazer polling — appendRealtimeMessage() já cuida
+    }, 30000);
 }
 
 // Renderizar info do grupo no painel lateral
@@ -2161,7 +2155,112 @@ async function fetchAndRenderMessages(remoteJid, isUpdate = false) {
 }
 
 /**
+ * Construir elemento DOM de uma mensagem individual (reutilizado por full render e incremental)
+ */
+function buildMessageBubble(msg) {
+    const isMe = msg.key?.fromMe;
+    let content = '';
+    const m = msg.message;
+    const msgId = msg.key?.id || `ts_${msg.messageTimestamp}`;
+
+    if (m?.conversation) {
+        content = formatWhatsAppText(m.conversation);
+    } else if (m?.extendedTextMessage?.text) {
+        content = formatWhatsAppText(m.extendedTextMessage.text);
+    } else if (m?.imageMessage) {
+        const caption = m.imageMessage.caption || '';
+        const captionHtml = caption ? '<p class="mt-1 text-sm">' + formatWhatsAppText(caption) + '</p>' : '';
+        const imgUrl = m.imageMessage.viewableUrl || m.imageMessage.url || '';
+        if (imgUrl) {
+            content = `<div class="image-message-container">
+                <img src="${imgUrl}" alt="Imagem" class="rounded-lg max-w-full max-h-[300px] cursor-pointer object-cover" 
+                     onclick="window.open('${imgUrl}', '_blank')" 
+                     onerror="this.outerHTML='<div class=\\'flex items-center gap-2\\'><span class=\\'text-lg\\'>📷</span> <span>Imagem (indisponível)</span></div>'" 
+                     loading="lazy" />
+                ${captionHtml}
+            </div>`;
+        } else {
+            content = `<div class="flex items-center gap-2"><span class="text-lg">📷</span> <span>Imagem${caption ? '<br>' + formatWhatsAppText(caption) : ''}</span></div>`;
+        }
+    } else if (m?.videoMessage) {
+        const caption = m.videoMessage.caption || '';
+        const captionHtml = caption ? '<br>' + formatWhatsAppText(caption) : '';
+        content = `<div class="flex items-center gap-2"><span class="text-lg">🎬</span> <span>Vídeo${captionHtml}</span></div>`;
+    } else if (m?.audioMessage) {
+        const audioUrl = m.audioMessage.playableUrl || m.audioMessage.url || '';
+        const duration = m.audioMessage.seconds || 0;
+        const audioId = `audio-${msgId}`;
+        if (audioUrl) {
+            const minutes = Math.floor(duration / 60);
+            const seconds = Math.floor(duration % 60);
+            const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            content = `
+                <div class="audio-player-whatsapp flex items-center gap-2 p-2 rounded-lg bg-white/50 min-w-[200px]" data-audio-id="${audioId}">
+                    <button onclick="toggleAudioPlay('${audioId}', '${audioUrl}')" class="flex-shrink-0 w-9 h-9 rounded-full bg-emerald-500 hover:bg-emerald-600 flex items-center justify-center text-white transition shadow-sm">
+                        <i data-lucide="play" class="w-4 h-4 play-icon"></i>
+                        <i data-lucide="pause" class="w-4 h-4 pause-icon hidden"></i>
+                    </button>
+                    <div class="flex-1 flex flex-col gap-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                            <div class="flex-1 h-1 bg-slate-200 rounded-full overflow-hidden cursor-pointer audio-progress-bar" onclick="seekAudio(event, '${audioId}')">
+                                <div class="h-full bg-emerald-500 audio-progress" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2 text-xs text-slate-500">
+                            <span class="audio-time">0:00</span>
+                            <span>/</span>
+                            <span>${timeStr}</span>
+                            <button onclick="changePlaybackSpeed('${audioId}')" class="ml-auto text-[10px] font-medium text-emerald-600 hover:text-emerald-700 audio-speed">1x</button>
+                        </div>
+                    </div>
+                    <audio class="hidden" id="${audioId}" preload="metadata">
+                        <source src="${audioUrl}" type="audio/ogg; codecs=opus">
+                        <source src="${audioUrl}" type="audio/mpeg">
+                        <source src="${audioUrl}" type="audio/mp4">
+                    </audio>
+                </div>
+            `;
+        } else {
+            content = `<div class="flex items-center gap-2"><span class="text-lg">🎵</span> <span>Áudio (${duration}s)</span></div>`;
+        }
+    } else if (m?.documentMessage) {
+        const fileName = m.documentMessage.fileName || 'Documento';
+        const docUrl = m.documentMessage.downloadUrl || m.documentMessage.url || '';
+        if (docUrl) {
+            content = `<div class="flex items-center gap-2 cursor-pointer hover:opacity-80" onclick="window.open('${docUrl}', '_blank')">
+                <span class="text-lg">📄</span>
+                <span class="underline text-blue-600">${fileName}</span>
+                <span class="text-xs text-slate-400">⬇</span>
+            </div>`;
+        } else {
+            content = `<div class="flex items-center gap-2"><span class="text-lg">📄</span> <span>${fileName}</span></div>`;
+        }
+    } else if (m?.stickerMessage) {
+        content = `<div class="flex items-center gap-2"><span class="text-lg">✨</span> <span>Figurinha</span></div>`;
+    } else if (m?.contactMessage) {
+        const name = m.contactMessage.displayName || 'Contato';
+        content = `<div class="flex items-center gap-2"><span class="text-lg">👤</span> <span>${name}</span></div>`;
+    } else if (m?.locationMessage) {
+        content = `<div class="flex items-center gap-2"><span class="text-lg">📍</span> <span>Localização</span></div>`;
+    } else {
+        content = '<span class="text-slate-400 italic">Mensagem não suportada</span>';
+    }
+
+    const div = document.createElement('div');
+    div.className = `p-3 max-w-[70%] text-sm shadow-sm rounded-lg ${isMe ? 'msg-out' : 'msg-in'}`;
+    div.innerHTML = content;
+
+    const wrap = document.createElement('div');
+    wrap.className = `w-full flex mb-2 ${isMe ? 'justify-end' : 'justify-start'}`;
+    wrap.setAttribute('data-msg-id', msgId);
+    wrap.appendChild(div);
+    return wrap;
+}
+
+/**
  * Renderizar mensagens a partir de um array de dados (usado por cache e fetch)
+ * Quando isUpdate=true e já existem msgs no DOM, faz APPEND incremental
+ * em vez de destruir e recriar tudo (evita flicker, perda de scroll & áudio).
  */
 function renderMessagesFromData(remoteJid, messages, isUpdate) {
     const container = document.getElementById('messagesContainer');
@@ -2174,114 +2273,46 @@ function renderMessagesFromData(remoteJid, messages, isUpdate) {
         return;
     }
     
-    // Pular re-render se mensagens não mudaram
+    // Hash para detectar se algo mudou
     const newHash = messages.map(m => m.key?.id || m.messageTimestamp).join(',');
-    if (isUpdate && window._lastMsgHash === newHash) return;
+    if (isUpdate && window._lastMsgHash === newHash) return; // Nada mudou
+
+    // Ordenar por timestamp
+    const sortedMsgs = messages.sort((a, b) => (a.messageTimestamp || 0) - (b.messageTimestamp || 0));
+
+    // ── INCREMENTAL UPDATE: se isUpdate e já tem msgs no DOM, apenas append novas ──
+    if (isUpdate && container.children.length > 0 && container.querySelector('[data-msg-id]')) {
+        const existingIds = new Set();
+        container.querySelectorAll('[data-msg-id]').forEach(el => existingIds.add(el.getAttribute('data-msg-id')));
+        
+        let appended = 0;
+        sortedMsgs.forEach(msg => {
+            const msgId = msg.key?.id || `ts_${msg.messageTimestamp}`;
+            if (existingIds.has(msgId)) return; // Já no DOM
+            const bubble = buildMessageBubble(msg);
+            if (bubble) {
+                container.appendChild(bubble);
+                appended++;
+            }
+        });
+        
+        if (appended > 0) {
+            container.scrollTop = container.scrollHeight;
+        }
+        window._lastMsgHash = newHash;
+        return;
+    }
+
+    // ── FULL RENDER: primeira carga ou troca de chat ──
     window._lastMsgHash = newHash;
     
     // Pausar áudios e limpar
     if (typeof pauseAllAudios === 'function') pauseAllAudios();
     container.innerHTML = '';
     
-    // Ordenar por timestamp
-    const sortedMsgs = messages.sort((a, b) => (a.messageTimestamp || 0) - (b.messageTimestamp || 0));
-    
     sortedMsgs.forEach((msg) => {
-        const isMe = msg.key?.fromMe;
-        let content = '';
-        const m = msg.message;
-        
-        if (m?.conversation) {
-            content = formatWhatsAppText(m.conversation);
-        } else if (m?.extendedTextMessage?.text) {
-            content = formatWhatsAppText(m.extendedTextMessage.text);
-        } else if (m?.imageMessage) {
-            const caption = m.imageMessage.caption || '';
-            const captionHtml = caption ? '<p class="mt-1 text-sm">' + formatWhatsAppText(caption) + '</p>' : '';
-            const imgUrl = m.imageMessage.viewableUrl || m.imageMessage.url || '';
-            if (imgUrl) {
-                content = `<div class="image-message-container">
-                    <img src="${imgUrl}" alt="Imagem" class="rounded-lg max-w-full max-h-[300px] cursor-pointer object-cover" 
-                         onclick="window.open('${imgUrl}', '_blank')" 
-                         onerror="this.outerHTML='<div class=\'flex items-center gap-2\'><span class=\'text-lg\'>📷</span> <span>Imagem (indisponível)</span></div>'" 
-                         loading="lazy" />
-                    ${captionHtml}
-                </div>`;
-            } else {
-                content = `<div class="flex items-center gap-2"><span class="text-lg">📷</span> <span>Imagem${caption ? '<br>' + formatWhatsAppText(caption) : ''}</span></div>`;
-            }
-        } else if (m?.videoMessage) {
-            const caption = m.videoMessage.caption || '';
-            const captionHtml = caption ? '<br>' + formatWhatsAppText(caption) : '';
-            content = `<div class="flex items-center gap-2"><span class="text-lg">🎬</span> <span>Vídeo${captionHtml}</span></div>`;
-        } else if (m?.audioMessage) {
-            const audioUrl = m.audioMessage.playableUrl || m.audioMessage.url || '';
-            const duration = m.audioMessage.seconds || 0;
-            const audioId = `audio-${msg.key.id}`;
-            if (audioUrl) {
-                const minutes = Math.floor(duration / 60);
-                const seconds = Math.floor(duration % 60);
-                const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-                content = `
-                    <div class="audio-player-whatsapp flex items-center gap-2 p-2 rounded-lg bg-white/50 min-w-[200px]" data-audio-id="${audioId}">
-                        <button onclick="toggleAudioPlay('${audioId}', '${audioUrl}')" class="flex-shrink-0 w-9 h-9 rounded-full bg-emerald-500 hover:bg-emerald-600 flex items-center justify-center text-white transition shadow-sm">
-                            <i data-lucide="play" class="w-4 h-4 play-icon"></i>
-                            <i data-lucide="pause" class="w-4 h-4 pause-icon hidden"></i>
-                        </button>
-                        <div class="flex-1 flex flex-col gap-1 min-w-0">
-                            <div class="flex items-center gap-2">
-                                <div class="flex-1 h-1 bg-slate-200 rounded-full overflow-hidden cursor-pointer audio-progress-bar" onclick="seekAudio(event, '${audioId}')">
-                                    <div class="h-full bg-emerald-500 audio-progress" style="width: 0%"></div>
-                                </div>
-                            </div>
-                            <div class="flex items-center gap-2 text-xs text-slate-500">
-                                <span class="audio-time">0:00</span>
-                                <span>/</span>
-                                <span>${timeStr}</span>
-                                <button onclick="changePlaybackSpeed('${audioId}')" class="ml-auto text-[10px] font-medium text-emerald-600 hover:text-emerald-700 audio-speed">1x</button>
-                            </div>
-                        </div>
-                        <audio class="hidden" id="${audioId}" preload="metadata">
-                            <source src="${audioUrl}" type="audio/ogg; codecs=opus">
-                            <source src="${audioUrl}" type="audio/mpeg">
-                            <source src="${audioUrl}" type="audio/mp4">
-                        </audio>
-                    </div>
-                `;
-            } else {
-                content = `<div class="flex items-center gap-2"><span class="text-lg">🎵</span> <span>Áudio (${duration}s)</span></div>`;
-            }
-        } else if (m?.documentMessage) {
-            const fileName = m.documentMessage.fileName || 'Documento';
-            const docUrl = m.documentMessage.downloadUrl || m.documentMessage.url || '';
-            if (docUrl) {
-                content = `<div class="flex items-center gap-2 cursor-pointer hover:opacity-80" onclick="window.open('${docUrl}', '_blank')">
-                    <span class="text-lg">📄</span>
-                    <span class="underline text-blue-600">${fileName}</span>
-                    <span class="text-xs text-slate-400">⬇</span>
-                </div>`;
-            } else {
-                content = `<div class="flex items-center gap-2"><span class="text-lg">📄</span> <span>${fileName}</span></div>`;
-            }
-        } else if (m?.stickerMessage) {
-            content = `<div class="flex items-center gap-2"><span class="text-lg">✨</span> <span>Figurinha</span></div>`;
-        } else if (m?.contactMessage) {
-            const name = m.contactMessage.displayName || 'Contato';
-            content = `<div class="flex items-center gap-2"><span class="text-lg">👤</span> <span>${name}</span></div>`;
-        } else if (m?.locationMessage) {
-            content = `<div class="flex items-center gap-2"><span class="text-lg">📍</span> <span>Localização</span></div>`;
-        } else {
-            content = '<span class="text-slate-400 italic">Mensagem não suportada</span>';
-        }
-        
-        const div = document.createElement('div');
-        div.className = `p-3 max-w-[70%] text-sm shadow-sm rounded-lg ${isMe ? 'msg-out' : 'msg-in'}`;
-        div.innerHTML = content;
-        
-        const wrap = document.createElement('div');
-        wrap.className = `w-full flex mb-2 ${isMe ? 'justify-end' : 'justify-start'}`;
-        wrap.appendChild(div);
-        container.appendChild(wrap);
+        const bubble = buildMessageBubble(msg);
+        if (bubble) container.appendChild(bubble);
     });
     
     container.scrollTop = container.scrollHeight;

@@ -1463,9 +1463,20 @@ function generateMockGroups() {
 }
 
 // 3.2 Listar Chats + Grupos combinados
+// ── Cache server-side (evita bombardear Evolution API a cada 15s) ──
+let _allChatsCache = null;
+let _allChatsCacheTime = 0;
+const ALL_CHATS_CACHE_TTL = 30000; // 30 segundos
+
 app.get('/api/whatsapp/all-chats', async (req, res) => {
     try {
         const limit = parseInt(req.query.limit) || 200;
+        const noCache = req.query.nocache === '1';
+
+        // Retornar cache se fresco (< 30s) e não forçado
+        if (!noCache && _allChatsCache && (Date.now() - _allChatsCacheTime < ALL_CHATS_CACHE_TTL)) {
+            return res.json(_allChatsCache);
+        }
         
         // Buscar chats, contatos e grupos em paralelo
         const [chatsResponse, contactsResponse, groupsResponse] = await Promise.all([
@@ -1502,19 +1513,10 @@ app.get('/api/whatsapp/all-chats', async (req, res) => {
             groupsData = await groupsResponse?.json() || { data: [] };
         }
         
-        console.log('=== DEBUG BACKEND ===');
-        console.log('Total chats recebidos:', chatsData?.data?.length || chatsData?.length || 0);
-        console.log('Total grupos recebidos:', groupsData?.data?.length || groupsData?.length || 0);
-        if (chatsData?.data?.[0]) {
-            console.log('Exemplo de chat (data[0]):', JSON.stringify(chatsData.data[0], null, 2));
-        } else if (chatsData?.[0]) {
-            console.log('Exemplo de chat ([0]):', JSON.stringify(chatsData[0], null, 2));
-        }
-        if (groupsData?.data?.[0]) {
-            console.log('Exemplo de grupo (data[0]):', JSON.stringify(groupsData.data[0], null, 2));
-        } else if (groupsData?.[0]) {
-            console.log('Exemplo de grupo ([0]):', JSON.stringify(groupsData[0], null, 2));
-        }
+        // Debug leve (sem JSON.stringify pesado)
+        const chatCount = chatsData?.data?.length || chatsData?.length || 0;
+        const groupCount = groupsData?.data?.length || groupsData?.length || 0;
+        console.log(`[all-chats] ${chatCount} chats, ${groupCount} grupos da Evolution API`);
         
         const chats = Array.isArray(chatsData) ? chatsData : (chatsData.data || []);
         const contacts = Array.isArray(contactsData) ? contactsData : (contactsData.data || []);
@@ -1619,6 +1621,10 @@ app.get('/api/whatsapp/all-chats', async (req, res) => {
         
         console.log(`[RESULTADO FINAL] ${enrichedChats.length} chats no total (${groupsAdded} grupos adicionados)`);
         
+        // Salvar no cache server-side
+        _allChatsCache = enrichedChats;
+        _allChatsCacheTime = Date.now();
+
         res.json(enrichedChats);
     } catch (error) {
         console.error('[All Chats] Erro:', error);
@@ -1698,46 +1704,8 @@ app.post('/api/whatsapp/messages/fetch', async (req, res) => {
             console.log(`[API] Tentativa 2 (remoteJid): mensagens encontradas = ${data?.messages?.length || data?.data?.length || 0}`);
         }
         
-        // Se ainda não encontrar, tentar terceira forma (sem where)
-        // APENAS para @s.whatsapp.net — @lid exige match exato, não faz sentido buscar tudo
-        const isLidJid = String(remoteJid).includes('@lid');
-        if (!data?.messages?.length && !data?.data?.length && !isLidJid) {
-            console.log(`[API] Tentativa 3: buscando mensagens recentes e filtrando...`);
-            response = await fetch(url, {
-                method: 'POST',
-                headers: evolutionHeaders,
-                body: JSON.stringify({
-                    options: { limit: 50, order: "DESC" } 
-                })
-            });
-            data = await response.json();
-            
-            // Filtrar manualmente com normalização de telefone
-            const requestPhoneNormalized = normalizePhone(remoteJid);
-            const isGroupRequest = String(remoteJid).includes('@g.us');
-            
-            if (data?.messages && Array.isArray(data.messages)) {
-                data.messages = data.messages.filter(msg => {
-                    const msgRemoteJid = msg.key?.remoteJid || msg.remoteJid || '';
-                    
-                    // Se for grupo, comparar JID completo
-                    if (isGroupRequest) {
-                        return msgRemoteJid === remoteJid || 
-                               msgRemoteJid.replace(/@g\.us$/, '') === remoteJid.replace(/@g\.us$/, '');
-                    }
-                    
-                    // Para contatos, comparar JID exato primeiro
-                    if (msgRemoteJid === remoteJid) return true;
-                    
-                    // Fallback: normalização de telefone
-                    const msgPhoneNormalized = normalizePhone(msgRemoteJid);
-                    return msgPhoneNormalized === requestPhoneNormalized ||
-                           (msgPhoneNormalized.length >= 9 && requestPhoneNormalized.length >= 9 &&
-                            msgPhoneNormalized.slice(-9) === requestPhoneNormalized.slice(-9));
-                });
-            }
-            console.log(`[API] Tentativa 3 (todas + filtro): mensagens encontradas = ${data?.messages?.length || 0}`);
-        }
+        // Tentativa 3 removida — buscar TUDO sem where era anti-pattern.
+        // Se nenhum resultado após 2 tentativas, retornar vazio.
         
         // ====== FILTRAR SEMPRE: Garantir que só retornamos mensagens do remoteJid solicitado ======
         const finalMessages = data?.messages || data?.data || [];
@@ -2152,6 +2120,9 @@ app.post('/api/whatsapp/send-message', async (req, res) => {
             timestamp: Math.floor(Date.now() / 1000),
             source: req.body.source || 'crm-dashboard'
         };
+        // Registrar ID na fila de msgs recentes para dedup no webhook
+        _recentSentIds.add(sentMsg.id);
+        setTimeout(() => _recentSentIds.delete(sentMsg.id), 30000); // Limpar após 30s
         io.emit('new-message', sentMsg);
         const jid = sentMsg.remoteJid;
         io.to('chat:' + jid).emit('chat-message', sentMsg);
@@ -2939,6 +2910,8 @@ app.post('/api/sync-client-name', async (req, res) => {
 
 // Armazenamento de mensagens em tempo real (em memória)
 let realtimeMessages = [];
+// Dedup: IDs de mensagens enviadas pelo CRM (evita duplicação no webhook)
+const _recentSentIds = new Set();
 let chatModes = loadJsonFile(CHAT_MODES_FILE, {}); // Persistente: { 'jid': 'ia' | 'humano' }
 console.log(`[ChatModes] ${Object.keys(chatModes).length} modos restaurados do disco`);
 
@@ -2965,6 +2938,12 @@ app.post('/api/evolution/webhook', (req, res) => {
                     const jid = key.remoteJid || msg.remoteJid || '';
                     const fromMe = key.fromMe || false;
                     const pushName = msg.pushName || '';
+
+                    // Dedup: se esta msg já foi emitida pelo send-message, pular
+                    if (key.id && _recentSentIds.has(key.id)) {
+                        console.log(`[WEBHOOK] Skip duplicada (já emitida via send): ${key.id}`);
+                        return; // pula esta iteração do forEach
+                    }
                     
                     // Extrair texto da mensagem + preservar URLs de mídia
                     let text = '';
@@ -3019,6 +2998,8 @@ app.post('/api/evolution/webhook', (req, res) => {
                     io.emit('new-message', realtimeMsg);
                     // Também emitir para a sala específica do chat
                     io.to(`chat:${jid}`).emit('chat-message', realtimeMsg);
+                    // Invalidar cache de all-chats (nova msg altera preview/ordenação)
+                    _allChatsCacheTime = 0;
                     
                     console.log(`[MSG ${fromMe ? 'ENVIADA' : 'RECEBIDA'}] ${pushName || jid}: ${text.substring(0, 80)}`);                    
                 });
@@ -4238,26 +4219,29 @@ async function deltaSync(sinceTimestamp) {
         const messages = Array.isArray(data) ? data : (data?.messages?.records || data?.messages || []);
         let synced = 0;
         
+        // Set criado UMA VEZ fora do loop (era O(n²) antes!)
+        const existingIds = new Set(realtimeMessages.map(m => m.id));
+
         messages.forEach(msg => {
             const key = msg.key || {};
             const jid = key.remoteJid || '';
-            const existingIds = new Set(realtimeMessages.map(m => m.id));
-            if (!existingIds.has(key.id)) {
-                const realtimeMsg = {
-                    id: key.id || `delta_${Date.now()}_${synced}`,
-                    jid,
-                    fromMe: key.fromMe || false,
-                    pushName: msg.pushName || '',
-                    text: msg.message?.conversation || msg.message?.extendedTextMessage?.text || '',
-                    timestamp: msg.messageTimestamp || Math.floor(Date.now() / 1000),
-                    receivedAt: new Date().toISOString(),
-                    isGroup: jid.includes('@g.us'),
-                    raw: msg
-                };
-                realtimeMessages.unshift(realtimeMsg);
-                io.emit('new-message', realtimeMsg);
-                synced++;
-            }
+            if (!key.id || existingIds.has(key.id)) return;
+            const realtimeMsg = {
+                id: key.id || `delta_${Date.now()}_${synced}`,
+                jid,
+                fromMe: key.fromMe || false,
+                pushName: msg.pushName || '',
+                text: msg.message?.conversation || msg.message?.extendedTextMessage?.text || '',
+                timestamp: msg.messageTimestamp || Math.floor(Date.now() / 1000),
+                receivedAt: new Date().toISOString(),
+                isGroup: jid.includes('@g.us'),
+                raw: msg
+            };
+            realtimeMessages.unshift(realtimeMsg);
+            existingIds.add(key.id); // Não emitir duplicatas dentro do mesmo batch
+            io.emit('new-message', realtimeMsg);
+            io.to(`chat:${jid}`).emit('chat-message', realtimeMsg);
+            synced++;
         });
         
         if (realtimeMessages.length > 500) realtimeMessages = realtimeMessages.slice(0, 500);
