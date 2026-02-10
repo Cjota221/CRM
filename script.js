@@ -257,8 +257,10 @@ const Storage = {
                 compact.orderIds = compact.orderIds.slice(-50);
             }
             // Remover campos vazios/nulos para economizar bytes
+            // PRESERVAR campos essenciais: id, name, phone (nunca deletar)
+            const protectedKeys = new Set(['id', 'name', 'nome', 'phone', 'telefone']);
             for (const key of Object.keys(compact)) {
-                if (compact[key] === null || compact[key] === '' || compact[key] === undefined) {
+                if (!protectedKeys.has(key) && (compact[key] === null || compact[key] === '' || compact[key] === undefined)) {
                     delete compact[key];
                 }
             }
@@ -2277,9 +2279,9 @@ function renderClients() {
         const matchesStatus = statusFilter === 'todos' || status === statusFilter;
         const matchesTag = tagFilter === 'todos' || tag === tagFilter;
         const matchesSearch = !searchTerm ||
-            (client.name && client.name.toLowerCase().includes(searchTerm)) ||
+            ((client.name || client.nome || '').toLowerCase().includes(searchTerm)) ||
             (client.email && client.email.toLowerCase().includes(searchTerm)) ||
-            (client.phone && client.phone.includes(searchTerm));
+            ((client.phone || client.telefone || '').includes(searchTerm));
 
         return matchesStatus && matchesTag && matchesSearch;
     });
@@ -2306,7 +2308,7 @@ function renderClients() {
             break;
         default:
             // Ordenação padrão: por nome
-            filteredClients.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+            filteredClients.sort((a, b) => (a.name || a.nome || '').localeCompare(b.name || b.nome || ''));
     }
 
     clientCountDisplay.textContent = `Exibindo ${filteredClients.length} de ${clients.length} clientes`;
@@ -2318,14 +2320,18 @@ function renderClients() {
         const card = document.createElement('div');
         card.className = 'bg-white rounded-lg shadow-md p-5 flex flex-col justify-between hover:shadow-lg transition-shadow';
 
+        // Resolver nome: 'name' (Supabase/processado) OU 'nome' (FacilZap alias)
+        const clientName = client.name || client.nome || 'Cliente sem nome';
+        const clientPhone = client.phone || client.telefone || client.celular || 'Sem telefone';
+
         card.innerHTML = `
             <div>
                 <div class="flex justify-between items-start mb-2">
-                    <h3 class="font-bold text-gray-800 text-lg truncate" title="${escapeHtml(client.name)}">${escapeHtml(client.name || 'Cliente sem nome')}</h3>
+                    <h3 class="font-bold text-gray-800 text-lg truncate" title="${escapeHtml(clientName)}">${escapeHtml(clientName)}</h3>
                     <span class="status-badge ${status.class} whitespace-nowrap ml-2">${status.text}</span>
                 </div>
                 <p class="text-sm text-gray-500 mb-1 truncate">${escapeHtml(client.email || 'Sem e-mail')}</p>
-                <p class="text-sm text-gray-500 mb-4 truncate">${escapeHtml(client.phone || 'Sem telefone')}</p>
+                <p class="text-sm text-gray-500 mb-4 truncate">${escapeHtml(clientPhone)}</p>
                 <div class="text-sm space-y-2 mb-4">
                     <p><i class="fas fa-shopping-basket fa-fw text-gray-400 mr-2"></i>Pedidos: <span class="font-semibold">${client.orderCount || 0}</span></p>
                     <p><i class="fas fa-dollar-sign fa-fw text-gray-400 mr-2"></i>Total Gasto: <span class="font-semibold">${formatCurrency(client.totalSpent)}</span></p>
@@ -2506,7 +2512,7 @@ function viewClientDetails(clientId) {
         `;
     }
 
-    detailsModalTitle.textContent = `Detalhes de ${escapeHtml(client.name)}`;
+    detailsModalTitle.textContent = `Detalhes de ${escapeHtml(client.name || client.nome || 'Cliente')}`;
     detailsModalContent.innerHTML = `
         <!-- Ações Rápidas -->
         <div class="flex gap-2 mb-4">
@@ -2616,9 +2622,9 @@ function editClient(clientId) {
     }
 
     document.getElementById('client-id').value = client.id;
-    document.getElementById('name').value = client.name || '';
+    document.getElementById('name').value = client.name || client.nome || '';
     document.getElementById('email').value = client.email || '';
-    document.getElementById('phone').value = client.phone || '';
+    document.getElementById('phone').value = client.phone || client.telefone || '';
     document.getElementById('birthday').value = client.birthday || '';
 
     modalTitle.textContent = 'Editar Cliente';

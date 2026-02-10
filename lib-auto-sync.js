@@ -24,6 +24,61 @@
         try { sessionStorage.setItem(SYNC_FLAG_KEY, Date.now().toString()); } catch {}
     }
 
+    // Helper: salvar no localStorage com proteção contra QuotaExceeded
+    // Usa Storage global (script.js) se disponível, senão faz direto com compactação
+    function safeSave(key, data) {
+        // Se Storage global disponível (definido em script.js), usar ele (tem compactação)
+        if (window.Storage && typeof window.Storage.save === 'function' && window.Storage.KEYS) {
+            return window.Storage.save(key, data);
+        }
+        // Fallback: salvar direto com try/catch
+        try {
+            localStorage.setItem(key, JSON.stringify(data));
+            return true;
+        } catch (e) {
+            if (e.name === 'QuotaExceededError' || e.code === 22) {
+                console.warn(`[AutoSync] ⚠️ Quota excedida para '${key}', compactando...`);
+                try {
+                    // Compactar: remover campos nulos/vazios e limitar arrays pesados
+                    const compacted = Array.isArray(data) ? data.map(item => {
+                        const c = { ...item };
+                        // Limitar products e orderIds
+                        if (c.products && Array.isArray(c.products) && c.products.length > 30) {
+                            c.products = c.products.slice(0, 30);
+                        }
+                        if (c.orderIds && Array.isArray(c.orderIds) && c.orderIds.length > 50) {
+                            c.orderIds = c.orderIds.slice(-50);
+                        }
+                        // Remover nulos
+                        for (const k of Object.keys(c)) {
+                            if (c[k] === null || c[k] === '' || c[k] === undefined) delete c[k];
+                        }
+                        return c;
+                    }) : data;
+                    localStorage.setItem(key, JSON.stringify(compacted));
+                    console.log(`[AutoSync] ✅ Salvo com compactação: ${key}`);
+                    return true;
+                } catch (e2) {
+                    // Último recurso para pedidos: manter só 6 meses
+                    if (key === 'crm_orders' && Array.isArray(data)) {
+                        const cutoff = new Date();
+                        cutoff.setMonth(cutoff.getMonth() - 6);
+                        const recent = data.filter(o => o.data && new Date(o.data) >= cutoff);
+                        try {
+                            localStorage.setItem(key, JSON.stringify(recent));
+                            console.warn(`[AutoSync] Pedidos reduzidos: ${data.length} → ${recent.length}`);
+                            return true;
+                        } catch { /* desiste */ }
+                    }
+                    console.error(`[AutoSync] ❌ Impossível salvar '${key}' — quota esgotada`);
+                    return false;
+                }
+            }
+            console.error(`[AutoSync] Erro ao salvar '${key}':`, e.message);
+            return false;
+        }
+    }
+
     // Carrega todos os dados do Supabase → localStorage
     async function loadFromCloud() {
         try {
@@ -58,8 +113,7 @@
                     orderCount: c.order_count, products: c.products || [],
                     orderIds: c.order_ids || [], tags: c.tags || []
                 }));
-                localStorage.setItem('crm_clients', JSON.stringify(clients));
-                loaded++;
+                if (safeSave('crm_clients', clients)) loaded++;
             }
 
             if (result.products?.length > 0) {
@@ -69,8 +123,7 @@
                     managesStock: p.manages_stock, image: p.image, images: p.images || [],
                     barcode: p.barcode, variacoes: p.variacoes || [], hasVariacoes: p.has_variacoes
                 }));
-                localStorage.setItem('crm_products', JSON.stringify(products));
-                loaded++;
+                if (safeSave('crm_products', products)) loaded++;
             }
 
             if (result.orders?.length > 0) {
@@ -79,34 +132,30 @@
                     clientName: o.client_name, clientPhone: o.client_phone,
                     total: o.total, status: o.status, products: o.products || [], origin: o.origin
                 }));
-                localStorage.setItem('crm_orders', JSON.stringify(orders));
-                loaded++;
+                if (safeSave('crm_orders', orders)) loaded++;
             }
 
             if (result.coupons?.length > 0) {
-                localStorage.setItem('crm_coupons', JSON.stringify(result.coupons));
-                loaded++;
+                if (safeSave('crm_coupons', result.coupons)) loaded++;
             }
 
             if (result.campaigns?.length > 0) {
-                localStorage.setItem('crm_campaigns', JSON.stringify(result.campaigns));
-                loaded++;
+                if (safeSave('crm_campaigns', result.campaigns)) loaded++;
             }
 
             if (result.settings) {
                 const current = JSON.parse(localStorage.getItem('crm_settings') || '{}');
-                localStorage.setItem('crm_settings', JSON.stringify({
+                safeSave('crm_settings', {
                     activeDays: result.settings.active_days || current.activeDays || 30,
                     riskDays: result.settings.risk_days || current.riskDays || 60,
                     openaiApiKey: result.settings.openai_api_key || current.openaiApiKey || ''
-                }));
+                });
                 loaded++;
             }
 
             // --- Atendimento ---
             if (result.tags?.length > 0) {
-                localStorage.setItem('crm_tags', JSON.stringify(result.tags));
-                loaded++;
+                if (safeSave('crm_tags', result.tags)) loaded++;
             }
 
             if (result.chat_tags?.length > 0) {
@@ -115,44 +164,38 @@
                     if (!obj[r.chat_id]) obj[r.chat_id] = [];
                     obj[r.chat_id].push(r.tag_id);
                 });
-                localStorage.setItem('crm_chat_tags', JSON.stringify(obj));
+                safeSave('crm_chat_tags', obj);
                 loaded++;
             }
 
             if (result.quick_replies?.length > 0) {
-                localStorage.setItem('crm_quick_replies', JSON.stringify(result.quick_replies));
-                loaded++;
+                if (safeSave('crm_quick_replies', result.quick_replies)) loaded++;
             }
 
             if (result.client_notes?.length > 0) {
                 const obj = {};
                 result.client_notes.forEach(r => { obj[r.id] = { text: r.text || '', history: r.history || [] }; });
-                localStorage.setItem('crm_client_notes', JSON.stringify(obj));
-                loaded++;
+                if (safeSave('crm_client_notes', obj)) loaded++;
             }
 
             if (result.snoozed?.length > 0) {
                 const obj = {};
                 result.snoozed.forEach(r => { obj[r.chat_id] = r.wake_at; });
-                localStorage.setItem('crm_snoozed', JSON.stringify(obj));
-                loaded++;
+                if (safeSave('crm_snoozed', obj)) loaded++;
             }
 
             if (result.scheduled?.length > 0) {
-                localStorage.setItem('crm_scheduled', JSON.stringify(result.scheduled));
-                loaded++;
+                if (safeSave('crm_scheduled', result.scheduled)) loaded++;
             }
 
             if (result.ai_tags?.length > 0) {
                 const obj = {};
                 result.ai_tags.forEach(r => { obj[r.client_id] = r.tags || {}; });
-                localStorage.setItem('crm_ai_tags', JSON.stringify(obj));
-                loaded++;
+                if (safeSave('crm_ai_tags', obj)) loaded++;
             }
 
             if (result.coupon_assignments?.length > 0) {
-                localStorage.setItem('crm_coupon_assignments', JSON.stringify(result.coupon_assignments));
-                loaded++;
+                if (safeSave('crm_coupon_assignments', result.coupon_assignments)) loaded++;
             }
 
             console.log(`[AutoSync] ✅ ${loaded} categorias carregadas do Supabase`);
