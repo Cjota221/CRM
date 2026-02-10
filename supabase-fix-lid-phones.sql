@@ -14,7 +14,6 @@ SELECT
     id,
     name,
     phone,
-    phone_normalized,
     created_at,
     CASE 
         WHEN phone LIKE '516%' THEN '❌ ID Meta (516)'
@@ -60,7 +59,7 @@ WHERE phone LIKE '516%'
 -- ============================
 
 -- UPDATE clients
--- SET phone = NULL, phone_normalized = NULL
+-- SET phone = NULL
 -- WHERE phone LIKE '516%' 
 --    OR phone LIKE '326%' 
 --    OR phone LIKE '327%';
@@ -70,5 +69,5 @@ WHERE phone LIKE '516%'
 -- ============================
 
 -- UPDATE clients
--- SET phone = '94984121802', phone_normalized = '9484121802'
+-- SET phone = '94984121802'
 -- WHERE name ILIKE '%malaquias%';
