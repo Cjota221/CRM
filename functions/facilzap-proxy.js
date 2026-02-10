@@ -211,7 +211,7 @@ exports.handler = async (event) => {
         estoque,
         imagem: p.imagem || (p.imagens && p.imagens[0] && p.imagens[0].url) || p.image || null,
         imagens: p.imagens || p.images || [],
-        link_oficial: p.link_oficial || p.link || p.url || '',
+        link_oficial: p.id ? `https://cjotarasteirinhas.com.br/c/atacado/produto/${p.id}` : (p.link_oficial || p.link || p.url || 'https://cjotarasteirinhas.com.br/c/atacado'),
         ativo: p.ativo != null ? p.ativo : (p.is_active != null ? p.is_active : true),
         variacoes: p.variacoes || [],
         barcode: p.barcode || p.codigo_barras || ''

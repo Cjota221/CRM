@@ -405,7 +405,7 @@ function enrichProducts(products) {
             ...p,
             preco,
             imagem: imagem || 'https://via.placeholder.com/300x300?text=Sem+Foto',
-            link_oficial: (SITE_BASE_URL && SITE_BASE_URL !== 'https://seusite.com.br') ? `${SITE_BASE_URL}/produto/${slug}` : (p.link || p.url || '#'),
+            link_oficial: p.id ? `${SITE_BASE_URL}/c/atacado/produto/${p.id}` : (p.link || p.url || `${SITE_BASE_URL}/c/atacado`),
             estoque,
             referencia,
             slug
@@ -423,7 +423,7 @@ const FACILZAP_TOKEN = process.env.FACILZAP_TOKEN || '18984snBHqwS7ACgukUyeqadAY
 const EVOLUTION_URL = process.env.EVOLUTION_URL || 'https://evolution-api.cjota.site'; 
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'EB6B5AB56A35-43C4-B590-1188166D4E7A';
 const INSTANCE_NAME = process.env.INSTANCE_NAME || 'Cjota';
-const SITE_BASE_URL = process.env.SITE_BASE_URL || 'https://seusite.com.br'; // Para gerar links de produtos
+const SITE_BASE_URL = process.env.SITE_BASE_URL || 'https://cjotarasteirinhas.com.br'; // URL da loja CJ Rasteirinhas
 
 // Middleware - CORS restrito às origens permitidas
 const ALLOWED_ORIGINS = [
@@ -688,7 +688,7 @@ app.get('/api/facilzap-proxy', async (req, res) => {
                         estoque: p.stock != null ? p.stock : -1,
                         imagem: p.image || 'https://via.placeholder.com/300x300?text=Sem+Foto',
                         referencia: p.sku || p.codigo || '',
-                        link_oficial: (SITE_BASE_URL && SITE_BASE_URL !== 'https://seusite.com.br') ? `${SITE_BASE_URL}/produto/${p.id}` : '#',
+                        link_oficial: p.id ? `${SITE_BASE_URL}/c/atacado/produto/${p.id}` : `${SITE_BASE_URL}/c/atacado`,
                         slug: p.id
                     }));
                     console.log(`[FALLBACK] ✅ ${normalizedProducts.length} produtos do Supabase`);
@@ -726,7 +726,7 @@ app.get('/api/supabase-products', async (req, res) => {
             estoque: p.stock != null ? p.stock : -1,
             imagem: p.image || 'https://via.placeholder.com/300x300?text=Sem+Foto',
             referencia: p.sku || p.codigo || '',
-            link_oficial: (SITE_BASE_URL && SITE_BASE_URL !== 'https://seusite.com.br') ? `${SITE_BASE_URL}/produto/${p.id}` : '#',
+            link_oficial: p.id ? `${SITE_BASE_URL}/c/atacado/produto/${p.id}` : `${SITE_BASE_URL}/c/atacado`,
             slug: p.id,
             is_active: p.is_active,
             descricao: p.description || ''

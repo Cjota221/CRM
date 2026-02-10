@@ -3630,41 +3630,25 @@ async function sendProductToChat(idx) {
                        currentClient?.nome?.split(' ')[0] || '';
     const greeting = clientName ? `Oi ${clientName}! ` : '';
     
-    // Template profissional
-    const caption = `${greeting}Olha que linda essa opção! ✨\n\n*${nome}*\nPor apenas *R$ ${preco.toFixed(2)}*\n\nVeja mais detalhes e feche seu pedido aqui:\n${link}`;
+    // Template profissional — link ISOLADO na última linha para gerar prévia visual do WhatsApp
+    const message = `${greeting}Olha que linda essa opção! ✨\n\n*${nome}*\nPor apenas *R$ ${preco.toFixed(2)}*\n\nVeja mais detalhes e feche seu pedido aqui 👇\n\n${link}`;
     
     try {
         const remoteJid = currentChatData?.remoteJid || currentChatId || currentRemoteJid;
         if (!remoteJid) throw new Error('Nenhum chat aberto para enviar o produto');
         const phoneNumber = remoteJid.replace('@s.whatsapp.net', '').replace('@g.us', '');
         
-        // Tentar enviar com imagem primeiro
-        if (imagem && typeof imagem === 'string' && !imagem.includes('placeholder')) {
-            const response = await fetch(`${API_BASE}/whatsapp/send-media`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    number: phoneNumber,
-                    media: imagem,
-                    mediaType: 'image',
-                    caption: caption
-                })
-            });
-            const result = await response.json();
-            if (result.error) throw new Error(result.error);
-        } else {
-            // Sem imagem: enviar como texto
-            const response = await fetch(`${API_BASE}/whatsapp/send-message`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    number: phoneNumber,
-                    text: caption
-                })
-            });
-            const result = await response.json();
-            if (result.error) throw new Error(result.error);
-        }
+        // Enviar como TEXTO puro para que o WhatsApp gere a prévia automática do link
+        const response = await fetch(`${API_BASE}/whatsapp/send-message`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                number: phoneNumber,
+                text: message
+            })
+        });
+        const result = await response.json();
+        if (result.error) throw new Error(result.error);
         
         showToast(`Produto "${nome}" enviado!`, 'success');
         setTimeout(() => loadMessages(currentRemoteJid), 1500);
@@ -3716,12 +3700,13 @@ async function sendProductMessage(name, preco, imageUrl, link) {
     if (!currentChatId) { alert('Nenhuma conversa selecionada'); return; }
     closeProductModal();
     try {
-        const caption = `Olha que linda essa opção! ✨\n\n*${name}*\nPor apenas *R$ ${parseFloat(preco).toFixed(2)}*\n\nVeja mais detalhes e feche seu pedido aqui:\n${link}`;
+        // Enviar como TEXTO puro — link isolado na última linha para gerar prévia do WhatsApp
+        const message = `Olha que linda essa opção! ✨\n\n*${name}*\nPor apenas *R$ ${parseFloat(preco).toFixed(2)}*\n\nVeja mais detalhes e feche seu pedido aqui 👇\n\n${link}`;
         const phoneNumber = (currentChatData?.remoteJid || currentChatId || currentRemoteJid).replace('@s.whatsapp.net', '').replace('@g.us', '');
-        const response = await fetch(`${API_BASE}/whatsapp/send-media`, {
+        const response = await fetch(`${API_BASE}/whatsapp/send-message`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ number: phoneNumber, media: imageUrl, mediaType: 'image', caption })
+            body: JSON.stringify({ number: phoneNumber, text: message })
         });
         const result = await response.json();
         if (result.error) throw new Error(result.error);
@@ -3737,7 +3722,7 @@ async function sendProductLink(name, link) {
     closeProductModal();
     const input = document.getElementById('inputMessage');
     const originalText = input.value;
-    input.value = `Olha esse produto: ${name} – ${link}`;
+    input.value = `Olha esse produto: *${name}*\n\n${link}`;
     await sendMessage();
     if (originalText) input.value = originalText;
 }
