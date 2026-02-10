@@ -1745,7 +1745,12 @@ exports.handler = async (event, context) => {
     }
 
     if (event.httpMethod === 'GET') {
-        const action = event.queryStringParameters?.action;
+        // Suportar action via query string OU via path (/api/anny/dashboard)
+        let action = event.queryStringParameters?.action;
+        if (!action && event.path) {
+            const pathMatch = event.path.match(/anny-ai\/(.+)/) || event.path.match(/anny\/(.+)/);
+            if (pathMatch) action = pathMatch[1].split('?')[0];
+        }
         
         if (action === 'insights') {
             const insights = await generateInsights();

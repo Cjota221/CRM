@@ -171,8 +171,23 @@ exports.handler = async (event) => {
       };
     });
     
-    // Passar produtos completos para não perder nenhum campo
-    const products = productsRaw;
+    // Normalizar produtos para formato esperado pelo catálogo
+    const products = productsRaw.map(p => ({
+      id: p.id,
+      codigo: p.codigo || p.id,
+      nome: p.nome || p.name || p.titulo || 'Produto sem nome',
+      descricao: p.descricao || p.description || '',
+      referencia: p.referencia || p.ref || p.sku || '',
+      sku: p.sku || p.referencia || '',
+      preco: parseFloat(p.preco || p.price || p.valor || 0),
+      estoque: p.estoque != null ? p.estoque : (p.stock != null ? p.stock : -1),
+      imagem: p.imagem || (p.imagens && p.imagens[0]?.url) || p.image || null,
+      imagens: p.imagens || p.images || [],
+      link_oficial: p.link_oficial || p.link || p.url || '',
+      ativo: p.ativo != null ? p.ativo : (p.is_active != null ? p.is_active : true),
+      variacoes: p.variacoes || [],
+      barcode: p.barcode || p.codigo_barras || ''
+    }));
     
     const elapsed = Date.now() - startTime;
     

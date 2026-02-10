@@ -645,7 +645,28 @@ function showConnectionAlert(message) {
 
 async function loadCRMData() {
     try {
-        // Usa o endpoint existente que retorna tudo
+        // Tentar carregar do cache localStorage primeiro (render rápido)
+        const cachedProducts = localStorage.getItem('crm_products');
+        if (cachedProducts && allProducts.length === 0) {
+            try {
+                const parsed = JSON.parse(cachedProducts);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    // Normalizar campos do localStorage (name->nome, price->preco)
+                    allProducts = parsed.map(p => ({
+                        ...p,
+                        nome: p.nome || p.name || 'Produto',
+                        preco: p.preco || p.price || 0,
+                        estoque: p.estoque != null ? p.estoque : (p.stock != null ? p.stock : -1),
+                        referencia: p.referencia || p.sku || '',
+                        imagem: p.imagem || p.image || null,
+                        link_oficial: p.link_oficial || p.link || ''
+                    }));
+                    console.log(`[CRM] ${allProducts.length} produtos do cache local`);
+                }
+            } catch(e) { /* cache inválido */ }
+        }
+        
+        // Buscar dados frescos da API
         const res = await fetch(`${API_BASE}/facilzap-proxy`);
         const data = await res.json();
         
@@ -653,12 +674,21 @@ async function loadCRMData() {
         
         allClients = data.clients || [];
         allOrders = data.orders || [];
-        allProducts = data.products || [];
+        
+        // Produtos já vem normalizado do proxy agora
+        if (data.products && data.products.length > 0) {
+            allProducts = data.products;
+            // Salvar no localStorage como backup
+            try { localStorage.setItem('crm_products_cache', JSON.stringify(allProducts)); } catch(e) {}
+        }
         
         console.log(`CRM Carregado: ${allClients.length} clientes, ${allOrders.length} pedidos, ${allProducts.length} produtos.`);
     } catch (e) {
         console.error('Erro ao carregar CRM:', e);
-        document.getElementById('crmDataContainer').innerHTML = `<p class="text-red-500 text-sm">Erro ao carregar dados do CRM. Verifique se o servidor está rodando.</p>`;
+        // Se falhou mas tem cache, não mostrar erro
+        if (allProducts.length > 0) {
+            console.log('[CRM] Usando dados do cache após erro de rede');
+        }
     }
 }
 
