@@ -2353,6 +2353,7 @@ function renderClients() {
                     ${daysSince !== Infinity ? `<p><i class="fas fa-clock fa-fw text-gray-400 mr-2"></i>Dias sem comprar: <span class="font-semibold ${daysSince > 60 ? 'text-red-600' : daysSince > 30 ? 'text-yellow-600' : 'text-green-600'}">${daysSince}</span></p>` : ''}
                 </div>
                 ${(client.orderCount >= 7) ? `<div class="mb-4"><span class="tag-badge tag-fiel">🌟 Cliente Fiel</span></div>` : ''}
+                ${renderDashboardTags(client)}
             </div>
             <div class="border-t pt-4 flex justify-end space-x-2">
                 <button class="text-gray-500 hover:text-indigo-600 view-details-button p-2" data-id="${client.id}" title="Ver Detalhes">
@@ -2375,6 +2376,54 @@ function renderClients() {
 
     // Adicionar event listeners
     setupClientCardListeners();
+}
+
+/**
+ * Renderizar tags de segmentação do cliente no dashboard
+ * Combina: tags locais (crm_chat_tags) + tags Supabase (clientes_tags)
+ */
+function renderDashboardTags(client) {
+    const phone = (client.phone || client.telefone || '').replace(/\D/g, '');
+    const htmlParts = [];
+    
+    // 1. Tags locais do CHAT (armazenadas em localStorage crm_chat_tags)
+    const rawTags = Storage.load('crm_tags', []);
+    const rawChatTags = Storage.load('crm_chat_tags', {});
+    
+    // Procurar chatId que corresponde a este telefone
+    for (const [chatId, tagIds] of Object.entries(rawChatTags)) {
+        if (chatId.includes(phone.slice(-9)) || chatId.includes(phone)) {
+            if (tagIds && tagIds.length > 0) {
+                tagIds.forEach(tagId => {
+                    const tag = rawTags.find(t => t.id === tagId);
+                    if (tag) {
+                        htmlParts.push(`<span class="inline-block px-2 py-0.5 rounded-full text-xs font-medium text-white mr-1 mb-1" style="background-color:${tag.color}">${escapeHtml(tag.name)}</span>`);
+                    }
+                });
+            }
+            break;
+        }
+    }
+    
+    // 2. Tags IA (crm_ai_tags)
+    const aiTags = Storage.getClientAITags ? Storage.getClientAITags(client.id) : [];
+    if (aiTags && aiTags.length > 0) {
+        aiTags.forEach(tag => {
+            htmlParts.push(`<span class="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700 mr-1 mb-1">🤖 ${escapeHtml(tag)}</span>`);
+        });
+    }
+    
+    // 3. Tags do campo tags[] do Supabase (client.tags)
+    if (client.tags && Array.isArray(client.tags) && client.tags.length > 0) {
+        client.tags.forEach(tag => {
+            if (!htmlParts.some(h => h.includes(tag))) { // Evitar duplicatas
+                htmlParts.push(`<span class="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 mr-1 mb-1">${escapeHtml(tag)}</span>`);
+            }
+        });
+    }
+    
+    if (htmlParts.length === 0) return '';
+    return `<div class="mb-3 flex flex-wrap">${htmlParts.join('')}</div>`;
 }
 
 function setupClientCardListeners() {

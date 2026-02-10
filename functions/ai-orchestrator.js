@@ -26,6 +26,169 @@ const evolutionHeaders = {
 };
 
 // ============================================================================
+// MÓDULO 1: SEGMENTAÇÃO & AUTO-TAGGING (Intent Listener)
+// Analisa cada nova conversa e aplica tags baseadas em origem + keywords
+// ============================================================================
+
+const ORIGIN_TAGS = {
+    // Parâmetros de URL / UTM
+    'utm_source=facebook':   { tag: 'Anúncio Facebook',  origem: 'anuncio' },
+    'utm_source=instagram':  { tag: 'Anúncio Instagram', origem: 'anuncio' },
+    'utm_source=google':     { tag: 'Google Ads',        origem: 'anuncio' },
+    'utm_source=tiktok':     { tag: 'Anúncio TikTok',    origem: 'anuncio' },
+    'fbclid=':               { tag: 'Anúncio Facebook',  origem: 'anuncio' },
+    'gclid=':                { tag: 'Google Ads',        origem: 'anuncio' },
+    // Bio link patterns
+    'linktr.ee':             { tag: 'Link da Bio',       origem: 'bio_link' },
+    'bio.link':              { tag: 'Link da Bio',       origem: 'bio_link' },
+    'linkin.bio':            { tag: 'Link da Bio',       origem: 'bio_link' },
+    'bit.ly':                { tag: 'Link Encurtado',    origem: 'bio_link' },
+};
+
+const KEYWORD_TAGS = [
+    { keywords: ['atacado', 'grade', 'comprar grade', 'pedido mínimo', 'pares'], tag: 'Interesse Atacado',   confianca: 80 },
+    { keywords: ['franquia', 'revender', 'caixa reserva', 'c4'],                tag: 'Interesse Franquia',  confianca: 85 },
+    { keywords: ['catálogo', 'catalogo', 'fotos', 'modelo', 'ver produtos'],    tag: 'Pediu Catálogo',      confianca: 75 },
+    { keywords: ['preço', 'preco', 'quanto', 'quanto custa', 'valor'],          tag: 'Consulta Preço',      confianca: 70 },
+    { keywords: ['promoção', 'promocao', 'desconto', 'cupom'],                  tag: 'Busca Desconto',      confianca: 75 },
+    { keywords: ['rastreio', 'rastrear', 'cadê', 'cade', 'meu pedido', 'entrega'], tag: 'Consulta Pedido',  confianca: 80 },
+    { keywords: ['dropshipping', 'drop', 'loja virtual', 'site próprio'],       tag: 'Interesse Drop',      confianca: 80 },
+    { keywords: ['trocar', 'defeito', 'devolver', 'reclamação', 'problema'],    tag: 'Suporte/Reclamação',  confianca: 85 },
+    { keywords: ['vi no instagram', 'vi no face', 'vi o anúncio', 'vi a propaganda'], tag: 'Veio de Anúncio', confianca: 90 },
+    { keywords: ['instagram', 'stories', 'reels', 'postou'],                    tag: 'Engajamento Social',  confianca: 60 },
+];
+
+/**
+ * Intent Listener: analisa mensagem + metadados e aplica tags automaticamente
+ * @param {string} telefone - Telefone do cliente
+ * @param {string} texto - Mensagem do cliente
+ * @param {object} metadata - { referralUrl, utmSource, utmCampaign, utmMedium, isFirstMessage }
+ * @returns {string[]} Tags aplicadas
+ */
+async function autoTagClient(telefone, texto, metadata = {}) {
+    if (!supabase || !telefone) return [];
+    
+    const tagsToApply = [];
+    const textoLower = (texto || '').toLowerCase();
+    
+    // 1. Detectar origem por URL/UTM nos metadados
+    const refUrl = (metadata.referralUrl || metadata.utmSource || '').toLowerCase();
+    for (const [pattern, tagInfo] of Object.entries(ORIGIN_TAGS)) {
+        if (refUrl.includes(pattern.toLowerCase()) || textoLower.includes(pattern.toLowerCase())) {
+            tagsToApply.push({
+                tag: tagInfo.tag,
+                origem: tagInfo.origem,
+                confianca: 95,
+                metadata: { pattern, referralUrl: metadata.referralUrl, utmCampaign: metadata.utmCampaign }
+            });
+        }
+    }
+    
+    // 2. Detectar intenção por keywords na mensagem
+    for (const rule of KEYWORD_TAGS) {
+        const matched = rule.keywords.filter(k => textoLower.includes(k));
+        if (matched.length > 0) {
+            tagsToApply.push({
+                tag: rule.tag,
+                origem: 'ia',
+                confianca: Math.min(100, rule.confianca + (matched.length - 1) * 10),
+                metadata: { matched_keywords: matched }
+            });
+        }
+    }
+    
+    // 3. Detectar se é primeira mensagem (Lead Novo)
+    if (metadata.isFirstMessage) {
+        tagsToApply.push({
+            tag: 'Lead Novo',
+            origem: refUrl ? 'anuncio' : 'organico',
+            confianca: 100,
+            metadata: {}
+        });
+    }
+    
+    // 4. Verificar se é lead frio (entrou em contato antes e não comprou)
+    try {
+        const { data: prevConversas } = await supabase
+            .from('conversas_historico')
+            .select('data_fim, resultado')
+            .eq('cliente_telefone', telefone)
+            .order('data_fim', { ascending: false })
+            .limit(5);
+        
+        if (prevConversas && prevConversas.length > 0) {
+            const ultimaConversa = prevConversas[0];
+            const diasDesdeUltima = (Date.now() - new Date(ultimaConversa.data_fim).getTime()) / (1000 * 60 * 60 * 24);
+            
+            // Contato na última semana sem compra = Lead Frio Retargeting
+            if (diasDesdeUltima >= 3 && diasDesdeUltima <= 14 && ultimaConversa.resultado !== 'venda_realizada') {
+                tagsToApply.push({
+                    tag: 'Lead Frio - Retargeting',
+                    origem: 'ia',
+                    confianca: 85,
+                    metadata: { dias_desde_ultima: Math.round(diasDesdeUltima), resultado_anterior: ultimaConversa.resultado }
+                });
+            }
+            
+            // Contato voltou = Retorno
+            if (diasDesdeUltima >= 1 && diasDesdeUltima <= 30) {
+                tagsToApply.push({
+                    tag: 'Retorno',
+                    origem: 'ia',
+                    confianca: 90,
+                    metadata: { dias_desde_ultima: Math.round(diasDesdeUltima) }
+                });
+            }
+        }
+    } catch (err) {
+        console.error('[AUTO-TAG] Erro ao verificar histórico:', err.message);
+    }
+    
+    // 5. Persistir tags no Supabase (upsert para evitar duplicatas)
+    const appliedTags = [];
+    for (const t of tagsToApply) {
+        try {
+            await supabase.from('clientes_tags').upsert({
+                telefone,
+                tag: t.tag,
+                origem: t.origem,
+                confianca: t.confianca,
+                criado_por: 'ia_anne',
+                metadata: t.metadata || {},
+                expira_em: t.tag === 'Lead Novo' ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() : null
+            }, { onConflict: 'telefone,tag' });
+            appliedTags.push(t.tag);
+        } catch (err) {
+            console.error(`[AUTO-TAG] Erro ao aplicar tag "${t.tag}":`, err.message);
+        }
+    }
+    
+    if (appliedTags.length > 0) {
+        console.log(`[AUTO-TAG] ${telefone}: ${appliedTags.join(', ')}`);
+    }
+    
+    return appliedTags;
+}
+
+/**
+ * Buscar todas as tags ativas de um cliente
+ */
+async function getClientTags(telefone) {
+    if (!supabase || !telefone) return [];
+    try {
+        const { data } = await supabase
+            .from('clientes_tags')
+            .select('tag, origem, confianca, criado_em')
+            .eq('telefone', telefone)
+            .or('expira_em.is.null,expira_em.gt.' + new Date().toISOString());
+        return data || [];
+    } catch (err) {
+        console.error('[TAGS] Erro:', err.message);
+        return [];
+    }
+}
+
+// ============================================================================
 // SYSTEM PROMPTS DOS AGENTES
 // ============================================================================
 
@@ -414,6 +577,10 @@ async function getClientContext(telefone) {
                 .limit(5);
             context.pedidos_recentes = orders || [];
         }
+
+        // Tags de segmentação (Módulo 1)
+        const tags = await getClientTags(telefone);
+        context.tags = tags;
     } catch (err) {
         console.error('[CONTEXT] Erro:', err.message);
     }
@@ -609,6 +776,87 @@ async function executeTool(toolName, params) {
                 return { cases: cases.slice(0, 2), total_franqueadas_ativas: 47 };
             }
 
+            // ========== MÓDULO 2: RASTREIO LOGÍSTICO ==========
+            case 'rastrear_pedido': {
+                if (!supabase) return { error: 'Sistema indisponível' };
+                const tel = (params.telefone || '').replace(/\D/g, '');
+                
+                // Buscar últimos pedidos por telefone do cliente
+                const { data: orders } = await supabase
+                    .from('orders')
+                    .select('id, codigo, total, status, tracking_code, tracking_url, data, products')
+                    .or(`client_phone.like.%${tel.slice(-9)},client_phone.like.%${tel.slice(-11)}`)
+                    .order('data', { ascending: false })
+                    .limit(3);
+                
+                if (!orders || orders.length === 0) {
+                    // Fallback: buscar via join com clients
+                    const { data: clientOrders } = await supabase
+                        .rpc('get_tracking_by_phone', { p_telefone: tel });
+                    
+                    if (!clientOrders || clientOrders.length === 0) {
+                        return { encontrado: false, mensagem: 'Nenhum pedido encontrado para este telefone' };
+                    }
+                    
+                    return {
+                        encontrado: true,
+                        pedidos: clientOrders.map(o => ({
+                            codigo: o.codigo,
+                            total: o.total,
+                            status: o.status,
+                            tracking_code: o.tracking_code,
+                            tracking_url: o.tracking_url || (o.tracking_code ? `https://rastreamento.correios.com.br/app/index.php?objetos=${o.tracking_code}` : null),
+                            data: o.data
+                        }))
+                    };
+                }
+                
+                return {
+                    encontrado: true,
+                    pedidos: orders.map(o => ({
+                        codigo: o.codigo,
+                        total: o.total,
+                        status: o.status,
+                        tracking_code: o.tracking_code,
+                        tracking_url: o.tracking_url || (o.tracking_code ? `https://rastreamento.correios.com.br/app/index.php?objetos=${o.tracking_code}` : null),
+                        data: o.data,
+                        produtos: o.products
+                    }))
+                };
+            }
+
+            case 'rastrear_envio': {
+                // Alias para rastrear_pedido (compatibilidade)
+                return await executeTool('rastrear_pedido', params);
+            }
+
+            // ========== MÓDULO 1: CONSULTA DE TAGS ==========
+            case 'consultar_tags_cliente': {
+                const tags = await getClientTags(params.telefone);
+                return {
+                    telefone: params.telefone,
+                    tags: tags.map(t => ({ tag: t.tag, origem: t.origem, confianca: t.confianca })),
+                    total: tags.length
+                };
+            }
+
+            case 'aplicar_tag': {
+                if (!supabase) return { error: 'Sistema indisponível' };
+                try {
+                    await supabase.from('clientes_tags').upsert({
+                        telefone: params.telefone,
+                        tag: params.tag,
+                        origem: params.origem || 'manual',
+                        confianca: parseInt(params.confianca) || 100,
+                        criado_por: 'ia_anne',
+                        metadata: {}
+                    }, { onConflict: 'telefone,tag' });
+                    return { sucesso: true, tag: params.tag, telefone: params.telefone };
+                } catch (err) {
+                    return { error: err.message };
+                }
+            }
+
             default:
                 return { error: `Ferramenta '${toolName}' não reconhecida` };
         }
@@ -628,18 +876,22 @@ async function generateAgentResponse(agentId, userMessage, session, clientContex
 
     const prompt = AGENT_PROMPTS[agentId] || AGENT_PROMPTS.anne;
 
-    // Montar contexto
+    // Montar contexto — incluir novas tools de rastreio e tags
     const tools = agentId === 'anne'
-        ? 'consultar_estoque, calcular_grade, gerar_link_pagamento, reservar_estoque, aplicar_cupom, buscar_historico_cliente, enviar_catalogo'
+        ? 'consultar_estoque, calcular_grade, gerar_link_pagamento, reservar_estoque, aplicar_cupom, buscar_historico_cliente, enviar_catalogo, rastrear_pedido, consultar_tags_cliente, aplicar_tag'
         : agentId === 'expansion'
-            ? 'calcular_roi_franquia, buscar_case_similar, gerar_contrato, agendar_mentoria'
-            : 'consultar_pedido, validar_comprovante, gerar_segunda_via, rastrear_envio';
+            ? 'calcular_roi_franquia, buscar_case_similar, gerar_contrato, agendar_mentoria, consultar_tags_cliente, aplicar_tag'
+            : 'consultar_pedido, validar_comprovante, gerar_segunda_via, rastrear_pedido, rastrear_envio, consultar_tags_cliente';
+
+    // Incluir tags do cliente no contexto
+    const clientTags = clientContext.tags || [];
+    const tagsStr = clientTags.length > 0 ? `\nTags: ${clientTags.map(t => t.tag).join(', ')}` : '';
 
     const clientStr = clientContext.perfil
-        ? `Nome: ${clientContext.perfil.nome || clientContext.crm?.name || 'Desconhecido'}, Tier: ${clientContext.perfil.tier || 'novo'}, Gasto total: R$${clientContext.perfil.total_gasto || clientContext.crm?.total_spent || 0}, Pedidos: ${clientContext.perfil.total_pedidos || clientContext.crm?.order_count || 0}, Última compra: ${clientContext.perfil.ultima_compra || clientContext.crm?.last_purchase_date || 'N/A'}`
+        ? `Nome: ${clientContext.perfil.nome || clientContext.crm?.name || 'Desconhecido'}, Tier: ${clientContext.perfil.tier || 'novo'}, Gasto total: R$${clientContext.perfil.total_gasto || clientContext.crm?.total_spent || 0}, Pedidos: ${clientContext.perfil.total_pedidos || clientContext.crm?.order_count || 0}, Última compra: ${clientContext.perfil.ultima_compra || clientContext.crm?.last_purchase_date || 'N/A'}${tagsStr}`
         : clientContext.crm
-            ? `Nome: ${clientContext.crm.name}, Gasto: R$${clientContext.crm.total_spent}, Pedidos: ${clientContext.crm.order_count}`
-            : 'Cliente novo - sem histórico no sistema';
+            ? `Nome: ${clientContext.crm.name}, Gasto: R$${clientContext.crm.total_spent}, Pedidos: ${clientContext.crm.order_count}${tagsStr}`
+            : `Cliente novo - sem histórico no sistema${tagsStr}`;
 
     const historyStr = (session?.mensagens || [])
         .slice(-10)
@@ -981,6 +1233,16 @@ exports.handler = async (event) => {
                 const classification = await classifyIntent(texto, enrichment);
                 const agentId = DOMAIN_TO_AGENT[classification.dominio_primario] || 'anne';
 
+                // 1.5 AUTO-TAGGING (Módulo 1): Aplicar tags de segmentação automaticamente
+                const isFirstMessage = !enrichment?.sessao_ativa;
+                const autoTags = await autoTagClient(telefone, texto, {
+                    referralUrl: evento.origem?.referral_url || evento.metadados?.referral_url || '',
+                    utmSource: evento.metadados?.utm_source || '',
+                    utmCampaign: evento.metadados?.utm_campaign || '',
+                    utmMedium: evento.metadados?.utm_medium || '',
+                    isFirstMessage
+                });
+
                 // 2. Obter/criar sessão
                 const session = await getOrCreateSession(telefone, nome);
 
@@ -1036,7 +1298,8 @@ exports.handler = async (event) => {
                         tools_used: response.tools_used.map(t => t.name),
                         tokens: response.tokens,
                         enviado: sendResult.success,
-                        sessao_id: session?.id
+                        sessao_id: session?.id,
+                        auto_tags: autoTags
                     })
                 };
             }

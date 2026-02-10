@@ -2268,6 +2268,268 @@ app.post('/api/whatsapp/send-media', async (req, res) => {
 });
 
 // ============================================================================
+// MÓDULO 3: ENVIAR ENQUETE (POLL) VIA EVOLUTION API
+// ============================================================================
+
+/**
+ * POST /api/whatsapp/send-poll
+ * Enviar enquete via Evolution API sendPoll
+ * Body: { number, title, options: string[], selectableCount?: number }
+ */
+app.post('/api/whatsapp/send-poll', async (req, res) => {
+    try {
+        const { number, title, options, selectableCount } = req.body;
+        
+        if (!number || !title || !options || options.length < 2) {
+            return res.status(400).json({ error: 'number, title e options (min 2) são obrigatórios' });
+        }
+        
+        if (options.length > 12) {
+            return res.status(400).json({ error: 'Máximo 12 opções para enquete' });
+        }
+        
+        let phoneNum = number.replace(/\D/g, '');
+        if (!phoneNum.startsWith('55') && phoneNum.length <= 11) phoneNum = '55' + phoneNum;
+        
+        const url = `${EVOLUTION_URL}/message/sendPoll/${INSTANCE_NAME}`;
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: evolutionHeaders,
+            body: JSON.stringify({
+                number: phoneNum,
+                name: title,
+                values: options,
+                selectableCount: selectableCount || 1 // 1 = escolha única, >1 = múltipla
+            })
+        });
+        
+        const data = await response.json();
+        console.log(`[WhatsApp] Enquete enviada para ${phoneNum}:`, JSON.stringify(data).slice(0, 200));
+        
+        if (data.error || data.status === 400 || data.status === 'error') {
+            return res.status(400).json({ error: data.response?.message || data.message || data.error || 'Erro ao enviar enquete' });
+        }
+        
+        res.json({ success: true, ...data });
+    } catch (error) {
+        console.error('[WhatsApp] Erro ao enviar enquete:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ============================================================================
+// MÓDULO 4: BIBLIOTECA DE MÍDIAS (CRUD)
+// ============================================================================
+
+/** GET /api/media-library — Listar todas as mídias */
+app.get('/api/media-library', async (req, res) => {
+    try {
+        const tipo = req.query.tipo; // Filtro opcional: 'image', 'audio', 'sticker'
+        if (!supabase) {
+            return res.json([]); // Sem supabase, retornar vazio
+        }
+        let query = supabase.from('media_library').select('id, nome, tipo, url, mimetype, tamanho_bytes, tags, criado_em, uso_count').order('criado_em', { ascending: false });
+        if (tipo) query = query.eq('tipo', tipo);
+        const { data, error } = await query.limit(100);
+        if (error) throw error;
+        res.json(data || []);
+    } catch (error) {
+        console.error('[MEDIA-LIB] Erro ao listar:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/** POST /api/media-library — Adicionar mídia à biblioteca */
+app.post('/api/media-library', async (req, res) => {
+    try {
+        const { nome, tipo, url, base64, mimetype, tags } = req.body;
+        if (!nome || !tipo) return res.status(400).json({ error: 'nome e tipo são obrigatórios' });
+        if (!supabase) return res.status(500).json({ error: 'Supabase indisponível' });
+        
+        const item = {
+            nome,
+            tipo, // 'image', 'audio', 'sticker', 'video', 'document'
+            url: url || null,
+            base64: base64 || null,
+            mimetype: mimetype || null,
+            tamanho_bytes: base64 ? Math.round(base64.length * 0.75) : 0,
+            tags: tags || []
+        };
+        
+        const { data, error } = await supabase.from('media_library').insert(item).select().single();
+        if (error) throw error;
+        
+        console.log(`[MEDIA-LIB] Adicionado: ${nome} (${tipo})`);
+        res.json({ success: true, item: data });
+    } catch (error) {
+        console.error('[MEDIA-LIB] Erro ao adicionar:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/** DELETE /api/media-library/:id — Remover mídia */
+app.delete('/api/media-library/:id', async (req, res) => {
+    try {
+        if (!supabase) return res.status(500).json({ error: 'Supabase indisponível' });
+        const { error } = await supabase.from('media_library').delete().eq('id', req.params.id);
+        if (error) throw error;
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ============================================================================
+// MÓDULO 6: ALERTAS DE STATUS DE PEDIDO
+// ============================================================================
+
+/**
+ * POST /api/orders/:id/update-status
+ * Atualiza status de um pedido e notifica o cliente automaticamente
+ */
+app.post('/api/orders/:id/update-status', async (req, res) => {
+    try {
+        const orderId = req.params.id;
+        const { status, tracking_code, tracking_url } = req.body;
+        
+        if (!status) return res.status(400).json({ error: 'status é obrigatório' });
+        if (!supabase) return res.status(500).json({ error: 'Supabase indisponível' });
+        
+        // Buscar pedido atual
+        const { data: order, error: orderError } = await supabase
+            .from('orders')
+            .select('*, clients!inner(name, phone)')
+            .eq('id', orderId)
+            .single();
+        
+        if (orderError || !order) return res.status(404).json({ error: 'Pedido não encontrado' });
+        
+        const statusAnterior = order.status;
+        
+        // Atualizar status
+        const updates = { status, status_updated_at: new Date().toISOString() };
+        if (tracking_code) updates.tracking_code = tracking_code;
+        if (tracking_url) updates.tracking_url = tracking_url;
+        
+        await supabase.from('orders').update(updates).eq('id', orderId);
+        
+        // Registrar evento de tracking
+        await supabase.from('tracking_events').insert({
+            order_id: orderId,
+            tracking_code: tracking_code || order.tracking_code,
+            status,
+            status_anterior: statusAnterior,
+            descricao: `Status alterado de "${statusAnterior}" para "${status}"`
+        });
+        
+        // Gerar mensagem de notificação
+        const STATUS_MESSAGES = {
+            'aprovado': `✅ *Pedido Aprovado!*\n\nOi {{nome}}! Seu pedido #{{codigo}} foi aprovado e já está sendo preparado! 🎉\n\nValor: R$ {{total}}\n\nEm breve enviaremos o código de rastreio!`,
+            'separacao': `📦 *Pedido em Separação*\n\nOi {{nome}}! Seu pedido #{{codigo}} está sendo separado no nosso estoque!\n\nLogo logo sai pra entrega! 😊`,
+            'postado': `🚚 *Pedido Enviado!*\n\nOi {{nome}}! Seu pedido #{{codigo}} foi postado!\n\n📦 Código de rastreio: *{{tracking}}*\n🔗 Rastreie aqui: {{tracking_url}}\n\nPrazo estimado: 5-7 dias úteis`,
+            'transito': `🚚 *Pedido em Trânsito*\n\nOi {{nome}}! Seu pedido #{{codigo}} está a caminho!\n\n📦 Rastreio: *{{tracking}}*\n🔗 {{tracking_url}}`,
+            'entregue': `🎉 *Pedido Entregue!*\n\nOi {{nome}}! Seu pedido #{{codigo}} foi entregue! 💜\n\nEsperamos que ame suas rasteirinhas! Se precisar de algo, estamos aqui.\n\nQue tal avaliar seu atendimento? (1-5)`
+        };
+        
+        const msgTemplate = STATUS_MESSAGES[status];
+        if (msgTemplate && order.clients?.phone) {
+            const trackingUrl = tracking_url || (tracking_code ? `https://rastreamento.correios.com.br/app/index.php?objetos=${tracking_code}` : '');
+            const msg = msgTemplate
+                .replace(/\{\{nome\}\}/g, order.clients.name || 'Cliente')
+                .replace(/\{\{codigo\}\}/g, order.codigo || orderId.slice(0, 8))
+                .replace(/\{\{total\}\}/g, order.total || '0')
+                .replace(/\{\{tracking\}\}/g, tracking_code || order.tracking_code || 'Aguardando')
+                .replace(/\{\{tracking_url\}\}/g, trackingUrl);
+            
+            // Enviar notificação via WhatsApp
+            let phone = order.clients.phone.replace(/\D/g, '');
+            if (!phone.startsWith('55') && phone.length <= 11) phone = '55' + phone;
+            
+            try {
+                await fetch(`${EVOLUTION_URL}/message/sendText/${INSTANCE_NAME}`, {
+                    method: 'POST',
+                    headers: evolutionHeaders,
+                    body: JSON.stringify({ number: phone, text: msg })
+                });
+                
+                // Marcar como notificado
+                await supabase.from('tracking_events').update({ notificado: true, notificado_em: new Date().toISOString() })
+                    .eq('order_id', orderId).eq('status', status);
+                
+                // Emitir via Socket.IO para a central de atendimento
+                const jid = phone.includes('@') ? phone : phone + '@s.whatsapp.net';
+                io.emit('order-status-update', {
+                    orderId, status, statusAnterior,
+                    clientPhone: phone, clientName: order.clients.name,
+                    tracking_code: tracking_code || order.tracking_code
+                });
+                
+                console.log(`[ORDER] Status ${orderId}: ${statusAnterior} → ${status} | Notificação enviada para ${phone}`);
+            } catch (sendErr) {
+                console.error(`[ORDER] Erro ao notificar ${phone}:`, sendErr.message);
+            }
+        }
+        
+        res.json({ success: true, status, statusAnterior });
+    } catch (error) {
+        console.error('[ORDER] Erro ao atualizar status:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/** GET /api/client-tags/:phone — Buscar tags de segmentação de um cliente */
+app.get('/api/client-tags/:phone', async (req, res) => {
+    try {
+        const phone = req.params.phone.replace(/\D/g, '');
+        if (!supabase) return res.json([]);
+        
+        const { data } = await supabase
+            .from('clientes_tags')
+            .select('tag, origem, confianca, criado_em, metadata')
+            .eq('telefone', phone)
+            .or('expira_em.is.null,expira_em.gt.' + new Date().toISOString());
+        
+        res.json(data || []);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/** POST /api/client-tags — Adicionar/editar tag de um cliente */
+app.post('/api/client-tags', async (req, res) => {
+    try {
+        const { telefone, tag, origem } = req.body;
+        if (!telefone || !tag) return res.status(400).json({ error: 'telefone e tag são obrigatórios' });
+        if (!supabase) return res.status(500).json({ error: 'Supabase indisponível' });
+        
+        await supabase.from('clientes_tags').upsert({
+            telefone: telefone.replace(/\D/g, ''),
+            tag,
+            origem: origem || 'manual',
+            confianca: 100,
+            criado_por: 'operador_manual'
+        }, { onConflict: 'telefone,tag' });
+        
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/** DELETE /api/client-tags/:phone/:tag — Remover tag */
+app.delete('/api/client-tags/:phone/:tag', async (req, res) => {
+    try {
+        if (!supabase) return res.status(500).json({ error: 'Supabase indisponível' });
+        await supabase.from('clientes_tags').delete()
+            .eq('telefone', req.params.phone.replace(/\D/g, ''))
+            .eq('tag', decodeURIComponent(req.params.tag));
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ============================================================================
 // ANNY AI - Business Intelligence Assistant (LOCAL DEV)
 // ============================================================================
 
@@ -3002,6 +3264,11 @@ app.post('/api/evolution/webhook', (req, res) => {
                         mediaUrl = message.audioMessage.url || null;
                         mediaType = 'audio';
                     }
+                    else if (message.pollCreationMessage || message.pollCreationMessageV3) {
+                        const poll = message.pollCreationMessage || message.pollCreationMessageV3;
+                        text = `[Enquete] ${poll.name || ''}`;
+                        mediaType = 'poll';
+                    }
                     else if (message.stickerMessage) text = '[Figurinha]';
                     else if (message.contactMessage) text = '[Contato]';
                     else if (message.locationMessage) text = '[Localização]';
@@ -3583,36 +3850,55 @@ app.post('/api/campaigns/segment', async (req, res) => {
  */
 app.post('/api/campaigns/create', async (req, res) => {
     try {
-        const { name, message, imageUrl, contacts, segment, batchSize, batchInterval, scheduledAt, couponCode } = req.body;
+        const { name, message, imageUrl, contacts, segment, batchSize, batchInterval, messageDelay, scheduledAt, couponCode, campaignType, pollTitle, pollOptions, pollSelectableCount, mediaLibraryId } = req.body;
         
-        if (!name || !message || !contacts || contacts.length === 0) {
-            return res.status(400).json({ error: 'Nome, mensagem e contatos são obrigatórios' });
+        if (!name || !contacts || contacts.length === 0) {
+            return res.status(400).json({ error: 'Nome e contatos são obrigatórios' });
+        }
+        
+        // Tipos: 'text', 'image', 'poll', 'audio', 'sticker'
+        const type = campaignType || (imageUrl ? 'image' : 'text');
+        
+        if (type === 'poll' && (!pollTitle || !pollOptions || pollOptions.length < 2)) {
+            return res.status(400).json({ error: 'Enquete requer título e mínimo 2 opções' });
+        }
+        
+        if (type !== 'poll' && !message) {
+            return res.status(400).json({ error: 'Mensagem é obrigatória para este tipo de campanha' });
         }
         
         const campaign = {
             id: `camp_${Date.now()}`,
             name,
-            message,
+            message: message || '',
             imageUrl: imageUrl || null,
             segment: segment || 'custom',
-            contacts: contacts, // [{ id, name, phone }]
+            contacts: contacts,
             totalContacts: contacts.length,
             sentCount: 0,
             failedCount: 0,
             status: scheduledAt ? 'scheduled' : 'ready',
             batchSize: batchSize || 10,
-            batchInterval: batchInterval || 20, // minutos
+            batchInterval: batchInterval || 20,
+            messageDelay: messageDelay || 5, // Segundos base entre msgs (anti-ban)
             scheduledAt: scheduledAt || null,
             couponCode: couponCode || null,
+            // Módulo 3: Suporte a polls
+            campaignType: type,
+            pollTitle: pollTitle || null,
+            pollOptions: pollOptions || null,
+            pollSelectableCount: pollSelectableCount || 1,
+            // Módulo 4: Mídia da biblioteca
+            mediaLibraryId: mediaLibraryId || null,
             createdAt: new Date().toISOString(),
             startedAt: null,
             completedAt: null,
-            history: [] // Log de envios
+            history: []
         };
         
         campaigns.push(campaign);
         
-        console.log(`[CAMPAIGN] Criada: "${name}" - ${contacts.length} contatos`);
+        console.log(`[CAMPAIGN] Criada: "${name}" (tipo: ${type}) - ${contacts.length} contatos`);
         
         res.json({ success: true, campaign });
         
@@ -3750,9 +4036,14 @@ app.get('/api/contact-campaigns/:phone', (req, res) => {
  * Envia mensagens em lotes com delay anti-ban
  */
 async function processCampaignBatches(campaign) {
-    const { contacts, batchSize, batchInterval, message, imageUrl, couponCode } = campaign;
+    const { contacts, batchSize, batchInterval, message, imageUrl, couponCode, campaignType, messageDelay } = campaign;
+    
+    // Anti-ban: delay base configurável (do frontend) + variação aleatória
+    const baseDelayMs = (messageDelay || 5) * 1000;
+    const delayVariation = 0.6; // ±60% de variação
     
     let currentIndex = campaign.sentCount; // Retomar de onde parou
+    let consecutiveSent = 0; // Contador para cooldown progressivo
     
     while (currentIndex < contacts.length) {
         // Verificar se campanha foi pausada ou cancelada
@@ -3764,7 +4055,7 @@ async function processCampaignBatches(campaign) {
         
         // Processar batch
         const batch = contacts.slice(currentIndex, currentIndex + batchSize);
-        console.log(`[CAMPAIGN] "${campaign.name}" - Lote ${Math.floor(currentIndex / batchSize) + 1}: ${batch.length} mensagens`);
+        console.log(`[CAMPAIGN] "${campaign.name}" - Lote ${Math.floor(currentIndex / batchSize) + 1}: ${batch.length} mensagens (tipo: ${campaignType || 'text'})`);
         
         for (const contact of batch) {
             // Verificar status novamente
@@ -3773,7 +4064,7 @@ async function processCampaignBatches(campaign) {
             
             try {
                 // Personalizar mensagem
-                let personalizedMsg = message
+                let personalizedMsg = (message || '')
                     .replace(/\{\{nome\}\}/gi, contact.name || 'Cliente')
                     .replace(/\{\{telefone\}\}/gi, contact.phone || '')
                     .replace(/\{\{cidade\}\}/gi, contact.city || '')
@@ -3785,35 +4076,123 @@ async function processCampaignBatches(campaign) {
                     phoneNumber = '55' + phoneNumber;
                 }
                 
-                // Enviar via Evolution API
                 let response;
-                if (imageUrl) {
-                    // Enviar imagem + legenda
-                    const mediaUrl = `${EVOLUTION_URL}/message/sendMedia/${INSTANCE_NAME}`;
-                    response = await fetch(mediaUrl, {
-                        method: 'POST',
-                        headers: evolutionHeaders,
-                        body: JSON.stringify({
-                            number: phoneNumber,
-                            mediatype: 'image',
-                            media: imageUrl,
-                            caption: personalizedMsg
-                        })
-                    });
-                } else {
-                    // Enviar texto puro
-                    const textUrl = `${EVOLUTION_URL}/message/sendText/${INSTANCE_NAME}`;
-                    response = await fetch(textUrl, {
-                        method: 'POST',
-                        headers: evolutionHeaders,
-                        body: JSON.stringify({
-                            number: phoneNumber,
-                            text: personalizedMsg
-                        })
-                    });
+                
+                // ===== TIPO DE ENVIO =====
+                switch (campaignType || 'text') {
+                    case 'poll': {
+                        // Módulo 3: Enquete
+                        const pollUrl = `${EVOLUTION_URL}/message/sendPoll/${INSTANCE_NAME}`;
+                        response = await fetch(pollUrl, {
+                            method: 'POST',
+                            headers: evolutionHeaders,
+                            body: JSON.stringify({
+                                number: phoneNumber,
+                                name: campaign.pollTitle,
+                                values: campaign.pollOptions,
+                                selectableCount: campaign.pollSelectableCount || 1
+                            })
+                        });
+                        break;
+                    }
+                    
+                    case 'audio': {
+                        // Módulo 4: Áudio PTT (gravado agora) da biblioteca
+                        let audioData = null;
+                        if (campaign.mediaLibraryId && supabase) {
+                            const { data: media } = await supabase.from('media_library')
+                                .select('base64, url, mimetype')
+                                .eq('id', campaign.mediaLibraryId).single();
+                            audioData = media;
+                            // Incrementar uso
+                            await supabase.from('media_library').update({ uso_count: supabase.raw('uso_count + 1'), usado_em: new Date().toISOString() }).eq('id', campaign.mediaLibraryId);
+                        }
+                        
+                        if (audioData) {
+                            const audioUrl = `${EVOLUTION_URL}/message/sendWhatsAppAudio/${INSTANCE_NAME}`;
+                            response = await fetch(audioUrl, {
+                                method: 'POST',
+                                headers: evolutionHeaders,
+                                body: JSON.stringify({
+                                    number: phoneNumber,
+                                    audio: audioData.base64 || audioData.url,
+                                    encoding: true // Converter para ogg/opus PTT
+                                })
+                            });
+                        } else {
+                            // Fallback: enviar como texto
+                            response = await fetch(`${EVOLUTION_URL}/message/sendText/${INSTANCE_NAME}`, {
+                                method: 'POST',
+                                headers: evolutionHeaders,
+                                body: JSON.stringify({ number: phoneNumber, text: personalizedMsg })
+                            });
+                        }
+                        break;
+                    }
+                    
+                    case 'sticker': {
+                        // Módulo 4: Figurinha da biblioteca
+                        let stickerData = null;
+                        if (campaign.mediaLibraryId && supabase) {
+                            const { data: media } = await supabase.from('media_library')
+                                .select('base64, url').eq('id', campaign.mediaLibraryId).single();
+                            stickerData = media;
+                        }
+                        
+                        if (stickerData) {
+                            const stickerUrl = `${EVOLUTION_URL}/message/sendSticker/${INSTANCE_NAME}`;
+                            response = await fetch(stickerUrl, {
+                                method: 'POST',
+                                headers: evolutionHeaders,
+                                body: JSON.stringify({
+                                    number: phoneNumber,
+                                    sticker: stickerData.base64 || stickerData.url
+                                })
+                            });
+                        }
+                        // Se tem mensagem, enviar texto depois do sticker
+                        if (personalizedMsg) {
+                            await new Promise(r => setTimeout(r, 1500));
+                            response = await fetch(`${EVOLUTION_URL}/message/sendText/${INSTANCE_NAME}`, {
+                                method: 'POST',
+                                headers: evolutionHeaders,
+                                body: JSON.stringify({ number: phoneNumber, text: personalizedMsg })
+                            });
+                        }
+                        break;
+                    }
+                    
+                    case 'image': {
+                        // Imagem + legenda
+                        const mediaUrl = `${EVOLUTION_URL}/message/sendMedia/${INSTANCE_NAME}`;
+                        response = await fetch(mediaUrl, {
+                            method: 'POST',
+                            headers: evolutionHeaders,
+                            body: JSON.stringify({
+                                number: phoneNumber,
+                                mediatype: 'image',
+                                media: imageUrl,
+                                caption: personalizedMsg
+                            })
+                        });
+                        break;
+                    }
+                    
+                    default: {
+                        // Texto puro
+                        const textUrl = `${EVOLUTION_URL}/message/sendText/${INSTANCE_NAME}`;
+                        response = await fetch(textUrl, {
+                            method: 'POST',
+                            headers: evolutionHeaders,
+                            body: JSON.stringify({
+                                number: phoneNumber,
+                                text: personalizedMsg
+                            })
+                        });
+                    }
                 }
                 
-                const data = await response.json();
+                const data = response ? await response.json() : { error: 'Sem resposta' };
                 const success = !data.error && data.status !== 'error';
                 
                 // Registrar no histórico
@@ -3827,15 +4206,32 @@ async function processCampaignBatches(campaign) {
                 
                 if (success) {
                     campaign.sentCount++;
+                    consecutiveSent++;
                 } else {
                     campaign.failedCount++;
                 }
                 
                 console.log(`[CAMPAIGN] ${success ? '✅' : '❌'} ${contact.name} (${phoneNumber})`);
                 
-                // Delay anti-ban: 3-7 segundos entre mensagens
-                const delay = 3000 + Math.random() * 4000;
-                await new Promise(r => setTimeout(r, delay));
+                // ===== ANTI-BAN INTELIGENTE (Fix #7) =====
+                // Delay base + variação aleatória + cooldown progressivo
+                let delay = baseDelayMs * (1 - delayVariation + Math.random() * delayVariation * 2);
+                
+                // Cooldown progressivo: a cada 15 msgs, pausar 30-60s extra
+                if (consecutiveSent > 0 && consecutiveSent % 15 === 0) {
+                    const cooldown = 30000 + Math.random() * 30000;
+                    console.log(`[CAMPAIGN] ⏸️ Cooldown anti-ban: ${Math.round(cooldown/1000)}s após ${consecutiveSent} msgs`);
+                    delay += cooldown;
+                }
+                
+                // Após muitas mensagens, aumentar delay progressivamente
+                if (consecutiveSent > 50) {
+                    delay *= 1.3; // +30% após 50 msgs
+                } else if (consecutiveSent > 100) {
+                    delay *= 1.6; // +60% após 100 msgs
+                }
+                
+                await new Promise(r => setTimeout(r, Math.round(delay)));
                 
             } catch (error) {
                 console.error(`[CAMPAIGN] Erro ao enviar para ${contact.name}:`, error.message);

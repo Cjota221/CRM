@@ -395,6 +395,48 @@ function initSocket() {
         updateMessageStatusIcons(data);
     });
     
+    // ======== ALERTAS DE STATUS DE PEDIDO (Módulo 6) ========
+    socket.on('order-status-update', (data) => {
+        console.log(`[SOCKET.IO] Status de pedido atualizado: ${data.orderId} → ${data.status}`);
+        
+        // Mostrar notificação visual
+        const statusLabels = {
+            'aprovado': '✅ Pedido Aprovado',
+            'separacao': '📦 Em Separação',
+            'postado': '🚚 Pedido Enviado',
+            'transito': '🚚 Em Trânsito',
+            'entregue': '🎉 Entregue'
+        };
+        
+        const label = statusLabels[data.status] || `Status: ${data.status}`;
+        const notifDiv = document.createElement('div');
+        notifDiv.className = 'fixed top-4 right-4 z-50 bg-white rounded-xl shadow-lg border border-emerald-200 p-4 max-w-sm animate-in';
+        notifDiv.innerHTML = `
+            <div class="flex items-start gap-3">
+                <div class="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                    <i data-lucide="package" class="w-5 h-5 text-emerald-600"></i>
+                </div>
+                <div>
+                    <p class="font-semibold text-slate-800 text-sm">${label}</p>
+                    <p class="text-xs text-slate-500">${data.clientName || ''} · #${data.orderId?.slice(0, 8) || ''}</p>
+                    ${data.tracking_code ? `<p class="text-xs text-emerald-600 mt-1">📦 ${data.tracking_code}</p>` : ''}
+                </div>
+                <button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+        `;
+        document.body.appendChild(notifDiv);
+        if (window.lucide) lucide.createIcons();
+        setTimeout(() => notifDiv.remove(), 8000);
+        
+        // Se o chat desse cliente estiver aberto, recarregar mensagens
+        if (currentRemoteJid && data.clientPhone) {
+            const jid = data.clientPhone.includes('@') ? data.clientPhone : data.clientPhone + '@s.whatsapp.net';
+            if (jid === currentRemoteJid) {
+                setTimeout(() => loadMessages(currentRemoteJid, true), 2000);
+            }
+        }
+    });
+    
     // Keep-alive customizado a cada 25s
     setInterval(() => {
         if (socket && socket.connected) {
@@ -2996,10 +3038,12 @@ function renderClientPanelBrain(brainData, phone) {
                     </div>
                 </div>
                 <!-- Tag de Fidelidade -->
-                <div class="flex items-center gap-2 mt-1">
+                <div class="flex items-center gap-2 mt-1 flex-wrap">
                     <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-white/25 backdrop-blur">${loyaltyBadge.icon} ${loyaltyTag}</span>
                     ${metrics.daysSinceLastPurchase > 90 && metrics.ordersCount > 0 ? '<span class="px-2 py-1 rounded-full text-xs font-medium bg-red-400/30">⏰ Reativar!</span>' : ''}
                 </div>
+                <!-- Tags de Segmentação IA (Módulo 1) -->
+                <div id="crmClientTags" class="flex flex-wrap gap-1 mt-2"></div>
                 <p class="text-sm opacity-80 mt-2">${brainData.insight}</p>
             </div>
             
@@ -3086,6 +3130,46 @@ function renderClientPanelBrain(brainData, phone) {
         </div>
     `;
     lucide.createIcons();
+    
+    // Carregar tags de segmentação IA do Supabase (Módulo 1)
+    loadClientSegmentTags(phone);
+}
+
+/**
+ * Carregar e renderizar tags de segmentação IA (clientes_tags) do servidor
+ */
+async function loadClientSegmentTags(phone) {
+    const container = document.getElementById('crmClientTags');
+    if (!container || !phone) return;
+    
+    try {
+        const cleanPhone = phone.replace(/\D/g, '');
+        const res = await fetch(`${API_BASE}/client-tags/${cleanPhone}`);
+        if (!res.ok) return;
+        
+        const tags = await res.json();
+        if (!tags || tags.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+        
+        const TAG_COLORS = {
+            'anuncio': 'bg-blue-400/30 text-blue-100',
+            'bio_link': 'bg-cyan-400/30 text-cyan-100',
+            'ia': 'bg-purple-400/30 text-purple-100',
+            'manual': 'bg-amber-400/30 text-amber-100',
+            'organico': 'bg-green-400/30 text-green-100',
+            'webhook': 'bg-teal-400/30 text-teal-100',
+            'campanha': 'bg-pink-400/30 text-pink-100'
+        };
+        
+        container.innerHTML = tags.map(t => {
+            const colorClass = TAG_COLORS[t.origem] || 'bg-white/20 text-white/90';
+            return `<span class="px-2 py-0.5 rounded-full text-[10px] font-medium ${colorClass}" title="Origem: ${t.origem} | Confiança: ${t.confianca}%">${t.tag}</span>`;
+        }).join('');
+    } catch (err) {
+        console.warn('[TAGS] Erro ao carregar tags:', err.message);
+    }
 }
 
 function renderNewLeadPanel(phone, whatsappName) {
