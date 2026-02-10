@@ -949,7 +949,29 @@
                     <label class="block text-sm font-medium text-slate-700 mb-1">Nome da Campanha</label>
                     <input type="text" id="campaignName" placeholder="Ex: Reposição Janeiro" class="input">
                 </div>
-                
+
+                <!-- Tipo de Campanha -->
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Tipo de Envio</label>
+                    <div class="flex flex-wrap gap-2">
+                        <button onclick="selectCampaignType('text')" id="campType_text" class="camp-type-btn px-3 py-2 rounded-lg border-2 border-emerald-500 bg-emerald-50 text-sm font-medium text-emerald-700 transition-colors">
+                            <i data-lucide="type" class="w-4 h-4 inline mr-1"></i>Texto
+                        </button>
+                        <button onclick="selectCampaignType('image')" id="campType_image" class="camp-type-btn px-3 py-2 rounded-lg border-2 border-slate-200 text-sm font-medium text-slate-600 hover:border-emerald-400 transition-colors">
+                            <i data-lucide="image" class="w-4 h-4 inline mr-1"></i>Imagem
+                        </button>
+                        <button onclick="selectCampaignType('poll')" id="campType_poll" class="camp-type-btn px-3 py-2 rounded-lg border-2 border-slate-200 text-sm font-medium text-slate-600 hover:border-emerald-400 transition-colors">
+                            <i data-lucide="bar-chart-3" class="w-4 h-4 inline mr-1"></i>Enquete
+                        </button>
+                        <button onclick="selectCampaignType('audio')" id="campType_audio" class="camp-type-btn px-3 py-2 rounded-lg border-2 border-slate-200 text-sm font-medium text-slate-600 hover:border-emerald-400 transition-colors">
+                            <i data-lucide="mic" class="w-4 h-4 inline mr-1"></i>Áudio PTT
+                        </button>
+                        <button onclick="selectCampaignType('sticker')" id="campType_sticker" class="camp-type-btn px-3 py-2 rounded-lg border-2 border-slate-200 text-sm font-medium text-slate-600 hover:border-emerald-400 transition-colors">
+                            <i data-lucide="smile" class="w-4 h-4 inline mr-1"></i>Figurinha
+                        </button>
+                    </div>
+                </div>
+
                 <div>
                     <label class="block text-sm font-medium text-slate-700 mb-2">Público Alvo</label>
                     <div class="grid grid-cols-2 gap-3">
@@ -995,13 +1017,68 @@
                     </div>
                 </div>
                 
-                <div>
+                <!-- Seção Imagem (só para tipo image) -->
+                <div id="sectionImage">
                     <label class="block text-sm font-medium text-slate-700 mb-1">Imagem (opcional)</label>
                     <div id="campaignImagePreview" class="hidden mb-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
                         <img id="campaignImageThumb" src="" class="w-20 h-20 object-cover rounded">
                         <button onclick="removeCampaignImage()" class="text-red-500 text-xs mt-1">Remover</button>
                     </div>
                     <input type="file" id="campaignImage" accept="image/*" class="input text-sm" onchange="previewCampaignImage(event)">
+                </div>
+
+                <!-- Seção Enquete (só para tipo poll) -->
+                <div id="sectionPoll" class="hidden p-4 bg-purple-50 rounded-xl space-y-3">
+                    <h4 class="font-medium text-slate-800 flex items-center gap-2">
+                        <i data-lucide="bar-chart-3" class="w-4 h-4 text-purple-600"></i>
+                        Configurar Enquete
+                    </h4>
+                    <div>
+                        <label class="block text-xs text-slate-500 mb-1">Pergunta da enquete</label>
+                        <input type="text" id="pollTitle" placeholder="Ex: Qual cor você prefere?" class="input">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-500 mb-1">Opções (mín 2, máx 12)</label>
+                        <div id="pollOptionsContainer" class="space-y-2">
+                            <div class="flex items-center gap-2">
+                                <input type="text" class="poll-option input text-sm flex-1" placeholder="Opção 1">
+                                <button onclick="removePollOption(this)" class="text-red-400 hover:text-red-600 p-1" title="Remover">✕</button>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <input type="text" class="poll-option input text-sm flex-1" placeholder="Opção 2">
+                                <button onclick="removePollOption(this)" class="text-red-400 hover:text-red-600 p-1" title="Remover">✕</button>
+                            </div>
+                        </div>
+                        <button onclick="addPollOption()" class="mt-2 text-xs text-purple-600 hover:text-purple-800 font-medium">+ Adicionar opção</button>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-500 mb-1">Máximo de escolhas por pessoa</label>
+                        <select id="pollSelectableCount" class="input text-sm w-32">
+                            <option value="1">1 (única)</option>
+                            <option value="2">2</option>
+                            <option value="3">3</option>
+                            <option value="0">Ilimitado</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Seção Biblioteca de Mídias (para audio/sticker) -->
+                <div id="sectionMediaLibrary" class="hidden p-4 bg-cyan-50 rounded-xl space-y-3">
+                    <h4 class="font-medium text-slate-800 flex items-center gap-2">
+                        <i data-lucide="folder-open" class="w-4 h-4 text-cyan-600"></i>
+                        Biblioteca de Mídias
+                    </h4>
+                    <div id="mediaLibraryGrid" class="grid grid-cols-3 gap-2 max-h-[200px] overflow-y-auto">
+                        <p class="text-sm text-slate-400 col-span-3">Carregando...</p>
+                    </div>
+                    <div class="border-t border-cyan-200 pt-3">
+                        <p class="text-xs text-slate-500 mb-2">Ou faça upload de um arquivo:</p>
+                        <input type="file" id="mediaUploadFile" accept="audio/ogg,audio/mp3,audio/mpeg,audio/opus,image/webp" class="input text-sm" onchange="previewMediaUpload(event)">
+                        <div id="mediaUploadPreview" class="hidden mt-2 p-2 bg-white rounded border border-cyan-200">
+                            <audio id="mediaUploadAudio" controls class="w-full h-8"></audio>
+                            <p id="mediaUploadName" class="text-xs text-slate-500 mt-1"></p>
+                        </div>
+                    </div>
                 </div>
                 
                 <div class="p-4 bg-slate-50 rounded-xl">

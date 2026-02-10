@@ -30,7 +30,7 @@ CREATE INDEX IF NOT EXISTS idx_clientes_tags_origem ON clientes_tags(origem);
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS tracking_events (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    order_id UUID REFERENCES orders(id),
+    order_id TEXT REFERENCES orders(id),
     tracking_code TEXT,
     status TEXT NOT NULL, -- 'aprovado', 'separacao', 'postado', 'transito', 'entregue'
     status_anterior TEXT,

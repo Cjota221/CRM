@@ -5022,6 +5022,11 @@ let allCampaigns = JSON.parse(localStorage.getItem('crm_campaigns') || '[]');
 let selectedAudience = null;
 let campaignImageBase64 = null;
 let currentCampaignFilter = 'all';
+let selectedCampaignType = 'text';
+let mediaLibraryItems = [];
+let selectedMediaId = null;
+let uploadedMediaBase64 = null;
+let uploadedMediaMime = null;
 
 // Alternar entre Views
 function switchView(view) {
@@ -5251,14 +5256,52 @@ function closeNewCampaign() {
     document.getElementById('groupSelector').classList.add('hidden');
     document.querySelectorAll('.group-checkbox').forEach(cb => cb.checked = false);
     updateSelectedGroupsCount();
+    
+    // Reset VEXX 2.0 fields
+    selectedCampaignType = 'text';
+    selectedMediaId = null;
+    uploadedMediaBase64 = null;
+    uploadedMediaMime = null;
+    selectCampaignType('text');
+    const pollContainer = document.getElementById('pollOptionsContainer');
+    if (pollContainer) {
+        pollContainer.innerHTML = `
+            <div class="flex items-center gap-2">
+                <input type="text" class="poll-option input text-sm flex-1" placeholder="Opção 1">
+                <button onclick="removePollOption(this)" class="text-red-400 hover:text-red-600 p-1" title="Remover">✕</button>
+            </div>
+            <div class="flex items-center gap-2">
+                <input type="text" class="poll-option input text-sm flex-1" placeholder="Opção 2">
+                <button onclick="removePollOption(this)" class="text-red-400 hover:text-red-600 p-1" title="Remover">✕</button>
+            </div>
+        `;
+    }
+    const mediaUploadPreview = document.getElementById('mediaUploadPreview');
+    if (mediaUploadPreview) mediaUploadPreview.classList.add('hidden');
+    const mediaUploadFile = document.getElementById('mediaUploadFile');
+    if (mediaUploadFile) mediaUploadFile.value = '';
 }
 
 async function saveCampaign() {
     const name = document.getElementById('campaignName').value.trim();
     const message = document.getElementById('campaignMessage').value.trim();
     
-    if (!name || !message || !selectedAudience) {
-        return alert('Preencha todos os campos obrigatórios');
+    // Validação baseada no tipo
+    if (!name || !selectedAudience) {
+        return alert('Preencha nome e selecione o público alvo');
+    }
+    
+    if (selectedCampaignType === 'poll') {
+        const pollTitle = document.getElementById('pollTitle')?.value.trim();
+        const pollOptions = getPollOptions();
+        if (!pollTitle) return alert('Preencha a pergunta da enquete');
+        if (pollOptions.length < 2) return alert('Adicione pelo menos 2 opções na enquete');
+    } else if (selectedCampaignType === 'audio' || selectedCampaignType === 'sticker') {
+        if (!selectedMediaId && !uploadedMediaBase64) {
+            return alert('Selecione uma mídia da biblioteca ou faça upload de um arquivo');
+        }
+    } else {
+        if (!message) return alert('Digite a mensagem');
     }
     
     const scheduled = document.getElementById('scheduleEnabled').checked;
@@ -5301,6 +5344,13 @@ async function saveCampaign() {
         name,
         message,
         image: campaignImageBase64,
+        campaignType: selectedCampaignType,
+        pollTitle: selectedCampaignType === 'poll' ? (document.getElementById('pollTitle')?.value.trim() || '') : null,
+        pollOptions: selectedCampaignType === 'poll' ? getPollOptions() : null,
+        pollSelectableCount: selectedCampaignType === 'poll' ? parseInt(document.getElementById('pollSelectableCount')?.value || '1') : null,
+        mediaId: selectedMediaId,
+        mediaBase64: uploadedMediaBase64,
+        mediaMime: uploadedMediaMime,
         audience: selectedAudience,
         targetGroups: selectedAudience === 'group' ? getSelectedGroups().map(g => g.jid) : [],
         batchSize: parseInt(document.getElementById('batchSize').value),
@@ -5495,40 +5545,140 @@ async function processCampaignBatch(id) {
         }
         
         try {
-            let text = campaign.message.replace(/\{\{nome\}\}/gi, contact.name || 'Cliente');
+            let text = (campaign.message || '').replace(/\{\{nome\}\}/gi, contact.name || 'Cliente');
             
             // Para grupos (@g.us), enviar o JID como está; para contatos, limpar o telefone
             const phone = contact.phone.includes('@g.us') 
                 ? contact.phone 
                 : contact.phone.replace(/\D/g, '');
             
-            if (campaign.image) {
-                // Enviar imagem + legenda via send-media
-                await fetch(`${API_BASE}/whatsapp/send-media`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        number: phone,
-                        mediaType: 'image',
-                        media: campaign.image,
-                        caption: text
-                    })
-                });
-            } else {
-                // Enviar texto puro
-                await fetch(`${API_BASE}/whatsapp/send-message`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ number: phone, text })
-                });
+            const cType = campaign.campaignType || 'text';
+            
+            switch (cType) {
+                case 'poll': {
+                    // Enviar enquete
+                    await fetch(`${API_BASE}/whatsapp/send-poll`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            number: phone,
+                            name: campaign.pollTitle,
+                            values: campaign.pollOptions,
+                            selectableCount: campaign.pollSelectableCount || 1
+                        })
+                    });
+                    break;
+                }
+                case 'audio': {
+                    // Enviar áudio PTT
+                    let audioBase64 = campaign.mediaBase64;
+                    if (campaign.mediaId && !audioBase64) {
+                        // Buscar da biblioteca
+                        const mediaItem = mediaLibraryItems.find(m => m.id === campaign.mediaId);
+                        if (mediaItem) audioBase64 = mediaItem.base64 || mediaItem.url;
+                    }
+                    if (audioBase64) {
+                        await fetch(`${API_BASE}/whatsapp/send-audio`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                number: phone,
+                                audio: audioBase64,
+                                encoding: true
+                            })
+                        });
+                    }
+                    break;
+                }
+                case 'sticker': {
+                    // Enviar figurinha + texto opcional
+                    let stickerBase64 = campaign.mediaBase64;
+                    if (campaign.mediaId && !stickerBase64) {
+                        const mediaItem = mediaLibraryItems.find(m => m.id === campaign.mediaId);
+                        if (mediaItem) stickerBase64 = mediaItem.base64 || mediaItem.url;
+                    }
+                    if (stickerBase64) {
+                        await fetch(`${API_BASE}/whatsapp/send-media`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                number: phone,
+                                mediaType: 'sticker',
+                                media: stickerBase64
+                            })
+                        });
+                    }
+                    // Texto complementar se houver
+                    if (text) {
+                        await new Promise(r => setTimeout(r, 1500));
+                        await fetch(`${API_BASE}/whatsapp/send-message`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ number: phone, text })
+                        });
+                    }
+                    break;
+                }
+                case 'image': {
+                    if (campaign.image) {
+                        await fetch(`${API_BASE}/whatsapp/send-media`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                number: phone,
+                                mediaType: 'image',
+                                media: campaign.image,
+                                caption: text
+                            })
+                        });
+                    } else {
+                        // Fallback para texto se não tem imagem
+                        await fetch(`${API_BASE}/whatsapp/send-message`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ number: phone, text })
+                        });
+                    }
+                    break;
+                }
+                default: {
+                    // Texto puro
+                    if (campaign.image) {
+                        await fetch(`${API_BASE}/whatsapp/send-media`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                number: phone,
+                                mediaType: 'image',
+                                media: campaign.image,
+                                caption: text
+                            })
+                        });
+                    } else {
+                        await fetch(`${API_BASE}/whatsapp/send-message`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ number: phone, text })
+                        });
+                    }
+                }
             }
             
             campaign.sent++;
             
-            // Delay entre mensagens (customizável via messageDelay)
-            const baseDelay = (campaign.messageDelay || 5) * 1000;
-            const jitter = baseDelay * 0.6; // 60% de variação
-            await new Promise(r => setTimeout(r, baseDelay + Math.random() * jitter));
+            // Anti-ban inteligente: delay com jitter + cooldown progressivo
+            const msgIndex = campaign.sent;
+            let baseDelay = (campaign.messageDelay || 5) * 1000;
+            // Aumento progressivo
+            if (msgIndex > 100) baseDelay *= 1.6;
+            else if (msgIndex > 50) baseDelay *= 1.3;
+            const jitter = baseDelay * 0.6;
+            let delay = baseDelay + (Math.random() * jitter * 2 - jitter);
+            // Cooldown a cada 15 mensagens
+            if (msgIndex > 0 && msgIndex % 15 === 0) {
+                delay += 30000 + Math.random() * 30000; // 30-60s extra
+            }
+            await new Promise(r => setTimeout(r, Math.max(delay, 2000)));
             
         } catch (e) {
             console.error('Erro ao enviar:', e);
@@ -5581,6 +5731,151 @@ function saveCampaigns() {
 
 function openImportFromGroup() {
     alert('Funcionalidade em desenvolvimento: Importar contatos de grupos do WhatsApp');
+}
+
+// ============================================================================
+// VEXX 2.0 — Campanhas: Tipo, Enquete, Biblioteca de Mídias
+// ============================================================================
+
+function selectCampaignType(type) {
+    selectedCampaignType = type;
+    
+    // Atualizar botões
+    document.querySelectorAll('.camp-type-btn').forEach(btn => {
+        btn.classList.remove('border-emerald-500', 'bg-emerald-50', 'text-emerald-700');
+        btn.classList.add('border-slate-200', 'text-slate-600');
+    });
+    const active = document.getElementById(`campType_${type}`);
+    if (active) {
+        active.classList.add('border-emerald-500', 'bg-emerald-50', 'text-emerald-700');
+        active.classList.remove('border-slate-200', 'text-slate-600');
+    }
+    
+    // Toggle seções condicionais
+    const sectionImage = document.getElementById('sectionImage');
+    const sectionPoll = document.getElementById('sectionPoll');
+    const sectionMedia = document.getElementById('sectionMediaLibrary');
+    const sectionMsg = document.getElementById('campaignMessage');
+    
+    if (sectionImage) sectionImage.classList.toggle('hidden', type !== 'text' && type !== 'image');
+    if (sectionPoll) sectionPoll.classList.toggle('hidden', type !== 'poll');
+    if (sectionMedia) sectionMedia.classList.toggle('hidden', type !== 'audio' && type !== 'sticker');
+    if (sectionMsg) {
+        // Mensagem é obrigatória para text/image, opcional para poll, oculta para audio
+        const msgContainer = sectionMsg.closest('div');
+        if (type === 'audio') {
+            if (msgContainer) msgContainer.classList.add('hidden');
+        } else {
+            if (msgContainer) msgContainer.classList.remove('hidden');
+        }
+    }
+    
+    // Carregar biblioteca de mídias se necessário
+    if (type === 'audio' || type === 'sticker') {
+        loadMediaLibrary(type === 'audio' ? 'audio' : 'sticker');
+    }
+    
+    lucide.createIcons();
+}
+
+// --- Enquete ---
+function addPollOption() {
+    const container = document.getElementById('pollOptionsContainer');
+    const count = container.querySelectorAll('.poll-option').length;
+    if (count >= 12) return alert('Máximo 12 opções');
+    
+    const div = document.createElement('div');
+    div.className = 'flex items-center gap-2';
+    div.innerHTML = `
+        <input type="text" class="poll-option input text-sm flex-1" placeholder="Opção ${count + 1}">
+        <button onclick="removePollOption(this)" class="text-red-400 hover:text-red-600 p-1" title="Remover">✕</button>
+    `;
+    container.appendChild(div);
+}
+
+function removePollOption(btn) {
+    const container = document.getElementById('pollOptionsContainer');
+    if (container.querySelectorAll('.poll-option').length <= 2) return alert('Mínimo 2 opções');
+    btn.closest('.flex').remove();
+}
+
+function getPollOptions() {
+    return Array.from(document.querySelectorAll('.poll-option'))
+        .map(el => el.value.trim())
+        .filter(v => v.length > 0);
+}
+
+// --- Biblioteca de Mídias ---
+async function loadMediaLibrary(filterType) {
+    try {
+        const res = await fetch(`${API_BASE}/media-library`);
+        if (res.ok) {
+            mediaLibraryItems = await res.json();
+        } else {
+            mediaLibraryItems = [];
+        }
+    } catch(e) {
+        console.warn('[MediaLibrary] Erro ao carregar:', e);
+        mediaLibraryItems = [];
+    }
+    renderMediaLibrary(filterType);
+}
+
+function renderMediaLibrary(filterType) {
+    const grid = document.getElementById('mediaLibraryGrid');
+    if (!grid) return;
+    
+    const filtered = filterType ? mediaLibraryItems.filter(m => m.tipo === filterType) : mediaLibraryItems;
+    
+    if (filtered.length === 0) {
+        grid.innerHTML = `<p class="text-sm text-slate-400 col-span-3">Nenhuma mídia ${filterType || ''} na biblioteca. Faça upload abaixo.</p>`;
+        return;
+    }
+    
+    grid.innerHTML = filtered.map(m => `
+        <div onclick="selectMedia('${m.id}')" class="cursor-pointer p-2 rounded-lg border-2 transition-all ${selectedMediaId === m.id ? 'border-cyan-500 bg-cyan-100' : 'border-slate-200 hover:border-cyan-300 bg-white'}">
+            <div class="flex items-center gap-2">
+                <i data-lucide="${m.tipo === 'audio' ? 'mic' : m.tipo === 'image' ? 'image' : 'smile'}" class="w-4 h-4 text-slate-500"></i>
+                <span class="text-xs text-slate-700 truncate">${escapeHtml(m.nome)}</span>
+            </div>
+            <p class="text-[10px] text-slate-400 mt-1">${m.tipo} • ${m.uso_count || 0}x usado</p>
+        </div>
+    `).join('');
+    
+    lucide.createIcons();
+}
+
+function selectMedia(id) {
+    selectedMediaId = selectedMediaId === id ? null : id;
+    uploadedMediaBase64 = null; // Desselecionar upload se escolheu da biblioteca
+    renderMediaLibrary(selectedCampaignType === 'audio' ? 'audio' : 'sticker');
+}
+
+function previewMediaUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    selectedMediaId = null; // Desselecionar da biblioteca se fez upload
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        uploadedMediaBase64 = e.target.result;
+        uploadedMediaMime = file.type;
+        
+        const preview = document.getElementById('mediaUploadPreview');
+        const audio = document.getElementById('mediaUploadAudio');
+        const nameEl = document.getElementById('mediaUploadName');
+        
+        if (preview) preview.classList.remove('hidden');
+        if (audio && file.type.startsWith('audio/')) {
+            audio.src = e.target.result;
+            audio.classList.remove('hidden');
+        } else if (audio) {
+            audio.classList.add('hidden');
+        }
+        if (nameEl) nameEl.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+    };
+    reader.readAsDataURL(file);
 }
 
 // ============================================================================
