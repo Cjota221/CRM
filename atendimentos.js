@@ -385,16 +385,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         loadCRMData();
     });
 
-    // 1. Verificar conexão WhatsApp
-    await checkConnection();
+    // 1. Verificar conexão WhatsApp + Inicializar chats EM PARALELO
+    const [_, __] = await Promise.all([
+        checkConnection(),
+        initializeApp()
+    ]);
 
     // 2. Carregar dados do CRM (Clientes/Produtos/Pedidos)
     loadCRMData();
 
-    // 3. Inicializar novo sistema de chats
-    await initializeApp();
-
-    // 4. Processar snoozes (verificar se algum deve "acordar")
+    // 3. Processar snoozes (verificar se algum deve "acordar")
     processSnoozedChats();
 
     // Setup de inputs
@@ -1159,52 +1159,50 @@ function renderGroupInfo(group) {
 }
 
 async function loadMessages(remoteJid, isUpdate = false) {
-    console.log('\n🔥🔥🔥 FUNÇÃO loadMessages CHAMADA! 🔥🔥🔥');
-    console.log('remoteJid:', remoteJid);
-    console.log('isUpdate:', isUpdate);
-    
     if (!remoteJid) {
-        console.error('[❌ ERRO] RemoteJid inválido:', remoteJid);
+        console.error('[loadMessages] RemoteJid inválido:', remoteJid);
         return;
     }
     
-    console.log('\n📨 INICIANDO CARREGAMENTO DE MENSAGENS');
-    console.log('RemoteJid solicitado:', remoteJid);
-    console.log('RemoteJid atual no state:', currentRemoteJid);
-    
-    // VALIDAÇÃO CRÍTICA: Garantir que esse carregamento é para o chat atual
+    // VALIDAÇÃO: Garantir que esse carregamento é para o chat atual
     if (currentRemoteJid !== remoteJid) {
-        console.warn('[⚠️ AVISO] RemoteJid diferente do esperado!');
-        console.warn('Esperado:', currentRemoteJid);
-        console.warn('Recebido:', remoteJid);
-        // Atualizar para o correto
         currentRemoteJid = remoteJid;
     }
     
+    // ======== CACHE DE MENSAGENS ========
+    // Se é troca de chat (não update), tentar cache primeiro
+    if (!isUpdate && window.chatLoader) {
+        const cached = window.chatLoader.getCachedMessages(remoteJid);
+        if (cached && cached.length > 0) {
+            console.log(`[⚡ Cache] ${cached.length} mensagens do cache para ${remoteJid}`);
+            renderMessagesFromData(remoteJid, cached, false);
+            // Revalidar em background
+            fetchAndRenderMessages(remoteJid, true);
+            return;
+        }
+    }
+    
+    await fetchAndRenderMessages(remoteJid, isUpdate);
+}
+
+/**
+ * Buscar mensagens da API e renderizar
+ */
+async function fetchAndRenderMessages(remoteJid, isUpdate = false) {
+    
     try {
-        console.log('📡 Fazendo fetch para:', `${API_BASE}/whatsapp/messages/fetch`);
         const res = await fetch(`${API_BASE}/whatsapp/messages/fetch`, {
             method: 'POST',
             body: JSON.stringify({ remoteJid }),
             headers: {'Content-Type': 'application/json'}
         });
         
-        console.log('📡 Response status:', res.status);
-        console.log('📡 Response ok:', res.ok);
-        
         if (!res.ok) {
-            console.error('❌ ERRO HTTP:', res.status, res.statusText);
-            const errorText = await res.text();
-            console.error('Corpo do erro:', errorText);
+            console.error('[loadMessages] HTTP error:', res.status);
             return;
         }
         
         const data = await res.json();
-        
-        console.log('📦 Resposta da API recebida');
-        console.log('Tipo:', typeof data);
-        console.log('É array?', Array.isArray(data));
-        console.log('Tem property "messages"?', !!data?.messages);
         
         let messages = [];
         if (Array.isArray(data)) {
@@ -1216,14 +1214,6 @@ async function loadMessages(remoteJid, isUpdate = false) {
             messages = data.messages.records;
         } else if (data && Array.isArray(data.data)) {
             messages = data.data;
-        }
-        
-        console.log(`📊 Total de mensagens recebidas: ${messages.length}`);
-        
-        const container = document.getElementById('messagesContainer');
-        if (!container) {
-            console.error('[❌ ERRO] Container de mensagens não encontrado!');
-            return;
         }
         
         // ====== VALIDAÇÃO CRÍTICA: FILTRAR MENSAGENS POR REMOTEJID ======
@@ -1265,136 +1255,13 @@ async function loadMessages(remoteJid, isUpdate = false) {
         
         console.log(`🔍 Filtrado: ${beforeFilterCount} → ${messages.length} mensagens válidas`);
         
-        // Se não tiver mensagens ou formato inválido, mostrar mensagem vazia
-        if (!messages || !Array.isArray(messages)) {
-            console.log('❌ Sem mensagens ou formato inválido');
-            container.innerHTML = '<div class="text-center p-4 text-gray-500">Nenhuma mensagem nesta conversa.</div>';
-            return;
+        // Salvar no cache de mensagens
+        if (window.chatLoader && messages.length > 0) {
+            window.chatLoader.setCachedMessages(remoteJid, messages);
         }
         
-        // ====== OTIMIZAÇÃO: Pular re-render se mensagens não mudaram ======
-        if (isUpdate && messages.length > 0) {
-            const newHash = messages.map(m => m.key?.id || m.messageTimestamp).join(',');
-            if (window._lastMsgHash === newHash) {
-                // Sem mudanças — não re-renderizar
-                return;
-            }
-            window._lastMsgHash = newHash;
-        } else if (messages.length > 0) {
-            window._lastMsgHash = messages.map(m => m.key?.id || m.messageTimestamp).join(',');
-        }
-
-        // Pausar todos os áudios antes de limpar o container
-        pauseAllAudios();
-
-        // LIMPAR COMPLETAMENTE o container anterior
-        container.innerHTML = '';
-        
-        if (messages.length === 0) {
-            console.log('ℹ️ Sem mensagens para exibir');
-            container.innerHTML = '<div class="text-center p-4 text-gray-500">Nenhuma mensagem nesta conversa.</div>';
-            return;
-        }
-        
-        // Ordenar por timestamp (ascendente = mais antigo para mais novo)
-        const sortedMsgs = messages.sort((a, b) => (a.messageTimestamp || 0) - (b.messageTimestamp || 0));
-        
-        console.log(`📝 Renderizando ${sortedMsgs.length} mensagens...`);
-        
-        sortedMsgs.forEach((msg, index) => {
-            const isMe = msg.key.fromMe;
-            
-            // Extrair conteúdo da mensagem
-            let content = '';
-            let isTextMessage = false;
-            const m = msg.message;
-            
-            if (m?.conversation) {
-                content = formatWhatsAppText(m.conversation);
-                isTextMessage = true;
-            } else if (m?.extendedTextMessage?.text) {
-                content = formatWhatsAppText(m.extendedTextMessage.text);
-                isTextMessage = true;
-            } else if (m?.imageMessage) {
-                const caption = m.imageMessage.caption || '';
-                const captionHtml = caption ? '<br>' + formatWhatsAppText(caption) : '';
-                content = `<div class="flex items-center gap-2"><span class="text-lg">📷</span> <span>Imagem${captionHtml}</span></div>`;
-            } else if (m?.videoMessage) {
-                const caption = m.videoMessage.caption || '';
-                const captionHtml = caption ? '<br>' + formatWhatsAppText(caption) : '';
-                content = `<div class="flex items-center gap-2"><span class="text-lg">🎬</span> <span>Vídeo${captionHtml}</span></div>`;
-            } else if (m?.audioMessage) {
-                // Player de áudio estilo WhatsApp
-                const audioUrl = m.audioMessage.playableUrl || m.audioMessage.url || '';
-                const duration = m.audioMessage.seconds || 0;
-                const audioId = `audio-${msg.key.id}`;
-                
-                if (audioUrl) {
-                    const minutes = Math.floor(duration / 60);
-                    const seconds = Math.floor(duration % 60);
-                    const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-                    
-                    content = `
-                        <div class="audio-player-whatsapp flex items-center gap-2 p-2 rounded-lg bg-white/50 min-w-[200px]" data-audio-id="${audioId}">
-                            <button onclick="toggleAudioPlay('${audioId}', '${audioUrl}')" class="flex-shrink-0 w-9 h-9 rounded-full bg-emerald-500 hover:bg-emerald-600 flex items-center justify-center text-white transition shadow-sm">
-                                <i data-lucide="play" class="w-4 h-4 play-icon"></i>
-                                <i data-lucide="pause" class="w-4 h-4 pause-icon hidden"></i>
-                            </button>
-                            <div class="flex-1 flex flex-col gap-1 min-w-0">
-                                <div class="flex items-center gap-2">
-                                    <div class="flex-1 h-1 bg-slate-200 rounded-full overflow-hidden cursor-pointer audio-progress-bar" onclick="seekAudio(event, '${audioId}')">
-                                        <div class="h-full bg-emerald-500 audio-progress" style="width: 0%"></div>
-                                    </div>
-                                </div>
-                                <div class="flex items-center gap-2 text-xs text-slate-500">
-                                    <span class="audio-time">0:00</span>
-                                    <span>/</span>
-                                    <span>${timeStr}</span>
-                                    <button onclick="changePlaybackSpeed('${audioId}')" class="ml-auto text-[10px] font-medium text-emerald-600 hover:text-emerald-700 audio-speed">1x</button>
-                                </div>
-                            </div>
-                            <audio class="hidden" id="${audioId}" preload="metadata">
-                                <source src="${audioUrl}" type="audio/ogg; codecs=opus">
-                                <source src="${audioUrl}" type="audio/mpeg">
-                                <source src="${audioUrl}" type="audio/mp4">
-                            </audio>
-                        </div>
-                    `;
-                } else {
-                    content = `<div class="flex items-center gap-2"><span class="text-lg">🎵</span> <span>Áudio (${duration}s)</span></div>`;
-                }
-            } else if (m?.documentMessage) {
-                const fileName = m.documentMessage.fileName || 'Documento';
-                content = `<div class="flex items-center gap-2"><span class="text-lg">📄</span> <span>${fileName}</span></div>`;
-            } else if (m?.stickerMessage) {
-                content = `<div class="flex items-center gap-2"><span class="text-lg">✨</span> <span>Figurinha</span></div>`;
-            } else if (m?.contactMessage) {
-                const name = m.contactMessage.displayName || 'Contato';
-                content = `<div class="flex items-center gap-2"><span class="text-lg">👤</span> <span>${name}</span></div>`;
-            } else if (m?.locationMessage) {
-                content = `<div class="flex items-center gap-2"><span class="text-lg">📍</span> <span>Localização</span></div>`;
-            } else {
-                content = '<span class="text-slate-400 italic">Mensagem não suportada</span>';
-            }
-            
-            // Renderizar balão de mensagem
-            const div = document.createElement('div');
-            div.className = `p-3 max-w-[70%] text-sm shadow-sm rounded-lg ${isMe ? 'msg-out' : 'msg-in'}`;
-            div.innerHTML = content;
-            
-            // Container flex para alinhamento
-            const wrap = document.createElement('div');
-            wrap.className = `w-full flex mb-2 ${isMe ? 'justify-end' : 'justify-start'}`;
-            wrap.appendChild(div);
-            
-            container.appendChild(wrap);
-        });
-        
-        // Scroll to bottom
-        container.scrollTop = container.scrollHeight;
-        
-        console.log('✅ Mensagens carregadas com sucesso');
-        console.log('════════════════════════════════\n');
+        // Renderizar usando função compartilhada
+        renderMessagesFromData(remoteJid, messages, isUpdate);
         
     } catch (e) {
         console.error('❌ Erro ao carregar mensagens:', e);
@@ -1403,6 +1270,116 @@ async function loadMessages(remoteJid, isUpdate = false) {
             container.innerHTML = '<div class="text-center p-4 text-red-500">Erro ao carregar mensagens</div>';
         }
     }
+}
+
+/**
+ * Renderizar mensagens a partir de um array de dados (usado por cache e fetch)
+ */
+function renderMessagesFromData(remoteJid, messages, isUpdate) {
+    const container = document.getElementById('messagesContainer');
+    if (!container) return;
+    
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
+        if (!isUpdate) {
+            container.innerHTML = '<div class="text-center p-4 text-gray-500">Nenhuma mensagem nesta conversa.</div>';
+        }
+        return;
+    }
+    
+    // Pular re-render se mensagens não mudaram
+    const newHash = messages.map(m => m.key?.id || m.messageTimestamp).join(',');
+    if (isUpdate && window._lastMsgHash === newHash) return;
+    window._lastMsgHash = newHash;
+    
+    // Pausar áudios e limpar
+    if (typeof pauseAllAudios === 'function') pauseAllAudios();
+    container.innerHTML = '';
+    
+    // Ordenar por timestamp
+    const sortedMsgs = messages.sort((a, b) => (a.messageTimestamp || 0) - (b.messageTimestamp || 0));
+    
+    sortedMsgs.forEach((msg) => {
+        const isMe = msg.key?.fromMe;
+        let content = '';
+        const m = msg.message;
+        
+        if (m?.conversation) {
+            content = formatWhatsAppText(m.conversation);
+        } else if (m?.extendedTextMessage?.text) {
+            content = formatWhatsAppText(m.extendedTextMessage.text);
+        } else if (m?.imageMessage) {
+            const caption = m.imageMessage.caption || '';
+            const captionHtml = caption ? '<br>' + formatWhatsAppText(caption) : '';
+            content = `<div class="flex items-center gap-2"><span class="text-lg">📷</span> <span>Imagem${captionHtml}</span></div>`;
+        } else if (m?.videoMessage) {
+            const caption = m.videoMessage.caption || '';
+            const captionHtml = caption ? '<br>' + formatWhatsAppText(caption) : '';
+            content = `<div class="flex items-center gap-2"><span class="text-lg">🎬</span> <span>Vídeo${captionHtml}</span></div>`;
+        } else if (m?.audioMessage) {
+            const audioUrl = m.audioMessage.playableUrl || m.audioMessage.url || '';
+            const duration = m.audioMessage.seconds || 0;
+            const audioId = `audio-${msg.key.id}`;
+            if (audioUrl) {
+                const minutes = Math.floor(duration / 60);
+                const seconds = Math.floor(duration % 60);
+                const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                content = `
+                    <div class="audio-player-whatsapp flex items-center gap-2 p-2 rounded-lg bg-white/50 min-w-[200px]" data-audio-id="${audioId}">
+                        <button onclick="toggleAudioPlay('${audioId}', '${audioUrl}')" class="flex-shrink-0 w-9 h-9 rounded-full bg-emerald-500 hover:bg-emerald-600 flex items-center justify-center text-white transition shadow-sm">
+                            <i data-lucide="play" class="w-4 h-4 play-icon"></i>
+                            <i data-lucide="pause" class="w-4 h-4 pause-icon hidden"></i>
+                        </button>
+                        <div class="flex-1 flex flex-col gap-1 min-w-0">
+                            <div class="flex items-center gap-2">
+                                <div class="flex-1 h-1 bg-slate-200 rounded-full overflow-hidden cursor-pointer audio-progress-bar" onclick="seekAudio(event, '${audioId}')">
+                                    <div class="h-full bg-emerald-500 audio-progress" style="width: 0%"></div>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2 text-xs text-slate-500">
+                                <span class="audio-time">0:00</span>
+                                <span>/</span>
+                                <span>${timeStr}</span>
+                                <button onclick="changePlaybackSpeed('${audioId}')" class="ml-auto text-[10px] font-medium text-emerald-600 hover:text-emerald-700 audio-speed">1x</button>
+                            </div>
+                        </div>
+                        <audio class="hidden" id="${audioId}" preload="metadata">
+                            <source src="${audioUrl}" type="audio/ogg; codecs=opus">
+                            <source src="${audioUrl}" type="audio/mpeg">
+                            <source src="${audioUrl}" type="audio/mp4">
+                        </audio>
+                    </div>
+                `;
+            } else {
+                content = `<div class="flex items-center gap-2"><span class="text-lg">🎵</span> <span>Áudio (${duration}s)</span></div>`;
+            }
+        } else if (m?.documentMessage) {
+            const fileName = m.documentMessage.fileName || 'Documento';
+            content = `<div class="flex items-center gap-2"><span class="text-lg">📄</span> <span>${fileName}</span></div>`;
+        } else if (m?.stickerMessage) {
+            content = `<div class="flex items-center gap-2"><span class="text-lg">✨</span> <span>Figurinha</span></div>`;
+        } else if (m?.contactMessage) {
+            const name = m.contactMessage.displayName || 'Contato';
+            content = `<div class="flex items-center gap-2"><span class="text-lg">👤</span> <span>${name}</span></div>`;
+        } else if (m?.locationMessage) {
+            content = `<div class="flex items-center gap-2"><span class="text-lg">📍</span> <span>Localização</span></div>`;
+        } else {
+            content = '<span class="text-slate-400 italic">Mensagem não suportada</span>';
+        }
+        
+        const div = document.createElement('div');
+        div.className = `p-3 max-w-[70%] text-sm shadow-sm rounded-lg ${isMe ? 'msg-out' : 'msg-in'}`;
+        div.innerHTML = content;
+        
+        const wrap = document.createElement('div');
+        wrap.className = `w-full flex mb-2 ${isMe ? 'justify-end' : 'justify-start'}`;
+        wrap.appendChild(div);
+        container.appendChild(wrap);
+    });
+    
+    container.scrollTop = container.scrollHeight;
+    
+    // Re-criar ícones lucide nos players de áudio
+    if (window.lucide) window.lucide.createIcons();
 }
 
 async function sendMessage() {

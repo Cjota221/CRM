@@ -16,6 +16,34 @@ class ChatLoadingSystem {
         this._picActive = 0;       // Requests ativos
         this._picMax = 5;          // Máximo simultâneo
         this._picCache = new Set(); // JIDs já buscados nesta sessão
+        
+        // Cache de mensagens em memória (evitar re-fetch ao trocar entre chats)
+        this._messagesCache = new Map(); // remoteJid -> { messages, timestamp, hash }
+        this._MSG_CACHE_TTL = 30000; // 30s de validade
+    }
+    
+    /**
+     * Buscar mensagens do cache ou da API
+     * Retorna do cache instantaneamente se disponível e válido
+     */
+    getCachedMessages(remoteJid) {
+        const cached = this._messagesCache.get(remoteJid);
+        if (!cached) return null;
+        if (Date.now() - cached.timestamp > this._MSG_CACHE_TTL) return null;
+        return cached.messages;
+    }
+    
+    setCachedMessages(remoteJid, messages, hash) {
+        this._messagesCache.set(remoteJid, {
+            messages,
+            timestamp: Date.now(),
+            hash: hash || ''
+        });
+        // Limitar cache a 20 chats
+        if (this._messagesCache.size > 20) {
+            const oldest = this._messagesCache.keys().next().value;
+            this._messagesCache.delete(oldest);
+        }
     }
     
     /**
@@ -36,10 +64,34 @@ class ChatLoadingSystem {
         }
         
         this.isLoading = true;
-        this.showLoadingIndicator(true);
+        
+        // ======== STALE-WHILE-REVALIDATE ========
+        // Renderizar do cache instantaneamente enquanto busca dados frescos
+        let usedCache = false;
+        try {
+            const cached = sessionStorage.getItem('crm_chats_cache');
+            if (cached && !forceRefresh) {
+                const parsed = JSON.parse(cached);
+                if (parsed.chats && parsed.chats.length > 0 && (now - parsed.timestamp) < 300000) { // 5 min de validade
+                    console.log(`[ChatLoader] ⚡ Cache hit! Renderizando ${parsed.chats.length} chats do cache`);
+                    this.allChats = parsed.chats;
+                    this.loadingCache = this.allChats;
+                    this.applyFilter(this.currentFilter);
+                    this.renderChatsList();
+                    usedCache = true;
+                    // NÃO retornar — continuar para revalidar em background
+                }
+            }
+        } catch (e) {
+            console.warn('[ChatLoader] Cache inválido, ignorando');
+        }
+        
+        if (!usedCache) {
+            this.showLoadingIndicator(true);
+        }
         
         try {
-            console.log('[ChatLoader] Iniciando carregamento de chats...');
+            console.log('[ChatLoader] Buscando chats frescos da API...');
             
             // 1. Buscar chats brutos da API
             const rawChats = await this.fetchRawChats();
@@ -52,7 +104,7 @@ class ChatLoadingSystem {
             
             console.log(`[ChatLoader] ${contacts.length} contatos, ${groups.length} grupos`);
             
-            // 3. Enriquecer em paralelo (dados + auto-match)
+            // 3. Enriquecer — O proxy já retorna nomes, usar enrichment leve
             const dl = window.dataLayer || dataLayer;
             const enrichedContacts = await dl.enrichChats(contacts);
             const enrichedGroups = await dl.enrichChats(groups);
@@ -70,14 +122,33 @@ class ChatLoadingSystem {
             this.loadingCache = this.allChats;
             this.lastLoadTime = now;
             
+            // 5. Salvar no cache para próximo reload
+            try {
+                sessionStorage.setItem('crm_chats_cache', JSON.stringify({
+                    chats: this.allChats,
+                    timestamp: now
+                }));
+            } catch (e) {
+                console.warn('[ChatLoader] Erro ao salvar cache:', e.message);
+            }
+            
             console.log(`[ChatLoader] ✅ ${this.allChats.length} chats carregados e enriquecidos`);
+            
+            // 6. Re-renderizar com dados frescos (se mudou)
+            if (usedCache) {
+                this.applyFilter(this.currentFilter);
+                this.renderChatsList();
+                console.log('[ChatLoader] 🔄 Lista atualizada com dados frescos');
+            }
             
             return this.allChats;
             
         } catch (error) {
             console.error('[ChatLoader] Erro:', error);
-            this.showLoadingError(error.message);
-            return [];
+            if (!usedCache) {
+                this.showLoadingError(error.message);
+            }
+            return this.allChats; // Retornar cache se disponível
         } finally {
             this.isLoading = false;
             this.showLoadingIndicator(false);
