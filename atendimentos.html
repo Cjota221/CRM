@@ -669,15 +669,29 @@
             </div>
             
             <div class="mt-6 pt-6 border-t border-slate-100">
-                <h3 class="font-semibold text-slate-800 mb-3">Ações Rápidas</h3>
+                <h3 class="font-semibold text-slate-800 mb-3">Disparos Rápidos</h3>
                 <div class="space-y-2">
+                    <button onclick="quickSegmentCampaign('inactive_300')" class="w-full btn btn-secondary text-xs justify-start gap-2">
+                        <span class="w-2 h-2 rounded-full bg-red-500"></span>
+                        Inativos +300 dias
+                    </button>
+                    <button onclick="quickSegmentCampaign('ticket_alto')" class="w-full btn btn-secondary text-xs justify-start gap-2">
+                        <span class="w-2 h-2 rounded-full bg-violet-500"></span>
+                        Ticket Alto
+                    </button>
+                    <button onclick="quickSegmentCampaign('risco')" class="w-full btn btn-secondary text-xs justify-start gap-2">
+                        <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+                        Recuperação (Risco)
+                    </button>
+                    <button onclick="quickSegmentCampaign('recorrentes')" class="w-full btn btn-secondary text-xs justify-start gap-2">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        Recorrentes (3+ pedidos)
+                    </button>
+                </div>
+                <div class="mt-3 space-y-2">
                     <button onclick="openImportFromGroup()" class="w-full btn btn-secondary text-xs justify-start">
                         <i data-lucide="users" class="w-4 h-4"></i>
                         Importar de Grupo
-                    </button>
-                    <button onclick="selectAudience('inactive'); openNewCampaign()" class="w-full btn btn-secondary text-xs justify-start">
-                        <i data-lucide="user-x" class="w-4 h-4"></i>
-                        Clientes Inativos
                     </button>
                 </div>
             </div>
@@ -987,12 +1001,31 @@
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">Público Alvo</label>
                         <select id="campaignAudienceSelect" class="input" onchange="selectAudienceFromSelect(this.value)">
-                            <option value="">Selecione...</option>
-                            <option value="all">Todos os Clientes</option>
-                            <option value="inactive">Inativos (90+ dias)</option>
-                            <option value="vip">Clientes VIP (R$500+)</option>
-                            <option value="group">Grupos WhatsApp</option>
+                            <option value="">Selecione o segmento...</option>
+                            <optgroup label="Geral">
+                                <option value="all">📋 Todos os Clientes</option>
+                                <option value="group">💬 Grupos WhatsApp</option>
+                            </optgroup>
+                            <optgroup label="Segmentação Inteligente">
+                                <option value="inactive_300">🔴 Inativos +300 dias</option>
+                                <option value="inactive_90">🟡 Inativos 90-300 dias</option>
+                                <option value="ticket_alto">💎 Ticket Alto (acima da média)</option>
+                                <option value="risco">⚠️ Risco de Churn (LTV caindo)</option>
+                                <option value="vip">👑 VIP (ticket médio R$500+)</option>
+                                <option value="novos">🆕 Novos (último 30 dias)</option>
+                                <option value="recorrentes">🔁 Recorrentes (3+ pedidos)</option>
+                            </optgroup>
                         </select>
+                        <!-- Preview de leads do segmento -->
+                        <div id="audiencePreview" class="hidden mt-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-xs font-bold text-slate-600" id="audiencePreviewTitle">Segmento</span>
+                                <span class="text-xs font-bold text-emerald-600" id="audiencePreviewCount">0 leads</span>
+                            </div>
+                            <div id="audiencePreviewList" class="max-h-[100px] overflow-y-auto space-y-1 text-xs text-slate-500">
+                            </div>
+                            <p class="text-[10px] text-slate-400 mt-2">Telefones serão normalizados automaticamente (55 + DDD + 9° dígito)</p>
+                        </div>
                     </div>
                 </div>
                 

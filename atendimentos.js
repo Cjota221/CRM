@@ -5141,11 +5141,249 @@ function selectAudience(type) {
     selectedAudience = type;
     document.getElementById('groupSelector').classList.toggle('hidden', type !== 'group');
     updateCampaignSummary();
+    previewAudienceSegment(type);
 }
 
 function selectAudienceFromSelect(type) {
     selectAudience(type);
     if (type) loadCampaignData();
+}
+
+// ============================================================================
+// NORMALIZAÇÃO DE TELEFONES BR (55 + DDD + nono dígito)
+// ============================================================================
+
+function normalizePhoneBR(phone) {
+    if (!phone) return null;
+    // Grupos: manter como está
+    if (phone.includes('@g.us')) return phone;
+    
+    let digits = phone.replace(/\D/g, '');
+    
+    // Remover +55 duplicado
+    if (digits.startsWith('55') && digits.length >= 12) {
+        digits = digits; // Já com DDI
+    } else if (digits.length === 11) {
+        // DDD + 9 + 8 dígitos (celular com nono dígito)
+        digits = '55' + digits;
+    } else if (digits.length === 10) {
+        // DDD + 8 dígitos (celular sem nono dígito) — adicionar 9
+        const ddd = digits.substring(0, 2);
+        const number = digits.substring(2);
+        digits = '55' + ddd + '9' + number;
+    } else if (digits.length === 8 || digits.length === 9) {
+        // Sem DDD — impossível normalizar com certeza, retornar com aviso
+        return null;
+    }
+    
+    // Validação final: deve ter 12 ou 13 dígitos
+    if (digits.length < 12 || digits.length > 13) return null;
+    
+    return digits;
+}
+
+// ============================================================================
+// MOTOR DE SEGMENTAÇÃO INTELIGENTE
+// ============================================================================
+
+function buildSegmentContacts(segmentType) {
+    const now = Date.now();
+    const DAY = 24 * 60 * 60 * 1000;
+    
+    // Pré-calcular dados de pedidos por cliente
+    const clientOrderMap = {};
+    (allOrders || []).forEach(o => {
+        const cid = o.cliente_id || o.client_id;
+        if (!cid) return;
+        if (!clientOrderMap[cid]) clientOrderMap[cid] = [];
+        clientOrderMap[cid].push(o);
+    });
+    
+    // Média global de ticket para segmento "ticket_alto"
+    let globalAvgTicket = 0;
+    if (allOrders && allOrders.length > 0) {
+        const totalRevenue = allOrders.reduce((s, o) => s + parseFloat(o.total || o.valor || 0), 0);
+        globalAvgTicket = totalRevenue / allOrders.length;
+    }
+    
+    let filtered = [];
+    
+    switch (segmentType) {
+        case 'all':
+            filtered = allClients;
+            break;
+            
+        case 'inactive_300':
+            // Clientes cuja última compra foi há mais de 300 dias
+            filtered = allClients.filter(c => {
+                const orders = clientOrderMap[c.id] || [];
+                if (orders.length === 0) return true; // Nunca comprou = inativo
+                const lastDate = Math.max(...orders.map(o => new Date(o.data || o.created_at).getTime()));
+                return (now - lastDate) > (300 * DAY);
+            });
+            break;
+            
+        case 'inactive_90':
+        case 'inactive':
+            // Inativos entre 90 e 300 dias
+            filtered = allClients.filter(c => {
+                const orders = clientOrderMap[c.id] || [];
+                if (orders.length === 0) return true;
+                const lastDate = Math.max(...orders.map(o => new Date(o.data || o.created_at).getTime()));
+                const daysSince = (now - lastDate) / DAY;
+                return daysSince >= 90 && daysSince <= 300;
+            });
+            break;
+            
+        case 'ticket_alto':
+            // Clientes cujo ticket médio é acima da média global da loja
+            filtered = allClients.filter(c => {
+                const orders = clientOrderMap[c.id] || [];
+                if (orders.length === 0) return false;
+                const totalSpent = orders.reduce((s, o) => s + parseFloat(o.total || o.valor || 0), 0);
+                const avgTicket = totalSpent / orders.length;
+                return avgTicket > globalAvgTicket;
+            });
+            break;
+            
+        case 'risco':
+            // Risco de churn: clientes com LTV caindo (última compra menor que a média deles)
+            // OU clientes com histórico que não compram há 60-180 dias
+            filtered = allClients.filter(c => {
+                const orders = clientOrderMap[c.id] || [];
+                if (orders.length < 2) return false; // Precisa de histórico
+                
+                const sorted = [...orders].sort((a, b) => new Date(a.data || a.created_at) - new Date(b.data || b.created_at));
+                const lastOrder = sorted[sorted.length - 1];
+                const lastDate = new Date(lastOrder.data || lastOrder.created_at).getTime();
+                const daysSince = (now - lastDate) / DAY;
+                
+                // Condição 1: Não compra há 60-180 dias (zona de risco)
+                const inRiskWindow = daysSince >= 60 && daysSince <= 180;
+                
+                // Condição 2: Última compra menor que a média (LTV caindo)
+                const totalSpent = orders.reduce((s, o) => s + parseFloat(o.total || o.valor || 0), 0);
+                const avgValue = totalSpent / orders.length;
+                const lastValue = parseFloat(lastOrder.total || lastOrder.valor || 0);
+                const ltvDropping = lastValue < avgValue * 0.7; // 30% abaixo da média
+                
+                return inRiskWindow || ltvDropping;
+            });
+            break;
+            
+        case 'vip':
+            // Ticket médio >= R$500
+            filtered = allClients.filter(c => {
+                const orders = clientOrderMap[c.id] || [];
+                if (orders.length === 0) return false;
+                const totalSpent = orders.reduce((s, o) => s + parseFloat(o.total || o.valor || 0), 0);
+                return (totalSpent / orders.length) >= 500;
+            });
+            break;
+            
+        case 'novos':
+            // Cadastrados ou primeira compra nos últimos 30 dias
+            filtered = allClients.filter(c => {
+                const orders = clientOrderMap[c.id] || [];
+                if (orders.length === 0) {
+                    // Verificar data de cadastro se disponível
+                    const createdAt = c.created_at || c.criado_em;
+                    return createdAt && (now - new Date(createdAt).getTime()) <= (30 * DAY);
+                }
+                const firstDate = Math.min(...orders.map(o => new Date(o.data || o.created_at).getTime()));
+                return (now - firstDate) <= (30 * DAY);
+            });
+            break;
+            
+        case 'recorrentes':
+            // 3 ou mais pedidos
+            filtered = allClients.filter(c => {
+                const orders = clientOrderMap[c.id] || [];
+                return orders.length >= 3;
+            });
+            break;
+            
+        default:
+            filtered = [];
+    }
+    
+    // Converter para formato de contato + normalizar telefone
+    const contacts = [];
+    const invalidPhones = [];
+    
+    for (const c of filtered) {
+        const rawPhone = c.telefone || c.celular || c.phone || '';
+        const normalized = normalizePhoneBR(rawPhone);
+        
+        if (normalized) {
+            contacts.push({
+                id: c.id,
+                name: c.nome || c.name || 'Cliente',
+                phone: normalized,
+                rawPhone: rawPhone,
+                cidade: c.cidade || c.city || ''
+            });
+        } else if (rawPhone) {
+            invalidPhones.push({ name: c.nome || c.name, phone: rawPhone });
+        }
+    }
+    
+    return { contacts, invalidPhones, totalFiltered: filtered.length };
+}
+
+// Preview do segmento selecionado
+function previewAudienceSegment(segmentType) {
+    const previewDiv = document.getElementById('audiencePreview');
+    if (!previewDiv || !segmentType || segmentType === 'group') {
+        if (previewDiv) previewDiv.classList.add('hidden');
+        return;
+    }
+    
+    const segmentLabels = {
+        all: 'Todos os Clientes',
+        inactive_300: 'Inativos +300 dias',
+        inactive_90: 'Inativos 90-300 dias',
+        inactive: 'Inativos 90-300 dias',
+        ticket_alto: 'Ticket Alto (acima da média)',
+        risco: 'Risco de Churn',
+        vip: 'VIP (ticket R$500+)',
+        novos: 'Novos (últimos 30 dias)',
+        recorrentes: 'Recorrentes (3+ pedidos)'
+    };
+    
+    const { contacts, invalidPhones, totalFiltered } = buildSegmentContacts(segmentType);
+    
+    previewDiv.classList.remove('hidden');
+    document.getElementById('audiencePreviewTitle').textContent = segmentLabels[segmentType] || segmentType;
+    document.getElementById('audiencePreviewCount').textContent = `${contacts.length} leads válidos`;
+    
+    const listDiv = document.getElementById('audiencePreviewList');
+    if (contacts.length === 0) {
+        listDiv.innerHTML = '<p class="text-amber-600">Nenhum lead encontrado neste segmento.</p>';
+    } else {
+        const sample = contacts.slice(0, 8);
+        let html = sample.map(c => 
+            `<div class="flex justify-between"><span>${escapeHtml(c.name)}</span><span class="text-slate-400">${c.phone}</span></div>`
+        ).join('');
+        if (contacts.length > 8) {
+            html += `<div class="text-slate-400 font-medium mt-1">... e mais ${contacts.length - 8} leads</div>`;
+        }
+        if (invalidPhones.length > 0) {
+            html += `<div class="text-amber-500 mt-2 font-medium">⚠ ${invalidPhones.length} telefone(s) inválido(s) removido(s)</div>`;
+        }
+        listDiv.innerHTML = html;
+    }
+}
+
+// Atalho rápido da sidebar
+function quickSegmentCampaign(segmentType) {
+    openNewCampaign();
+    // Selecionar no combo
+    const sel = document.getElementById('campaignAudienceSelect');
+    if (sel) {
+        sel.value = segmentType;
+        selectAudienceFromSelect(segmentType);
+    }
 }
 
 function toggleAllGroups() {
@@ -5194,13 +5432,11 @@ function updateCampaignSummary() {
         return;
     }
     let count = 0;
-    if (selectedAudience === 'all') count = allClients.length;
-    else if (selectedAudience === 'group') count = getSelectedGroups().length;
-    else if (selectedAudience === 'inactive') {
-        const nd = Date.now() - (90 * 24 * 60 * 60 * 1000);
-        count = allClients.filter(c => { const o = (allOrders||[]).filter(x=>x.cliente_id==c.id).sort((a,b)=>new Date(b.data)-new Date(a.data)); return o.length===0||new Date(o[0].data).getTime()<nd; }).length;
-    } else if (selectedAudience === 'vip') {
-        count = allClients.filter(c => { const o = (allOrders||[]).filter(x=>x.cliente_id==c.id); const t = o.reduce((s,x)=>s+parseFloat(x.total||0),0); return o.length>0&&t/o.length>=500; }).length;
+    if (selectedAudience === 'group') {
+        count = getSelectedGroups().length;
+    } else {
+        const { contacts } = buildSegmentContacts(selectedAudience);
+        count = contacts.length;
     }
     const batchSize = parseInt(document.getElementById('batchSize')?.value || '15');
     const interval = parseInt(document.getElementById('batchInterval')?.value || '20');
@@ -6114,26 +6350,18 @@ async function saveCampaign() {
         scheduleTime = new Date(`${date}T${time}`).getTime();
     }
     
-    // Construir lista de contatos
+    // Construir lista de contatos usando motor de segmentação
     let contacts = [];
-    if (selectedAudience === 'all') {
-        contacts = allClients.map(c => ({ id: c.id, name: c.nome, phone: c.telefone || c.celular }));
-    } else if (selectedAudience === 'inactive') {
-        const nd = Date.now() - (90 * 24 * 60 * 60 * 1000);
-        contacts = allClients.filter(c => {
-            const o = (allOrders || []).filter(x => x.cliente_id == c.id).sort((a,b) => new Date(b.data) - new Date(a.data));
-            return o.length === 0 || new Date(o[0].data).getTime() < nd;
-        }).map(c => ({ id: c.id, name: c.nome, phone: c.telefone || c.celular }));
-    } else if (selectedAudience === 'vip') {
-        contacts = allClients.filter(c => {
-            const o = (allOrders || []).filter(x => x.cliente_id == c.id);
-            const t = o.reduce((s, x) => s + parseFloat(x.total || 0), 0);
-            return o.length > 0 && t / o.length >= 500;
-        }).map(c => ({ id: c.id, name: c.nome, phone: c.telefone || c.celular }));
-    } else if (selectedAudience === 'group') {
+    if (selectedAudience === 'group') {
         const groups = getSelectedGroups();
         if (groups.length === 0) return alert('Selecione pelo menos um grupo');
         contacts = groups.map(g => ({ id: g.jid, name: g.name, phone: g.jid }));
+    } else {
+        const result = buildSegmentContacts(selectedAudience);
+        contacts = result.contacts;
+        if (result.invalidPhones.length > 0) {
+            console.warn(`[Campaign] ${result.invalidPhones.length} telefones inválidos removidos:`, result.invalidPhones);
+        }
     }
     
     if (contacts.length === 0) return alert('Nenhum contato encontrado para este público');
