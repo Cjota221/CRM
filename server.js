@@ -1671,7 +1671,34 @@ app.post('/api/whatsapp/messages/fetch', async (req, res) => {
             console.log(`[API] Tentativa 3 (todas + filtro): mensagens encontradas = ${data?.messages?.length || 0}`);
         }
         
-        console.log(`[API] Resposta final:`, JSON.stringify(data).substring(0, 300));
+        // ====== FILTRAR SEMPRE: Garantir que só retornamos mensagens do remoteJid solicitado ======
+        const finalMessages = data?.messages || data?.data || [];
+        if (Array.isArray(finalMessages) && finalMessages.length > 0) {
+            const reqPhoneNorm = normalizePhone(remoteJid);
+            const isGroup = String(remoteJid).includes('@g.us');
+            const isLid = String(remoteJid).includes('@lid');
+            
+            const filtered = finalMessages.filter(msg => {
+                const msgJid = msg.key?.remoteJid || msg.remoteJid || '';
+                if (msgJid === remoteJid) return true;
+                if (isGroup) return msgJid.replace(/@g\.us$/, '') === remoteJid.replace(/@g\.us$/, '');
+                if (isLid) return false;
+                const msgPhoneNorm = normalizePhone(msgJid);
+                return msgPhoneNorm === reqPhoneNorm ||
+                       (msgPhoneNorm.length >= 9 && reqPhoneNorm.length >= 9 &&
+                        msgPhoneNorm.slice(-9) === reqPhoneNorm.slice(-9));
+            });
+            
+            const rejected = finalMessages.length - filtered.length;
+            if (rejected > 0) {
+                console.log(`[API] Filtro server-side: ${finalMessages.length} → ${filtered.length} (${rejected} rejeitadas de outros chats)`);
+            }
+            
+            if (data.messages) data.messages = filtered;
+            else if (data.data) data.data = filtered;
+        }
+        
+        console.log(`[API] Resposta final: ${(data?.messages || data?.data || []).length} mensagens para ${remoteJid}`);
         
         // Processar mensagens para adicionar URLs de mídia acessíveis
         if (data && Array.isArray(data.messages)) {

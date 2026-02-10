@@ -1332,10 +1332,18 @@ async function loadMessages(remoteJid, isUpdate = false) {
     await fetchAndRenderMessages(remoteJid, isUpdate);
 }
 
+// Lock para evitar fetches concorrentes do mesmo remoteJid
+let _fetchingMessages = null;
+
 /**
  * Buscar mensagens da API e renderizar
  */
 async function fetchAndRenderMessages(remoteJid, isUpdate = false) {
+    // Debounce: se já tem fetch em andamento para este remoteJid, pular
+    if (_fetchingMessages === remoteJid && isUpdate) {
+        return;
+    }
+    _fetchingMessages = remoteJid;
     
     try {
         const res = await fetch(`${API_BASE}/whatsapp/messages/fetch`, {
@@ -1393,14 +1401,13 @@ async function fetchAndRenderMessages(remoteJid, isUpdate = false) {
                            (msgPhoneNormalized.length >= 9 && requestPhoneNormalized.length >= 9 &&
                             msgPhoneNormalized.slice(-9) === requestPhoneNormalized.slice(-9));
             
-            if (!matches && msgRemoteJid) {
-                console.warn(`[⚠️ REJEITADO] msg=${msgRemoteJid} expected=${remoteJid}`);
-            }
-            
             return matches;
         });
         
-        console.log(`🔍 Filtrado: ${beforeFilterCount} → ${messages.length} mensagens válidas`);
+        const rejectedCount = beforeFilterCount - messages.length;
+        if (rejectedCount > 0) {
+            console.log(`🔍 Filtrado: ${beforeFilterCount} → ${messages.length} mensagens válidas (${rejectedCount} de outros chats)`);
+        }
         
         // Salvar no cache de mensagens
         if (window.chatLoader && messages.length > 0) {
@@ -1416,6 +1423,8 @@ async function fetchAndRenderMessages(remoteJid, isUpdate = false) {
         if (container) {
             container.innerHTML = '<div class="text-center p-4 text-red-500">Erro ao carregar mensagens</div>';
         }
+    } finally {
+        _fetchingMessages = null;
     }
 }
 
