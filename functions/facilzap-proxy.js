@@ -73,7 +73,7 @@ exports.handler = async (event) => {
     return { statusCode: 200, headers, body: '' };
   }
 
-  const FACILZAP_TOKEN = process.env.FACILZAP_TOKEN;
+  const FACILZAP_TOKEN = process.env.FACILZAP_TOKEN || '18984snBHqwS7ACgukUyeqadAYzE8E6ch2k27Qavj1vheckRVXKjJAMZfvcu8aS7MIanmBsnxOjyqPXpEcwT4';
   
   console.log("[DEBUG] Token presente:", !!FACILZAP_TOKEN);
   console.log("[DEBUG] Token (primeiros 10 chars):", FACILZAP_TOKEN ? FACILZAP_TOKEN.substring(0, 10) + '...' : 'VAZIO');
@@ -143,7 +143,8 @@ exports.handler = async (event) => {
       return {
         id: o.id,
         codigo: o.codigo || o.id,
-        cliente_id: o.cliente_id,
+        cliente_id: o.cliente_id || o.id_cliente || (o.cliente ? o.cliente.id : null),
+        id_cliente: o.id_cliente || o.cliente_id || (o.cliente ? o.cliente.id : null),
         cliente: o.cliente ? { 
           id: o.cliente.id, 
           nome: o.cliente.nome,
@@ -157,6 +158,7 @@ exports.handler = async (event) => {
         status_pago: statusPago,           // NOVO: flag de pagamento
         status_entregue: statusEntregue,   // NOVO: flag de entrega
         total: o.total || o.valor_total || 0,
+        valor_total: o.valor_total || o.total || o.subtotal || 0,
         forma_pagamento: o.forma_pagamento || '',
         origem: o.origem || '',
         // Pegar itens do detalhe individual
@@ -172,22 +174,49 @@ exports.handler = async (event) => {
     });
     
     // Normalizar produtos para formato esperado pelo catálogo
-    const products = productsRaw.map(p => ({
-      id: p.id,
-      codigo: p.codigo || p.id,
-      nome: p.nome || p.name || p.titulo || 'Produto sem nome',
-      descricao: p.descricao || p.description || '',
-      referencia: p.referencia || p.ref || p.sku || '',
-      sku: p.sku || p.referencia || '',
-      preco: parseFloat(p.preco || p.price || p.valor || 0),
-      estoque: p.estoque != null ? p.estoque : (p.stock != null ? p.stock : -1),
-      imagem: p.imagem || (p.imagens && p.imagens[0]?.url) || p.image || null,
-      imagens: p.imagens || p.images || [],
-      link_oficial: p.link_oficial || p.link || p.url || '',
-      ativo: p.ativo != null ? p.ativo : (p.is_active != null ? p.is_active : true),
-      variacoes: p.variacoes || [],
-      barcode: p.barcode || p.codigo_barras || ''
-    }));
+    const products = productsRaw.map(p => {
+      // Preço: FacilZap guarda em catalogos[0].precos.preco
+      let precoRaw = p.preco || p.price || p.valor;
+      if (!precoRaw && Array.isArray(p.catalogos) && p.catalogos.length > 0) {
+        const cat = p.catalogos[0];
+        precoRaw = (cat.precos && (cat.precos.preco_promocional || cat.precos.preco)) || cat.preco;
+      }
+      const preco = parseFloat(precoRaw || 0) || 0;
+
+      // Estoque: FacilZap retorna objeto {controlar_estoque} — calcular de variações
+      let estoque = -1;
+      if (typeof p.estoque === 'object' && p.estoque !== null) {
+        if (p.estoque.controlar_estoque) {
+          if (Array.isArray(p.variacoes) && p.variacoes.length > 0) {
+            estoque = p.variacoes.reduce((sum, v) => {
+              const vStock = v.estoque ? (parseInt(v.estoque.estoque || v.estoque.quantidade || 0) || 0) : 0;
+              return sum + vStock;
+            }, 0);
+          } else {
+            estoque = parseInt((p.estoque.estoque || p.estoque.quantidade || 0)) || 0;
+          }
+        }
+      } else {
+        estoque = p.estoque != null ? (parseInt(p.estoque) || -1) : (p.stock != null ? (parseInt(p.stock) || -1) : -1);
+      }
+
+      return {
+        id: p.id,
+        codigo: p.codigo || p.id,
+        nome: p.nome || p.name || p.titulo || 'Produto sem nome',
+        descricao: p.descricao || p.description || '',
+        referencia: p.referencia || p.ref || p.sku || '',
+        sku: p.sku || p.referencia || '',
+        preco,
+        estoque,
+        imagem: p.imagem || (p.imagens && p.imagens[0] && p.imagens[0].url) || p.image || null,
+        imagens: p.imagens || p.images || [],
+        link_oficial: p.link_oficial || p.link || p.url || '',
+        ativo: p.ativo != null ? p.ativo : (p.is_active != null ? p.is_active : true),
+        variacoes: p.variacoes || [],
+        barcode: p.barcode || p.codigo_barras || ''
+      };
+    });
     
     const elapsed = Date.now() - startTime;
     

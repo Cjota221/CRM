@@ -292,8 +292,16 @@ async function ensureCrmCache() {
             
             // Enriquecer produtos (mesma lógica do /api/facilzap-proxy)
             const productsEnriched = enrichProducts(products);
-            crmCache = { clients, orders, products: productsEnriched, lastUpdate: new Date() };
-            console.log(`[CACHE] ✅ Auto-carregado: ${clients.length} clientes, ${orders.length} pedidos, ${productsEnriched.length} produtos`);
+            // Normalizar pedidos: garantir cliente_id e valor_total
+            const ordersNormalized = orders.map(o => ({
+                ...o,
+                cliente_id: o.cliente_id || o.id_cliente || o.cliente?.id || null,
+                id_cliente: o.id_cliente || o.cliente_id || o.cliente?.id || null,
+                valor_total: o.valor_total || o.total || o.subtotal || 0,
+                itens: o.itens || o.produtos || o.items || []
+            }));
+            crmCache = { clients, orders: ordersNormalized, products: productsEnriched, lastUpdate: new Date() };
+            console.log(`[CACHE] ✅ Auto-carregado: ${clients.length} clientes, ${ordersNormalized.length} pedidos, ${productsEnriched.length} produtos`);
             
             if (clients.length > 0) return true;
             // Se FacilZap retornou vazio, cair no fallback Supabase abaixo
@@ -346,7 +354,14 @@ function enrichProducts(products) {
             .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
             .replace(/\s+/g, '-').replace(/[^\w-]/g, '') || p.id;
 
-        const preco = parseFloat(p.preco_promocional || p.preco_venda || p.preco || p.valor || 0) || 0;
+        // Preço: FacilZap guarda em catalogos[0].precos.preco — fallback nos campos tradicionais
+        let precoRaw = p.preco_promocional || p.preco_venda || p.preco || p.valor;
+        if (!precoRaw && Array.isArray(p.catalogos) && p.catalogos.length > 0) {
+            const cat = p.catalogos[0];
+            precoRaw = cat.precos?.preco_promocional || cat.precos?.preco || cat.preco;
+        }
+        if (!precoRaw && p.price) precoRaw = p.price; // Supabase fallback
+        const preco = parseFloat(precoRaw || 0) || 0;
 
         let imagem = '';
         if (Array.isArray(p.imagens) && p.imagens.length > 0) {
@@ -359,10 +374,25 @@ function enrichProducts(products) {
             imagem = p.thumbnail;
         }
 
-        // Estoque: verificar múltiplos campos possíveis
-        const estoque = parseInt(
-            p.estoque ?? p.estoque_atual ?? p.quantidade_estoque ?? p.stock ?? p.qty ?? -1
-        );
+        // Estoque: FacilZap retorna objeto {controlar_estoque, estoque} — calcular de variações
+        let estoque = -1; // -1 = não controla estoque
+        if (typeof p.estoque === 'object' && p.estoque !== null) {
+            // Formato FacilZap: estoque é um objeto
+            if (p.estoque.controlar_estoque) {
+                // Somar estoque das variações
+                if (Array.isArray(p.variacoes) && p.variacoes.length > 0) {
+                    estoque = p.variacoes.reduce((sum, v) => sum + (parseInt(v.estoque?.estoque || v.estoque?.quantidade || 0) || 0), 0);
+                } else {
+                    // Produto sem variações — usar estoque direto do objeto
+                    estoque = parseInt(p.estoque.estoque ?? p.estoque.quantidade ?? 0) || 0;
+                }
+            }
+            // Se não controla estoque, mantém -1 (infinito)
+        } else {
+            // Formato numérico (Supabase ou já normalizado)
+            estoque = parseInt(p.estoque ?? p.estoque_atual ?? p.quantidade_estoque ?? p.stock ?? p.qty ?? -1);
+            if (isNaN(estoque)) estoque = -1;
+        }
 
         // Referência / SKU
         const referencia = p.referencia || p.codigo || p.sku || p.ref || '';
@@ -594,12 +624,21 @@ app.get('/api/facilzap-proxy', async (req, res) => {
         // Enriquecer produtos com link, preço, imagem e estoque
         const productsEnriched = enrichProducts(products);
 
-        res.json({ clients, orders, products: productsEnriched });
+        // Normalizar pedidos: garantir cliente_id e valor_total (FacilZap usa o.cliente.id e o.total)
+        const ordersNormalized = orders.map(o => ({
+            ...o,
+            cliente_id: o.cliente_id || o.id_cliente || o.cliente?.id || null,
+            id_cliente: o.id_cliente || o.cliente_id || o.cliente?.id || null,
+            valor_total: o.valor_total || o.total || o.subtotal || 0,
+            itens: o.itens || o.produtos || o.items || []
+        }));
+
+        res.json({ clients, orders: ordersNormalized, products: productsEnriched });
         
         // Salvar em cache para uso em endpoints de lookup
         crmCache = {
             clients,
-            orders,
+            orders: ordersNormalized,
             products: productsEnriched,
             lastUpdate: new Date()
         };
@@ -2897,12 +2936,13 @@ app.get('/api/client-brain/:phone', async (req, res) => {
         let clientOrders = [];
         
         if (client && crmCache.orders) {
-            clientOrders = crmCache.orders.filter(o => 
-                o.id_cliente === client.id || 
-                o.cliente_id === client.id ||
-                String(o.id_cliente) === String(client.id) ||
-                String(o.cliente_id) === String(client.id)
-            );
+            clientOrders = crmCache.orders.filter(o => {
+                const clientId = String(client.id);
+                // Verificar todos os campos possíveis de ID do cliente no pedido
+                return String(o.id_cliente || '') === clientId || 
+                       String(o.cliente_id || '') === clientId ||
+                       String(o.cliente?.id || '') === clientId;
+            });
         }
         
         console.log(`[BRAIN] Resultado: ${client ? '✅ ' + (client.nome || client.name) + ' (' + clientOrders.length + ' pedidos)' : '❌ Não encontrado'}`);
@@ -2924,8 +2964,8 @@ app.get('/api/client-brain/:phone', async (req, res) => {
             });
         }
         
-        // Calcular métricas
-        const totalSpent = clientOrders.reduce((sum, o) => sum + (parseFloat(o.valor_total) || 0), 0);
+        // Calcular métricas (FacilZap usa 'total', não 'valor_total')
+        const totalSpent = clientOrders.reduce((sum, o) => sum + (parseFloat(o.valor_total || o.total || o.subtotal) || 0), 0);
         const avgTicket = clientOrders.length > 0 ? totalSpent / clientOrders.length : 0;
         
         // Ordenar pedidos por data
@@ -2982,7 +3022,7 @@ app.get('/api/client-brain/:phone', async (req, res) => {
         // Produtos mais comprados (frequência)
         const productCounts = {};
         clientOrders.forEach(order => {
-            const items = order.itens || order.products || [];
+            const items = order.itens || order.produtos || order.products || [];
             items.forEach(item => {
                 const name = item.nome || item.name || item.produto || 'Produto';
                 productCounts[name] = (productCounts[name] || 0) + (item.quantidade || 1);
@@ -2997,7 +3037,7 @@ app.get('/api/client-brain/:phone', async (req, res) => {
         // Últimos 3 produtos comprados (cronológico, com link do pedido)
         const recentProducts = [];
         for (const order of sortedOrders) {
-            const items = order.itens || order.products || [];
+            const items = order.itens || order.produtos || order.products || [];
             for (const item of items) {
                 if (recentProducts.length >= 3) break;
                 const pName = item.nome || item.name || item.produto || 'Produto';
@@ -3010,7 +3050,7 @@ app.get('/api/client-brain/:phone', async (req, res) => {
                     name: pName,
                     orderId: order.id || order.codigo,
                     orderDate: order.data,
-                    price: parseFloat(item.preco || item.valor || order.valor_total || 0),
+                    price: parseFloat(item.preco || item.valor || order.valor_total || order.total || 0),
                     link: catalogProduct?.link_oficial || null,
                     image: catalogProduct?.imagem || null
                 });
@@ -3022,9 +3062,9 @@ app.get('/api/client-brain/:phone', async (req, res) => {
         const recentOrders = sortedOrders.slice(0, 3).map(o => ({
             id: o.id || o.codigo,
             date: o.data,
-            total: parseFloat(o.valor_total) || 0,
+            total: parseFloat(o.valor_total || o.total || o.subtotal) || 0,
             status: o.status || 'Concluído',
-            items: (o.itens || o.products || []).length
+            items: (o.itens || o.produtos || o.products || []).length
         }));
         
         // Gerar insight personalizado

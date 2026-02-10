@@ -651,7 +651,7 @@ function showConnectionAlert(message) {
     }
 }
 
-async function loadCRMData() {
+async function loadCRMData(retryCount = 0) {
     try {
         // Tentar carregar do cache localStorage primeiro (render rápido)
         const cachedProducts = localStorage.getItem('crm_products');
@@ -676,6 +676,7 @@ async function loadCRMData() {
         
         // Buscar dados frescos da API (FacilZap + Supabase sync)
         const res = await fetch(`${API_BASE}/facilzap-proxy`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         
         if (data.error) throw new Error(data.error);
@@ -686,9 +687,13 @@ async function loadCRMData() {
         // Produtos já vem normalizado do proxy agora
         if (data.products && data.products.length > 0) {
             allProducts = data.products;
-            // Salvar no localStorage como backup
-            try { localStorage.setItem('crm_products_cache', JSON.stringify(allProducts)); } catch(e) {}
+            // Salvar no localStorage como backup (mesma key que leitura)
+            try { localStorage.setItem('crm_products', JSON.stringify(allProducts)); } catch(e) {}
         }
+        
+        // Salvar clientes e pedidos no localStorage para uso em outros módulos
+        try { localStorage.setItem('crm_clients', JSON.stringify(allClients)); } catch(e) {}
+        try { localStorage.setItem('crm_orders', JSON.stringify(allOrders)); } catch(e) {}
         
         console.log(`CRM Carregado: ${allClients.length} clientes, ${allOrders.length} pedidos, ${allProducts.length} produtos (fonte: ${data.source || 'facilzap'}).`);
         
@@ -713,7 +718,7 @@ async function loadCRMData() {
                     }
                 });
                 console.log(`[CRM] Produtos enriquecidos com Supabase (${supaData.count} registros)`);
-                try { localStorage.setItem('crm_products_cache', JSON.stringify(allProducts)); } catch(e) {}
+                try { localStorage.setItem('crm_products', JSON.stringify(allProducts)); } catch(e) {}
             }
         } catch(supaErr) {
             console.warn('[CRM] Enriquecimento Supabase falhou (ok):', supaErr.message);
@@ -723,6 +728,12 @@ async function loadCRMData() {
         // Se falhou mas tem cache, não mostrar erro
         if (allProducts.length > 0) {
             console.log('[CRM] Usando dados do cache após erro de rede');
+        }
+        // Retry automático (até 2x com delay crescente)
+        if (retryCount < 2) {
+            const delay = (retryCount + 1) * 5000; // 5s, 10s
+            console.log(`[CRM] Retry ${retryCount + 1}/2 em ${delay/1000}s...`);
+            setTimeout(() => loadCRMData(retryCount + 1), delay);
         }
     }
 }
@@ -1833,10 +1844,11 @@ function renderLocalClientPanel(client, phone) {
     const panel = document.getElementById('crmDataContainer');
     const clientOrders = allOrders.filter(o => 
         o.id_cliente === client.id || o.cliente_id === client.id ||
-        String(o.id_cliente) === String(client.id) || String(o.cliente_id) === String(client.id)
+        String(o.id_cliente) === String(client.id) || String(o.cliente_id) === String(client.id) ||
+        String(o.cliente?.id || '') === String(client.id)
     );
     
-    const totalSpent = clientOrders.reduce((sum, o) => sum + (parseFloat(o.valor_total) || 0), 0);
+    const totalSpent = clientOrders.reduce((sum, o) => sum + (parseFloat(o.valor_total || o.total) || 0), 0);
     const avgTicket = clientOrders.length > 0 ? totalSpent / clientOrders.length : 0;
     const name = client.nome || client.name || 'Cliente';
     
@@ -1871,11 +1883,11 @@ function renderLocalClientPanel(client, phone) {
         `<div class="p-3 border border-slate-200 rounded-lg">
             <div class="flex justify-between items-start mb-1">
                 <span class="font-medium text-slate-800 text-sm">#${o.id}</span>
-                <span class="font-bold text-emerald-600 text-sm">R$ ${parseFloat(o.valor_total || 0).toFixed(2)}</span>
+                <span class="font-bold text-emerald-600 text-sm">R$ ${parseFloat(o.valor_total || o.total || 0).toFixed(2)}</span>
             </div>
             <div class="flex justify-between items-center">
                 <span class="text-xs text-slate-500">${o.data ? new Date(o.data).toLocaleDateString('pt-BR') : '-'}</span>
-                <span class="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-600">${(o.itens || o.products || []).length} itens</span>
+                <span class="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-600">${(o.itens || o.produtos || o.products || []).length} itens</span>
             </div>
         </div>`
     ).join('') || '<p class="text-xs text-slate-400 text-center py-3">Nenhum pedido</p>';
