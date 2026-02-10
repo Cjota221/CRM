@@ -4007,15 +4007,40 @@ function closeQuickReplies() {
 
 function renderQuickRepliesList(filter = '') {
     const container = document.getElementById('quickRepliesList');
-    const filtered = quickReplies.filter(qr => 
-        qr.shortcut.toLowerCase().includes(filter.toLowerCase()) ||
-        qr.message.toLowerCase().includes(filter.toLowerCase())
-    );
+    const filtered = quickReplies.filter(qr => {
+        const searchText = filter.toLowerCase();
+        const matchShortcut = qr.shortcut.toLowerCase().includes(searchText);
+        const matchMessage = (qr.message || '').toLowerCase().includes(searchText);
+        // Também buscar no texto dos blocos
+        const matchBlocks = (qr.blocks || []).some(b => 
+            (b.config?.text || '').toLowerCase().includes(searchText) ||
+            (b.config?.caption || '').toLowerCase().includes(searchText)
+        );
+        return matchShortcut || matchMessage || matchBlocks;
+    });
     
-    container.innerHTML = filtered.map(qr => `
-        <div class="p-3 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50 cursor-pointer transition-all" onclick="useQuickReply(${qr.id})">
+    container.innerHTML = filtered.map(qr => {
+        // Montar preview dos blocos
+        const blocks = qr.blocks || [];
+        const blockIcons = { text: '💬', image: '🖼️', video: '🎥', audio: '🎵', poll: '📊', sticker: '✨', delay: '⏱️', presence: '👁️' };
+        let previewHtml = '';
+        
+        if (blocks.length > 0) {
+            const blockBadges = blocks.map(b => `<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-slate-100 rounded text-[10px] text-slate-600">${blockIcons[b.type] || '📎'} ${b.type}</span>`).join('');
+            const firstText = blocks.find(b => b.type === 'text')?.config?.text || blocks.find(b => b.config?.caption)?.config?.caption || '';
+            previewHtml = `<div class="flex flex-wrap gap-1 mb-1">${blockBadges}</div>` +
+                (firstText ? `<p class="text-sm text-slate-600 line-clamp-2">${firstText.substring(0, 120)}</p>` : '');
+        } else {
+            // Legado: mensagem simples
+            previewHtml = `<p class="text-sm text-slate-600 whitespace-pre-line line-clamp-3">${qr.message || ''}</p>`;
+        }
+        
+        return `<div class="p-3 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50 cursor-pointer transition-all" onclick="useQuickReply(${qr.id})">
             <div class="flex justify-between items-start mb-2">
-                <span class="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs font-mono">/${qr.shortcut}</span>
+                <div class="flex items-center gap-2">
+                    <span class="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs font-mono">/${qr.shortcut}</span>
+                    ${blocks.length > 1 ? `<span class="px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded text-[10px] font-medium">${blocks.length} blocos</span>` : ''}
+                </div>
                 <div class="flex gap-1">
                     <button onclick="event.stopPropagation(); editQuickReply(${qr.id})" class="text-slate-400 hover:text-blue-500 p-1">
                         <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
@@ -4025,9 +4050,9 @@ function renderQuickRepliesList(filter = '') {
                     </button>
                 </div>
             </div>
-            <p class="text-sm text-slate-600 whitespace-pre-line line-clamp-3">${qr.message}</p>
-        </div>
-    `).join('') || '<p class="text-center text-slate-400 text-sm py-4">Nenhuma mensagem rápida encontrada</p>';
+            ${previewHtml}
+        </div>`;
+    }).join('') || '<p class="text-center text-slate-400 text-sm py-4">Nenhuma mensagem rápida encontrada</p>';
 }
 
 function filterQuickReplies(query) {
@@ -4039,10 +4064,97 @@ function useQuickReply(id) {
     const qr = quickReplies.find(q => q.id === id);
     if (!qr) return;
     
+    const blocks = qr.blocks || [];
+    
+    // Se tem blocos, executar sequência completa
+    if (blocks.length > 0) {
+        closeQuickReplies();
+        executeQuickReplyBlocks(qr);
+        return;
+    }
+    
+    // Legado: mensagem simples de texto
     const processed = processQuickReplyVariables(qr.message);
     document.getElementById('inputMessage').value = processed;
     closeQuickReplies();
     document.getElementById('inputMessage').focus();
+}
+
+/** Executar sequência de blocos de uma mensagem rápida */
+async function executeQuickReplyBlocks(qr) {
+    if (!currentChatId || !currentChatData) return alert('Selecione um chat primeiro');
+    
+    const remoteJid = currentChatData?.remoteJid || currentChatId;
+    const phone = remoteJid.replace('@s.whatsapp.net', '').replace('@lid', '');
+    const blocks = qr.blocks || [];
+    
+    // Variáveis de substituição
+    const clientName = currentChatData?.name || currentClient?.nome || 'Cliente';
+    const variables = {
+        nome: clientName,
+        telefone: currentClient?.telefone || phone,
+        email: currentClient?.email || '',
+        ultimo_pedido: '',
+        rastreio: ''
+    };
+    if (currentClient) {
+        const lastOrder = (window.allOrders || []).filter(o => o.cliente_id == currentClient.id).sort((a, b) => new Date(b.data) - new Date(a.data))[0];
+        if (lastOrder) {
+            variables.ultimo_pedido = `#${lastOrder.id} - R$ ${parseFloat(lastOrder.total).toFixed(2)}`;
+            variables.rastreio = lastOrder.rastreio || 'Não informado';
+        }
+    }
+    
+    // Notificação de início
+    const toast = document.createElement('div');
+    toast.className = 'fixed bottom-4 right-4 bg-blue-600 text-white px-4 py-3 rounded-xl shadow-lg z-50 flex items-center gap-3 text-sm';
+    toast.id = 'qrSendingToast';
+    toast.innerHTML = `<div class="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full"></div><span>Enviando sequência <b>/${qr.shortcut}</b> (0/${blocks.length})...</span>`;
+    document.body.appendChild(toast);
+    
+    // Usar MessageSequenceBuilder se disponível
+    if (window.MessageSequenceBuilder) {
+        const builder = MessageSequenceBuilder.create('qrBlocksContainer');
+        builder.load(blocks);
+        
+        const result = await builder.execute(phone, variables, (idx, total, status) => {
+            const toastEl = document.getElementById('qrSendingToast');
+            if (toastEl) {
+                const icon = status === 'error' ? '❌' : status === 'done' ? '✅' : '📤';
+                toastEl.querySelector('span').innerHTML = `${icon} Enviando <b>/${qr.shortcut}</b> (${idx + 1}/${total})...`;
+            }
+        });
+        
+        // Resultado
+        const toastEl = document.getElementById('qrSendingToast');
+        if (toastEl) {
+            toastEl.className = result.failed === 0 
+                ? 'fixed bottom-4 right-4 bg-green-600 text-white px-4 py-3 rounded-xl shadow-lg z-50 text-sm'
+                : 'fixed bottom-4 right-4 bg-amber-600 text-white px-4 py-3 rounded-xl shadow-lg z-50 text-sm';
+            toastEl.innerHTML = result.failed === 0
+                ? `✅ Sequência <b>/${qr.shortcut}</b> enviada! (${result.sent} msgs)`
+                : `⚠️ Enviado ${result.sent}, falhou ${result.failed}`;
+            setTimeout(() => toastEl.remove(), 4000);
+        }
+    } else {
+        // Fallback sem builder: enviar apenas blocos de texto
+        for (const block of blocks) {
+            if (block.type === 'text' && block.config?.text) {
+                const msg = processQuickReplyVariables(block.config.text);
+                try {
+                    await fetch(`${API_BASE}/whatsapp/send-message`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ phone, message: msg })
+                    });
+                } catch (e) { console.error('Erro envio bloco:', e); }
+            }
+            if (block.type === 'delay') await new Promise(r => setTimeout(r, (block.config?.seconds || 3) * 1000));
+        }
+        toast.innerHTML = `✅ Sequência enviada!`;
+        toast.className = 'fixed bottom-4 right-4 bg-green-600 text-white px-4 py-3 rounded-xl shadow-lg z-50 text-sm';
+        setTimeout(() => toast.remove(), 3000);
+    }
 }
 
 function processQuickReplyVariables(text) {
@@ -4070,13 +4182,18 @@ function processQuickReplyVariables(text) {
     return result;
 }
 
+// Estado do editor de blocos de mensagem rápida
+let _qrBlocks = [];
+
 function openNewQuickReply() {
     editingQuickReplyId = null;
+    _qrBlocks = [];
     document.getElementById('editQuickReplyTitle').textContent = 'Nova Mensagem Rápida';
     document.getElementById('qrShortcut').value = '';
-    document.getElementById('qrMessage').value = '';
+    renderQRBlocks();
     closeQuickReplies();
     document.getElementById('editQuickReplyModal').classList.remove('hidden');
+    lucide.createIcons();
 }
 
 function editQuickReply(id) {
@@ -4086,33 +4203,51 @@ function editQuickReply(id) {
     editingQuickReplyId = id;
     document.getElementById('editQuickReplyTitle').textContent = 'Editar Mensagem Rápida';
     document.getElementById('qrShortcut').value = qr.shortcut;
-    document.getElementById('qrMessage').value = qr.message;
+    
+    // Carregar blocos (ou converter legado para bloco de texto)
+    if (qr.blocks && qr.blocks.length > 0) {
+        _qrBlocks = JSON.parse(JSON.stringify(qr.blocks)); // deep clone
+    } else if (qr.message) {
+        _qrBlocks = [{ id: Date.now(), type: 'text', config: { text: qr.message } }];
+    } else {
+        _qrBlocks = [];
+    }
+    
+    renderQRBlocks();
     closeQuickReplies();
     document.getElementById('editQuickReplyModal').classList.remove('hidden');
+    lucide.createIcons();
 }
 
 function closeEditQuickReply() {
     document.getElementById('editQuickReplyModal').classList.add('hidden');
     editingQuickReplyId = null;
+    _qrBlocks = [];
 }
 
 function saveQuickReply() {
     const shortcut = document.getElementById('qrShortcut').value.trim().toLowerCase().replace(/\s/g, '_');
-    const message = document.getElementById('qrMessage').value.trim();
     
-    if (!shortcut || !message) return alert('Preencha todos os campos');
+    if (!shortcut) return alert('Preencha o atalho');
+    if (_qrBlocks.length === 0) return alert('Adicione pelo menos um bloco');
+    
+    // Extrair texto legado para compatibilidade com atalho / no chat
+    const firstText = _qrBlocks.find(b => b.type === 'text')?.config?.text || 
+                      _qrBlocks.map(b => b.config?.text || b.config?.caption || `[${b.type}]`).join(' | ');
     
     if (editingQuickReplyId) {
         const qr = quickReplies.find(q => q.id === editingQuickReplyId);
         if (qr) {
             qr.shortcut = shortcut;
-            qr.message = message;
+            qr.message = firstText;
+            qr.blocks = JSON.parse(JSON.stringify(_qrBlocks));
         }
     } else {
         quickReplies.push({
             id: Date.now(),
             shortcut: shortcut,
-            message: message
+            message: firstText,
+            blocks: JSON.parse(JSON.stringify(_qrBlocks))
         });
     }
     
@@ -4132,13 +4267,224 @@ function deleteQuickReply(id) {
 }
 
 function insertVariable(varName) {
-    const textarea = document.getElementById('qrMessage');
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const text = textarea.value;
-    textarea.value = text.slice(0, start) + `{{${varName}}}` + text.slice(end);
-    textarea.focus();
-    textarea.selectionStart = textarea.selectionEnd = start + varName.length + 4;
+    // Tentar inserir no bloco de texto focado
+    const focused = document.activeElement;
+    if (focused && (focused.tagName === 'TEXTAREA' || focused.tagName === 'INPUT') && focused.id?.startsWith('qrblock_')) {
+        const s = focused.selectionStart || focused.value.length;
+        focused.value = focused.value.slice(0, s) + `{{${varName}}}` + focused.value.slice(s);
+        focused.focus();
+        focused.selectionStart = focused.selectionEnd = s + varName.length + 4;
+        // Atualizar bloco correspondente
+        const blockIdx = parseInt(focused.dataset.blockIdx);
+        const field = focused.dataset.field || 'text';
+        if (!isNaN(blockIdx) && _qrBlocks[blockIdx]) {
+            _qrBlocks[blockIdx].config[field] = focused.value;
+        }
+        return;
+    }
+}
+
+// ============================================================================
+// MOTOR DE BLOCOS PARA MENSAGENS RÁPIDAS
+// ============================================================================
+function toggleQRBlockMenu() {
+    document.getElementById('qrAddBlockMenu').classList.toggle('hidden');
+}
+
+function addQRBlock(type) {
+    const defaults = {
+        text: { text: '' },
+        image: { base64: null, caption: '', preview: null },
+        video: { base64: null, caption: '', preview: null },
+        audio: { base64: null, fileName: '' },
+        poll: { title: '', options: ['', ''], selectableCount: 1 },
+        sticker: { base64: null, preview: null },
+        delay: { seconds: 5 },
+        presence: { presenceType: 'composing', seconds: 3 }
+    };
+    _qrBlocks.push({ id: Date.now() + Math.random(), type, config: { ...(defaults[type] || {}) } });
+    document.getElementById('qrAddBlockMenu').classList.add('hidden');
+    renderQRBlocks();
+}
+
+function removeQRBlock(idx) {
+    _qrBlocks.splice(idx, 1);
+    renderQRBlocks();
+}
+
+function moveQRBlock(idx, dir) {
+    const n = idx + dir;
+    if (n < 0 || n >= _qrBlocks.length) return;
+    [_qrBlocks[idx], _qrBlocks[n]] = [_qrBlocks[n], _qrBlocks[idx]];
+    renderQRBlocks();
+}
+
+function updateQRBlockConfig(idx, key, val) {
+    if (_qrBlocks[idx]) _qrBlocks[idx].config[key] = val;
+}
+
+function handleQRBlockImage(idx, ev) {
+    const f = ev.target.files[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = (e) => { _qrBlocks[idx].config.base64 = e.target.result; _qrBlocks[idx].config.preview = e.target.result; renderQRBlocks(); };
+    r.readAsDataURL(f);
+}
+
+function handleQRBlockAudio(idx, ev) {
+    const f = ev.target.files[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = (e) => { _qrBlocks[idx].config.base64 = e.target.result; _qrBlocks[idx].config.fileName = f.name; renderQRBlocks(); };
+    r.readAsDataURL(f);
+}
+
+function handleQRBlockSticker(idx, ev) {
+    const f = ev.target.files[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = (e) => { _qrBlocks[idx].config.base64 = e.target.result; _qrBlocks[idx].config.preview = e.target.result; renderQRBlocks(); };
+    r.readAsDataURL(f);
+}
+
+function handleQRBlockVideo(idx, ev) {
+    const f = ev.target.files[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = (e) => { _qrBlocks[idx].config.base64 = e.target.result; _qrBlocks[idx].config.preview = f.name; renderQRBlocks(); };
+    r.readAsDataURL(f);
+}
+
+function addQRPollOption(idx) {
+    if (!_qrBlocks[idx] || _qrBlocks[idx].config.options.length >= 12) return;
+    _qrBlocks[idx].config.options.push(''); renderQRBlocks();
+}
+
+function removeQRPollOption(idx, optIdx) {
+    if (!_qrBlocks[idx] || _qrBlocks[idx].config.options.length <= 2) return;
+    _qrBlocks[idx].config.options.splice(optIdx, 1); renderQRBlocks();
+}
+
+function updateQRPollOption(idx, optIdx, val) {
+    if (_qrBlocks[idx]) _qrBlocks[idx].config.options[optIdx] = val;
+}
+
+function insertQRBlockVar(idx, varName) {
+    const block = _qrBlocks[idx]; if (!block) return;
+    const field = block.type === 'image' || block.type === 'video' ? 'caption' : 'text';
+    const ta = document.getElementById(`qrblock_${block.id}`);
+    if (ta) {
+        const s = ta.selectionStart || ta.value.length;
+        ta.value = ta.value.slice(0, s) + `{{${varName}}}` + ta.value.slice(s);
+        block.config[field] = ta.value;
+        ta.focus();
+    } else {
+        block.config[field] = (block.config[field] || '') + `{{${varName}}}`;
+        renderQRBlocks();
+    }
+}
+
+function renderQRBlocks() {
+    const container = document.getElementById('qrBlocksContainer');
+    const countEl = document.getElementById('qrBlockCount');
+    if (!container) return;
+    
+    if (countEl) countEl.textContent = `${_qrBlocks.length} bloco${_qrBlocks.length !== 1 ? 's' : ''}`;
+    
+    if (_qrBlocks.length === 0) {
+        container.innerHTML = `<div class="text-center py-6 text-slate-400 border-2 border-dashed border-slate-200 rounded-xl">
+            <i data-lucide="layers" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+            <p class="text-sm">Monte sua sequência de mensagens</p>
+            <p class="text-xs mt-1">Adicione blocos: texto, imagem, áudio, enquete...</p>
+        </div>`;
+        lucide.createIcons();
+        return;
+    }
+    
+    container.innerHTML = _qrBlocks.map((block, idx) => renderQRBlockHTML(block, idx)).join('');
+    lucide.createIcons();
+}
+
+function renderQRBlockHTML(block, idx) {
+    const meta = {
+        text:     { icon: 'type',        border: 'border-blue-200',    bg: 'bg-blue-50',    ic: 'text-blue-500',    label: 'Texto' },
+        image:    { icon: 'image',       border: 'border-green-200',   bg: 'bg-green-50',   ic: 'text-green-500',   label: 'Imagem' },
+        video:    { icon: 'video',       border: 'border-indigo-200',  bg: 'bg-indigo-50',  ic: 'text-indigo-500',  label: 'Vídeo' },
+        audio:    { icon: 'mic',         border: 'border-emerald-200', bg: 'bg-emerald-50', ic: 'text-emerald-500', label: 'Áudio PTT' },
+        poll:     { icon: 'bar-chart-3', border: 'border-purple-200',  bg: 'bg-purple-50',  ic: 'text-purple-500',  label: 'Enquete' },
+        sticker:  { icon: 'smile',       border: 'border-amber-200',   bg: 'bg-amber-50',   ic: 'text-amber-500',   label: 'Figurinha' },
+        delay:    { icon: 'timer',       border: 'border-orange-200',  bg: 'bg-orange-50',  ic: 'text-orange-500',  label: 'Delay' },
+        presence: { icon: 'eye',         border: 'border-cyan-200',    bg: 'bg-cyan-50',    ic: 'text-cyan-500',    label: 'Presença' }
+    };
+    const m = meta[block.type] || meta.text;
+    
+    // Toolbar
+    const toolbar = `<div class="flex items-center justify-between mb-2">
+        <div class="flex items-center gap-2">
+            <span class="text-xs font-bold text-slate-400">#${idx + 1}</span>
+            <i data-lucide="${m.icon}" class="w-4 h-4 ${m.ic}"></i>
+            <span class="text-sm font-medium text-slate-700">${m.label}</span>
+        </div>
+        <div class="flex items-center gap-1">
+            ${idx > 0 ? `<button onclick="moveQRBlock(${idx}, -1)" class="p-1 hover:bg-white rounded" title="Mover ↑"><i data-lucide="chevron-up" class="w-3.5 h-3.5 text-slate-400"></i></button>` : ''}
+            ${idx < _qrBlocks.length - 1 ? `<button onclick="moveQRBlock(${idx}, 1)" class="p-1 hover:bg-white rounded" title="Mover ↓"><i data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-400"></i></button>` : ''}
+            <button onclick="removeQRBlock(${idx})" class="p-1 hover:bg-red-100 rounded" title="Remover"><i data-lucide="trash-2" class="w-3.5 h-3.5 text-red-400"></i></button>
+        </div>
+    </div>`;
+    
+    let content = '';
+    switch (block.type) {
+        case 'text':
+            content = `<textarea id="qrblock_${block.id}" data-block-idx="${idx}" data-field="text" rows="3" class="input resize-none text-sm" placeholder="Mensagem... Use {{nome}} para personalizar" oninput="updateQRBlockConfig(${idx}, 'text', this.value)">${block.config.text || ''}</textarea>
+            <div class="flex gap-1 mt-1 flex-wrap">
+                <button onclick="insertQRBlockVar(${idx}, 'nome')" class="text-xs px-2 py-0.5 bg-slate-100 rounded hover:bg-slate-200">{{nome}}</button>
+                <button onclick="insertQRBlockVar(${idx}, 'telefone')" class="text-xs px-2 py-0.5 bg-slate-100 rounded hover:bg-slate-200">{{telefone}}</button>
+                <button onclick="insertQRBlockVar(${idx}, 'ultimo_pedido')" class="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded hover:bg-amber-200">{{ultimo_pedido}}</button>
+                <button onclick="insertQRBlockVar(${idx}, 'cupom')" class="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200">{{cupom}}</button>
+            </div>`;
+            break;
+        case 'image':
+            content = `<input type="file" accept="image/*" class="input text-sm" onchange="handleQRBlockImage(${idx}, event)">
+            ${block.config.preview ? `<img src="${block.config.preview}" class="w-16 h-16 object-cover rounded mt-2">` : ''}
+            <textarea id="qrblock_${block.id}" data-block-idx="${idx}" data-field="caption" rows="2" class="input resize-none text-sm mt-2" placeholder="Legenda (opcional)..." oninput="updateQRBlockConfig(${idx}, 'caption', this.value)">${block.config.caption || ''}</textarea>`;
+            break;
+        case 'video':
+            content = `<input type="file" accept="video/*" class="input text-sm" onchange="handleQRBlockVideo(${idx}, event)">
+            ${block.config.preview ? `<p class="text-xs text-indigo-600 mt-1">🎥 ${block.config.preview}</p>` : ''}
+            <textarea id="qrblock_${block.id}" data-block-idx="${idx}" data-field="caption" rows="2" class="input resize-none text-sm mt-2" placeholder="Legenda (opcional)..." oninput="updateQRBlockConfig(${idx}, 'caption', this.value)">${block.config.caption || ''}</textarea>`;
+            break;
+        case 'audio':
+            content = `<input type="file" accept="audio/ogg,audio/mpeg,audio/mp4,audio/webm" class="input text-sm" onchange="handleQRBlockAudio(${idx}, event)">
+            ${block.config.fileName ? `<p class="text-xs text-emerald-600 mt-1">🎵 ${block.config.fileName}</p>` : ''}`;
+            break;
+        case 'poll':
+            const opts = block.config.options || ['', ''];
+            content = `<input type="text" class="input text-sm mb-2" placeholder="Pergunta da enquete..." value="${block.config.title || ''}" oninput="updateQRBlockConfig(${idx}, 'title', this.value)">
+            <div class="space-y-1">${opts.map((o, i) => `<div class="flex gap-1">
+                <input type="text" class="input text-sm flex-1" placeholder="Opção ${i + 1}" value="${o}" oninput="updateQRPollOption(${idx}, ${i}, this.value)">
+                ${opts.length > 2 ? `<button onclick="removeQRPollOption(${idx}, ${i})" class="text-red-400 hover:text-red-600 px-1"><i data-lucide="x" class="w-3 h-3"></i></button>` : ''}
+            </div>`).join('')}</div>
+            ${opts.length < 12 ? `<button onclick="addQRPollOption(${idx})" class="text-xs text-purple-600 mt-1 hover:text-purple-800">+ Opção</button>` : ''}`;
+            break;
+        case 'sticker':
+            content = `<input type="file" accept="image/webp,image/png" class="input text-sm" onchange="handleQRBlockSticker(${idx}, event)">
+            ${block.config.preview ? `<img src="${block.config.preview}" class="w-16 h-16 object-contain mt-2">` : ''}`;
+            break;
+        case 'delay':
+            content = `<div class="flex items-center gap-2">
+                <input type="number" min="1" max="300" class="input text-sm w-24" value="${block.config.seconds || 5}" oninput="updateQRBlockConfig(${idx}, 'seconds', parseInt(this.value))">
+                <span class="text-sm text-slate-500">segundos de espera</span>
+            </div>`;
+            break;
+        case 'presence':
+            content = `<div class="flex items-center gap-2">
+                <select class="input text-sm w-40" onchange="updateQRBlockConfig(${idx}, 'presenceType', this.value)">
+                    <option value="composing" ${(block.config.presenceType || 'composing') === 'composing' ? 'selected' : ''}>Digitando...</option>
+                    <option value="recording" ${block.config.presenceType === 'recording' ? 'selected' : ''}>Gravando áudio...</option>
+                </select>
+                <input type="number" min="1" max="30" class="input text-sm w-20" value="${block.config.seconds || 3}" oninput="updateQRBlockConfig(${idx}, 'seconds', parseInt(this.value))">
+                <span class="text-sm text-slate-500">seg</span>
+            </div>`;
+            break;
+    }
+    
+    return `<div class="p-3 rounded-xl border ${m.border} ${m.bg}">${toolbar}${content}</div>`;
 }
 
 function showQuickReplyHint(qr) {
@@ -4152,12 +4498,18 @@ function showQuickReplyHint(qr) {
     }
     
     hint.dataset.qrId = qr.id;
+    const blocks = qr.blocks || [];
+    const blockIcons = { text: '💬', image: '🖼️', video: '🎥', audio: '🎵', poll: '📊', sticker: '✨', delay: '⏱️', presence: '👁️' };
+    const previewText = blocks.length > 0 
+        ? blocks.map(b => blockIcons[b.type] || '📎').join(' → ') + ` (${blocks.length} blocos)`
+        : (qr.message || '').substring(0, 100) + '...';
+    
     hint.innerHTML = `
         <div class="flex items-center gap-2 mb-1">
             <span class="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-xs font-mono">/${qr.shortcut}</span>
             <span class="text-xs text-slate-400">Tab para usar</span>
         </div>
-        <p class="text-slate-600 line-clamp-2">${qr.message.substring(0, 100)}...</p>
+        <p class="text-slate-600 line-clamp-2">${previewText}</p>
     `;
     hint.classList.remove('hidden');
 }

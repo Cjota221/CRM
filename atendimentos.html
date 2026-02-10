@@ -863,32 +863,71 @@
         </div>
     </div>
 
-    <!-- Modal Nova/Editar Mensagem Rápida -->
+    <!-- Modal Nova/Editar Mensagem Rápida (Motor de Blocos) -->
     <div id="editQuickReplyModal" class="fixed inset-0 hidden z-50 d-flex items-center justify-center">
         <div class="fixed inset-0 modal-overlay" onclick="closeEditQuickReply()"></div>
-        <div class="relative bg-white w-[500px] rounded-2xl shadow-xl">
-            <div class="p-5 border-b border-slate-100">
-                <h3 id="editQuickReplyTitle" class="font-semibold text-slate-800">Nova Mensagem Rápida</h3>
+        <div class="relative bg-white w-[600px] max-h-[85vh] rounded-2xl shadow-xl flex flex-col">
+            <div class="p-5 border-b border-slate-100 flex justify-between items-center">
+                <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center">
+                        <i data-lucide="layers" class="w-5 h-5 text-amber-600"></i>
+                    </div>
+                    <div>
+                        <h3 id="editQuickReplyTitle" class="font-semibold text-slate-800">Nova Mensagem Rápida</h3>
+                        <p class="text-xs text-slate-500">Monte uma sequência de blocos: texto, imagem, áudio...</p>
+                    </div>
+                </div>
+                <button onclick="closeEditQuickReply()" class="text-slate-400 hover:text-slate-600">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
             </div>
-            <div class="p-5 space-y-4">
+            <div class="p-5 space-y-4 overflow-y-auto flex-1">
+                <!-- Atalho -->
                 <div>
                     <label class="block text-sm font-medium text-slate-700 mb-1">Atalho</label>
                     <input type="text" id="qrShortcut" placeholder="ex: ola, preco, rastreio" class="input">
-                    <p class="text-xs text-slate-400 mt-1">Digite /atalho no chat para usar</p>
+                    <p class="text-xs text-slate-400 mt-1">Digite <b>/atalho</b> no chat para usar</p>
                 </div>
+
+                <!-- Container de Blocos -->
                 <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Mensagem</label>
-                    <textarea id="qrMessage" rows="5" placeholder="Olá {{nome}}, tudo bem?" class="input resize-none"></textarea>
-                    <div class="flex gap-2 mt-2">
-                        <button onclick="insertVariable('nome')" class="text-xs px-2 py-1 bg-slate-100 rounded hover:bg-slate-200">{{nome}}</button>
-                        <button onclick="insertVariable('ultimo_pedido')" class="text-xs px-2 py-1 bg-slate-100 rounded hover:bg-slate-200">{{ultimo_pedido}}</button>
-                        <button onclick="insertVariable('telefone')" class="text-xs px-2 py-1 bg-slate-100 rounded hover:bg-slate-200">{{telefone}}</button>
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="block text-sm font-medium text-slate-700">Sequência de Mensagens</label>
+                        <div class="relative">
+                            <button onclick="toggleQRBlockMenu()" class="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium hover:bg-blue-100 transition">
+                                <i data-lucide="plus" class="w-3.5 h-3.5"></i> Adicionar Bloco
+                            </button>
+                            <div id="qrAddBlockMenu" class="hidden absolute right-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-slate-200 z-20 py-1 w-52">
+                                <button onclick="addQRBlock('text')" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center gap-2"><span class="text-base">💬</span> Texto</button>
+                                <button onclick="addQRBlock('image')" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center gap-2"><span class="text-base">🖼️</span> Imagem + Legenda</button>
+                                <button onclick="addQRBlock('video')" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center gap-2"><span class="text-base">🎥</span> Vídeo</button>
+                                <button onclick="addQRBlock('audio')" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center gap-2"><span class="text-base">🎵</span> Áudio PTT</button>
+                                <button onclick="addQRBlock('poll')" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center gap-2"><span class="text-base">📊</span> Enquete</button>
+                                <button onclick="addQRBlock('sticker')" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center gap-2"><span class="text-base">✨</span> Figurinha</button>
+                                <hr class="my-1 border-slate-100">
+                                <button onclick="addQRBlock('delay')" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center gap-2"><span class="text-base">⏱️</span> Delay (espera)</button>
+                                <button onclick="addQRBlock('presence')" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center gap-2"><span class="text-base">👁️</span> Presença (digitando...)</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="qrBlocksContainer" class="space-y-2 min-h-[60px]">
+                        <!-- Blocos renderizados aqui -->
+                        <div class="text-center py-6 text-slate-400 border-2 border-dashed border-slate-200 rounded-xl">
+                            <i data-lucide="layers" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+                            <p class="text-sm">Monte sua sequência de mensagens</p>
+                            <p class="text-xs mt-1">Adicione blocos: texto, imagem, áudio, enquete...</p>
+                        </div>
                     </div>
                 </div>
             </div>
-            <div class="p-4 border-t border-slate-100 flex justify-end gap-2">
-                <button onclick="closeEditQuickReply()" class="btn btn-secondary">Cancelar</button>
-                <button onclick="saveQuickReply()" class="btn btn-primary">Salvar</button>
+            <div class="p-4 border-t border-slate-100 flex items-center justify-between bg-slate-50 rounded-b-2xl">
+                <span id="qrBlockCount" class="text-xs text-slate-400">0 blocos</span>
+                <div class="flex gap-2">
+                    <button onclick="closeEditQuickReply()" class="btn btn-secondary">Cancelar</button>
+                    <button onclick="saveQuickReply()" class="btn btn-primary">
+                        <i data-lucide="save" class="w-4 h-4"></i> Salvar
+                    </button>
+                </div>
             </div>
         </div>
     </div>
