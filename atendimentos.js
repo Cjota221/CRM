@@ -4653,31 +4653,57 @@ function showOrderDetails(orderId) {
 const audioPlayers = {}; // Armazena instâncias de áudio ativas
 
 function pauseAllAudios() {
-    // Pausar todos os áudios ativos e limpar referências
+    // Pausar todos os áudios ativos — aguardando play() pendentes para evitar
+    // "The play() request was interrupted by a call to pause()"
     Object.keys(audioPlayers).forEach(id => {
-        if (audioPlayers[id] && !audioPlayers[id].paused) {
-            try {
-                audioPlayers[id].pause();
-            } catch (e) {
-                // Ignorar erros se o elemento já foi removido
+        const audio = audioPlayers[id];
+        if (!audio) { delete audioPlayers[id]; return; }
+        
+        try {
+            // Se há uma Promise de play() pendente, aguardar antes de pausar
+            if (audio._playPromise) {
+                audio._playPromise
+                    .then(() => { audio.pause(); })
+                    .catch(() => {}); // já foi interrompido, ignorar
+                audio._playPromise = null;
+            } else if (!audio.paused) {
+                audio.pause();
             }
+        } catch (e) {
+            // Elemento já foi removido do DOM
         }
         delete audioPlayers[id];
+    });
+    
+    // Resetar ícones de todos os players visíveis
+    document.querySelectorAll('.audio-player-whatsapp').forEach(player => {
+        const playIcon = player.querySelector('.play-icon');
+        const pauseIcon = player.querySelector('.pause-icon');
+        if (playIcon) playIcon.classList.remove('hidden');
+        if (pauseIcon) pauseIcon.classList.add('hidden');
     });
 }
 
 function toggleAudioPlay(audioId, audioUrl) {
     const audioEl = document.getElementById(audioId);
     const playerDiv = document.querySelector(`[data-audio-id="${audioId}"]`);
+    if (!audioEl || !playerDiv) return;
+    
     const playIcon = playerDiv.querySelector('.play-icon');
     const pauseIcon = playerDiv.querySelector('.pause-icon');
     
-    if (!audioEl) return;
-    
-    // Pausar todos os outros áudios
+    // Pausar todos os outros áudios (com proteção contra race condition)
     Object.keys(audioPlayers).forEach(id => {
-        if (id !== audioId && audioPlayers[id] && !audioPlayers[id].paused) {
-            audioPlayers[id].pause();
+        if (id !== audioId && audioPlayers[id]) {
+            const other = audioPlayers[id];
+            if (other._playPromise) {
+                other._playPromise
+                    .then(() => { other.pause(); })
+                    .catch(() => {});
+                other._playPromise = null;
+            } else if (!other.paused) {
+                other.pause();
+            }
             const otherPlayer = document.querySelector(`[data-audio-id="${id}"]`);
             if (otherPlayer) {
                 otherPlayer.querySelector('.play-icon')?.classList.remove('hidden');
@@ -4688,16 +4714,20 @@ function toggleAudioPlay(audioId, audioUrl) {
     
     // Toggle play/pause
     if (audioEl.paused) {
-        // Usar promise do play() para capturar erros
+        // Guardar referência ANTES do play para tracking
+        audioPlayers[audioId] = audioEl;
+        
         const playPromise = audioEl.play();
         
         if (playPromise !== undefined) {
+            // Armazenar promise no próprio elemento para referência futura
+            audioEl._playPromise = playPromise;
+            
             playPromise.then(() => {
+                audioEl._playPromise = null; // Limpar promise resolvida
+                
                 playIcon.classList.add('hidden');
                 pauseIcon.classList.remove('hidden');
-                
-                // Armazenar referência
-                audioPlayers[audioId] = audioEl;
                 
                 // Atualizar progresso
                 audioEl.ontimeupdate = () => updateAudioProgress(audioId);
@@ -4713,12 +4743,26 @@ function toggleAudioPlay(audioId, audioUrl) {
                     delete audioPlayers[audioId];
                 };
             }).catch(error => {
-                console.log('Erro ao reproduzir áudio:', error.message);
-                // Não mostrar erro ao usuário se foi abortado
+                audioEl._playPromise = null;
+                // Silenciar "interrupted by pause" — é esperado quando o usuário troca de áudio
+                if (error.name !== 'AbortError') {
+                    console.warn('[Audio] Erro inesperado:', error.message);
+                }
+                // Restaurar ícones pro estado "parado"
+                playIcon?.classList.remove('hidden');
+                pauseIcon?.classList.add('hidden');
             });
         }
     } else {
-        audioEl.pause();
+        // Aguardar play promise pendente antes de pausar
+        if (audioEl._playPromise) {
+            audioEl._playPromise
+                .then(() => { audioEl.pause(); })
+                .catch(() => {});
+            audioEl._playPromise = null;
+        } else {
+            audioEl.pause();
+        }
         playIcon.classList.remove('hidden');
         pauseIcon.classList.add('hidden');
     }
