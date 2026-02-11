@@ -263,7 +263,7 @@
                     <i data-lucide="users" class="w-5 h-5"></i>
                     <span>Clientes</span>
                 </a>
-                <a href="#" id="nav-campaigns" class="nav-item">
+                <a href="campanhas.html" class="nav-item">
                     <i data-lucide="megaphone" class="w-5 h-5"></i>
                     <span>Campanhas</span>
                 </a>
@@ -691,65 +691,6 @@
                             </div>
                             <h3 class="font-medium text-slate-800">Nenhum pedido encontrado</h3>
                             <p class="text-sm text-slate-500 mt-1">Clique em "Sincronizar Dados" para carregar os pedidos.</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- CAMPAIGNS PAGE -->
-            <div id="campaigns-page" class="page-content hidden flex-col h-full">
-                <header class="bg-white border-b border-slate-100 px-8 py-5">
-                    <div>
-                        <h1 class="text-xl font-semibold text-slate-800">Campanhas</h1>
-                        <p class="text-sm text-slate-500 mt-0.5">Segmente clientes e dispare mensagens em massa</p>
-                    </div>
-                </header>
-                <div class="flex-1 overflow-y-auto p-8 bg-slate-50">
-                    <div class="container mx-auto">
-                        <div class="card p-6 mb-6">
-                            <div class="flex items-center gap-3 mb-5">
-                                <div class="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
-                                    <i data-lucide="filter" class="w-4 h-4 text-slate-500"></i>
-                                </div>
-                                <h3 class="font-semibold text-slate-800">Filtros de Segmentação</h3>
-                            </div>
-                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
-                                <div><label class="block text-xs font-medium text-slate-500 mb-1.5">Dias sem comprar</label><div class="flex gap-2"><input type="number" id="camp-days-min" class="input" placeholder="Mín"><input type="number" id="camp-days-max" class="input" placeholder="Máx"></div></div>
-                                <div><label class="block text-xs font-medium text-slate-500 mb-1.5">Ticket Médio (R$)</label><div class="flex gap-2"><input type="number" id="camp-ticket-min" class="input" placeholder="Mín"><input type="number" id="camp-ticket-max" class="input" placeholder="Máx"></div></div>
-                                <div><label class="block text-xs font-medium text-slate-500 mb-1.5">Qtd. de Pedidos</label><div class="flex gap-2"><input type="number" id="camp-orders-min" class="input" placeholder="Mín"><input type="number" id="camp-orders-max" class="input" placeholder="Máx"></div></div>
-                                <div><label class="block text-xs font-medium text-slate-500 mb-1.5">Estado (UF)</label><select id="camp-state" class="input"><option value="">Todos</option><option value="SP">São Paulo</option><option value="RJ">Rio de Janeiro</option><option value="MG">Minas Gerais</option><option value="PR">Paraná</option><option value="RS">Rio Grande do Sul</option><option value="SC">Santa Catarina</option><option value="BA">Bahia</option><option value="GO">Goiás</option><option value="PE">Pernambuco</option><option value="CE">Ceará</option></select></div>
-                            </div>
-                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-5">
-                                <div><label class="block text-xs font-medium text-slate-500 mb-1.5">Status (selecione múltiplos)</label><div class="flex flex-wrap gap-2" id="camp-status-checkboxes"><label class="inline-flex items-center cursor-pointer"><input type="checkbox" class="camp-status-check rounded border-slate-300 text-emerald-600" value="ativo"><span class="ml-1.5 badge badge-success">Ativo</span></label><label class="inline-flex items-center cursor-pointer"><input type="checkbox" class="camp-status-check rounded border-slate-300 text-amber-600" value="em-risco"><span class="ml-1.5 badge badge-warning">Em Risco</span></label><label class="inline-flex items-center cursor-pointer"><input type="checkbox" class="camp-status-check rounded border-slate-300 text-red-600" value="inativo"><span class="ml-1.5 badge badge-danger">Inativo</span></label></div></div>
-                                <div><label class="block text-xs font-medium text-slate-500 mb-1.5">Já recebeu cupom?</label><select id="camp-has-coupon" class="input"><option value="">Todos</option><option value="no">Nunca recebeu</option><option value="yes">Já recebeu</option><option value="used">Usou cupom</option><option value="not-used">Não usou cupom</option></select></div>
-                                <div><label class="block text-xs font-medium text-slate-500 mb-1.5">Tag IA Vigilante</label><select id="camp-ai-tag" class="input"><option value="">Todas</option><option value="urgente">Urgente</option><option value="upsell">Upsell</option><option value="fidelidade">Fidelidade</option><option value="atrasado">Atrasado</option></select></div>
-                                <div class="flex items-end"><button id="apply-campaign-filters" class="btn btn-primary w-full"><i data-lucide="search" class="w-4 h-4"></i>Aplicar Filtros</button></div>
-                            </div>
-                            <div class="flex flex-wrap items-center gap-2 pt-5 border-t border-slate-100">
-                                <span class="text-xs text-slate-400 mr-2">Filtros rápidos:</span>
-                                <button class="quick-filter badge badge-danger cursor-pointer hover:opacity-80" data-filter="inactive-300">Inativos +300 dias</button>
-                                <button class="quick-filter badge badge-warning cursor-pointer hover:opacity-80" data-filter="risk-high-ticket">Em Risco + Ticket Alto</button>
-                                <button class="quick-filter badge badge-success cursor-pointer hover:opacity-80" data-filter="vip-inactive">VIPs Inativos</button>
-                                <button class="quick-filter badge badge-info cursor-pointer hover:opacity-80" data-filter="first-purchase">Só 1 Compra</button>
-                                <button class="quick-filter badge badge-neutral cursor-pointer hover:opacity-80" data-filter="no-coupon">Nunca Recebeu Cupom</button>
-                            </div>
-                        </div>
-                        <div class="card">
-                            <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
-                                <div><h3 class="font-semibold text-slate-800">Clientes Filtrados</h3><p class="text-sm text-slate-400"><span id="campaign-result-count">0</span> clientes encontrados</p></div>
-                                <div class="flex gap-2">
-                                    <button id="campaign-generate-coupons" class="btn btn-success text-sm" disabled><i data-lucide="ticket" class="w-4 h-4"></i>Gerar Cupons</button>
-                                    <button id="campaign-export" class="btn btn-secondary text-sm" disabled><i data-lucide="download" class="w-4 h-4"></i>Exportar CSV</button>
-                                    <button id="campaign-whatsapp" class="btn btn-success text-sm" disabled><i data-lucide="message-circle" class="w-4 h-4"></i>Disparar WhatsApp</button>
-                                </div>
-                            </div>
-                            <div id="campaign-results-list" class="divide-y divide-slate-50 max-h-96 overflow-y-auto">
-                                <div class="p-12 text-center">
-                                    <div class="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-4"><i data-lucide="users" class="w-8 h-8 text-slate-400"></i></div>
-                                    <p class="text-slate-600 font-medium">Configure os filtros acima</p>
-                                    <p class="text-sm text-slate-400 mt-1">Os clientes filtrados aparecerão aqui</p>
-                                </div>
-                            </div>
                         </div>
                     </div>
                 </div>

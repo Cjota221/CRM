@@ -3752,7 +3752,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Inicializar novos módulos de vendas
     initDashboard();
-    initCampaigns();
+    // initCampaigns(); // Removido - Campanhas agora é página separada (campanhas.html)
     initCoupons();
     
     // Carregar insights da Anny no Dashboard
@@ -5955,22 +5955,14 @@ window.AIVigilante = AIVigilante;
 function initDashboard() {
     document.getElementById('run-vigilante-btn')?.addEventListener('click', () => AIVigilante.run());
     document.getElementById('action-all-urgent')?.addEventListener('click', () => AIVigilante.actionAllUrgent());
-    document.getElementById('quick-action-inactive')?.addEventListener('click', () => { document.getElementById('nav-campaigns').click(); setTimeout(() => CampaignManager.applyQuickFilter('inactive-300'), 100); });
-    document.getElementById('quick-action-vip')?.addEventListener('click', () => { document.getElementById('nav-campaigns').click(); setTimeout(() => CampaignManager.applyQuickFilter('vip-inactive'), 100); });
+    // Campanhas agora está em página separada (campanhas.html)
+    document.getElementById('quick-action-inactive')?.addEventListener('click', () => { window.location.href = 'campanhas.html'; });
+    document.getElementById('quick-action-vip')?.addEventListener('click', () => { window.location.href = 'campanhas.html'; });
     document.getElementById('quick-action-cart')?.addEventListener('click', () => document.getElementById('nav-webhooks').click());
     setTimeout(() => { if (Storage.getClients().length > 0) AIVigilante.run(); }, 1000);
 }
 
-function initCampaigns() {
-    document.getElementById('apply-campaign-filters')?.addEventListener('click', () => CampaignManager.applyFilters());
-    document.querySelectorAll('.quick-filter').forEach(btn => btn.addEventListener('click', () => CampaignManager.applyQuickFilter(btn.dataset.filter)));
-    document.getElementById('campaign-generate-coupons')?.addEventListener('click', () => CampaignManager.generateCoupons());
-    document.getElementById('campaign-export')?.addEventListener('click', () => CampaignManager.exportCSV());
-    document.getElementById('campaign-whatsapp')?.addEventListener('click', () => CampaignManager.openBulkWhatsApp());
-    document.getElementById('cancel-bulk-btn')?.addEventListener('click', () => document.getElementById('bulk-whatsapp-modal').classList.add('hidden'));
-    document.getElementById('start-bulk-dispatch')?.addEventListener('click', () => CampaignManager.startBulkDispatch());
-    document.getElementById('generate-ai-variations')?.addEventListener('click', () => CampaignManager.generateAIVariations());
-}
+// initCampaigns() removida - Campanhas agora está em campanhas.html (arquivo separado)
 
 function initCoupons() {
     document.getElementById('add-coupon-btn')?.addEventListener('click', () => { document.getElementById('coupon-form').reset(); document.getElementById('coupon-modal').classList.remove('hidden'); });
