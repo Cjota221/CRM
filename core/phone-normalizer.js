@@ -82,9 +82,9 @@
                 phone = '55' + phone;
             }
 
-            // 7. Validar comprimento (deve ter 13 dígitos: 55 + DDD + 9 dígitos)
+            // 7. Validar e corrigir comprimento
             if (phone.length !== 13) {
-                // Tentar corrigir caso comum: falta o 9 do celular (12 dígitos)
+                // Caso 1: 12 dígitos (55 + DDD + 8 dígitos) - falta o 9º dígito
                 if (phone.length === 12) {
                     const ddd = phone.substring(2, 4);
                     const number = phone.substring(4);
@@ -94,10 +94,23 @@
                         phone = '55' + ddd + '9' + number;
                     }
                 }
+                // Caso 2: 11 dígitos (DDD + 9 dígitos) - sem DDI, já adicionado na etapa 6
+                // Exemplo: 62981204352 → 5562981204352 (já tratado)
                 
-                // Ainda inválido? Retornar vazio em vez de erro
+                // Caso 3: 9 dígitos (só número) - adicionar DDD padrão 62 (Goiânia)
+                else if (phone.length === 11 && !phone.startsWith('55')) {
+                    // Se tem 11 dígitos e não tem 55, significa que o DDI foi adicionado errado
+                    // Remover DDI e reprocessar
+                    phone = phone.substring(2); // Remove os 2 primeiros (que eram o 55 adicionado errado)
+                    // Agora temos 9 dígitos
+                    if (phone.length === 9) {
+                        phone = '5562' + phone; // DDI 55 + DDD 62 (padrão)
+                    }
+                }
+                
+                // Ainda inválido? Retornar vazio
                 if (phone.length !== 13) {
-                    console.warn(`[PhoneNormalizer] ⚠️ Comprimento inválido ignorado: ${phone.length} (esperado 13) - ${raw}`);
+                    console.warn(`[PhoneNormalizer] ⚠️ Comprimento inválido ignorado: ${phone.length} (esperado 13) - original: ${raw}`);
                     return ''; // Retornar vazio em vez de lançar erro
                 }
             }
