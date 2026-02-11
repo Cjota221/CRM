@@ -4254,21 +4254,22 @@ app.post('/api/campaigns/segment', async (req, res) => {
  */
 app.post('/api/campaigns/create', async (req, res) => {
     try {
-        const { name, message, imageUrl, contacts, segment, batchSize, batchInterval, messageDelay, scheduledAt, couponCode, campaignType, pollTitle, pollOptions, pollSelectableCount, mediaLibraryId } = req.body;
+        const { name, message, imageUrl, contacts, segment, targetGroups, batchSize, batchInterval, messageDelay, scheduledAt, couponCode, campaignType, blocks, pollTitle, pollOptions, pollSelectableCount, mediaLibraryId } = req.body;
         
         if (!name || !contacts || contacts.length === 0) {
             return res.status(400).json({ error: 'Nome e contatos são obrigatórios' });
         }
         
-        // Tipos: 'text', 'image', 'poll', 'audio', 'sticker'
+        // Tipos: 'text', 'image', 'poll', 'audio', 'sticker', 'sequence'
         const type = campaignType || (imageUrl ? 'image' : 'text');
         
         if (type === 'poll' && (!pollTitle || !pollOptions || pollOptions.length < 2)) {
             return res.status(400).json({ error: 'Enquete requer título e mínimo 2 opções' });
         }
         
-        if (type !== 'poll' && !message) {
-            return res.status(400).json({ error: 'Mensagem é obrigatória para este tipo de campanha' });
+        // Sequence usa blocos, não precisa de message direta
+        if (type !== 'poll' && type !== 'sequence' && !message && (!blocks || blocks.length === 0)) {
+            return res.status(400).json({ error: 'Mensagem ou blocos são obrigatórios' });
         }
         
         const campaign = {
@@ -4278,21 +4279,22 @@ app.post('/api/campaigns/create', async (req, res) => {
             imageUrl: imageUrl || null,
             segment: segment || 'custom',
             contacts: contacts,
+            targetGroups: targetGroups || [],
             totalContacts: contacts.length,
             sentCount: 0,
             failedCount: 0,
             status: scheduledAt ? 'scheduled' : 'ready',
             batchSize: batchSize || 10,
             batchInterval: batchInterval || 20,
-            messageDelay: messageDelay || 5, // Segundos base entre msgs (anti-ban)
+            messageDelay: messageDelay || 5,
             scheduledAt: scheduledAt || null,
             couponCode: couponCode || null,
-            // Módulo 3: Suporte a polls
             campaignType: type,
+            // Motor de Blocos (sequence)
+            blocks: blocks || [],
             pollTitle: pollTitle || null,
             pollOptions: pollOptions || null,
             pollSelectableCount: pollSelectableCount || 1,
-            // Módulo 4: Mídia da biblioteca
             mediaLibraryId: mediaLibraryId || null,
             createdAt: new Date().toISOString(),
             startedAt: null,
@@ -4440,7 +4442,7 @@ app.get('/api/contact-campaigns/:phone', (req, res) => {
  * Envia mensagens em lotes com delay anti-ban
  */
 async function processCampaignBatches(campaign) {
-    const { contacts, batchSize, batchInterval, message, imageUrl, couponCode, campaignType, messageDelay } = campaign;
+    const { contacts, batchSize, batchInterval, message, imageUrl, couponCode, campaignType, messageDelay, blocks, targetGroups } = campaign;
     
     // Anti-ban: delay base configurável (do frontend) + variação aleatória
     const baseDelayMs = (messageDelay || 5) * 1000;
@@ -4448,6 +4450,112 @@ async function processCampaignBatches(campaign) {
     
     let currentIndex = campaign.sentCount; // Retomar de onde parou
     let consecutiveSent = 0; // Contador para cooldown progressivo
+    
+    // ===== HELPER: enviar um bloco individual =====
+    async function sendBlock(block, targetNumber, contact) {
+        const personalizeText = (text) => (text || '')
+            .replace(/\{\{nome\}\}/gi, contact.name || 'Cliente')
+            .replace(/\{nome\}/gi, contact.name || 'Cliente')
+            .replace(/\{\{telefone\}\}/gi, contact.phone || '')
+            .replace(/\{\{cidade\}\}/gi, contact.city || '')
+            .replace(/\{\{cupom\}\}/gi, couponCode || '')
+            .replace(/\{cupom\}/gi, couponCode || '');
+        
+    // Helper: limpar prefixo data:xxx;base64, de base64
+        const cleanBase64 = (b64) => b64 ? b64.replace(/^data:[^;]+;base64,/, '') : b64;
+        
+        switch (block.type) {
+            case 'text': {
+                const text = personalizeText(block.config?.text);
+                if (!text) return null;
+                return await fetch(`${EVOLUTION_URL}/message/sendText/${INSTANCE_NAME}`, {
+                    method: 'POST',
+                    headers: evolutionHeaders,
+                    body: JSON.stringify({ number: targetNumber, text })
+                });
+            }
+            case 'image': {
+                const caption = personalizeText(block.config?.caption);
+                let media = block.config?.url || block.config?.base64 || imageUrl;
+                if (!media) return null;
+                if (media.startsWith('data:')) media = cleanBase64(media);
+                return await fetch(`${EVOLUTION_URL}/message/sendMedia/${INSTANCE_NAME}`, {
+                    method: 'POST',
+                    headers: evolutionHeaders,
+                    body: JSON.stringify({ number: targetNumber, mediatype: 'image', media, caption })
+                });
+            }
+            case 'audio': {
+                let audio = block.config?.url || block.config?.base64;
+                if (!audio) return null;
+                if (audio.startsWith('data:')) audio = cleanBase64(audio);
+                return await fetch(`${EVOLUTION_URL}/message/sendWhatsAppAudio/${INSTANCE_NAME}`, {
+                    method: 'POST',
+                    headers: evolutionHeaders,
+                    body: JSON.stringify({ number: targetNumber, audio, encoding: true })
+                });
+            }
+            case 'poll': {
+                const title = block.config?.title || campaign.pollTitle;
+                const options = block.config?.options || campaign.pollOptions;
+                if (!title || !options) return null;
+                return await fetch(`${EVOLUTION_URL}/message/sendPoll/${INSTANCE_NAME}`, {
+                    method: 'POST',
+                    headers: evolutionHeaders,
+                    body: JSON.stringify({ number: targetNumber, name: title, values: options, selectableCount: block.config?.selectableCount || 1 })
+                });
+            }
+            case 'sticker': {
+                let sticker = block.config?.url || block.config?.base64;
+                if (!sticker) return null;
+                if (sticker.startsWith('data:')) sticker = cleanBase64(sticker);
+                return await fetch(`${EVOLUTION_URL}/message/sendSticker/${INSTANCE_NAME}`, {
+                    method: 'POST',
+                    headers: evolutionHeaders,
+                    body: JSON.stringify({ number: targetNumber, sticker })
+                });
+            }
+            case 'delay': {
+                const seconds = block.config?.seconds || 3;
+                await new Promise(r => setTimeout(r, seconds * 1000));
+                return 'delay';
+            }
+            case 'presence': {
+                const presenceType = block.config?.presence || 'composing';
+                const duration = block.config?.duration || 3;
+                try {
+                    await fetch(`${EVOLUTION_URL}/chat/updatePresence/${INSTANCE_NAME}`, {
+                        method: 'POST',
+                        headers: evolutionHeaders,
+                        body: JSON.stringify({ number: targetNumber, presence: presenceType })
+                    });
+                    await new Promise(r => setTimeout(r, duration * 1000));
+                    await fetch(`${EVOLUTION_URL}/chat/updatePresence/${INSTANCE_NAME}`, {
+                        method: 'POST',
+                        headers: evolutionHeaders,
+                        body: JSON.stringify({ number: targetNumber, presence: 'paused' })
+                    });
+                } catch(e) { /* presence é best-effort */ }
+                return 'presence';
+            }
+            default:
+                return null;
+        }
+    }
+    
+    // ===== HELPER: resolver número de destino =====
+    function resolveTargetNumber(contact) {
+        // Se é um grupo, usar o JID diretamente
+        if (contact.isGroup || (contact.phone && contact.phone.includes('@g.us'))) {
+            return contact.phone; // ex: 120363xxx@g.us
+        }
+        // Contato individual: normalizar telefone
+        let phoneNumber = (contact.phone || '').replace(/\D/g, '');
+        if (!phoneNumber.startsWith('55') && phoneNumber.length <= 11) {
+            phoneNumber = '55' + phoneNumber;
+        }
+        return phoneNumber;
+    }
     
     while (currentIndex < contacts.length) {
         // Verificar se campanha foi pausada ou cancelada
@@ -4467,158 +4575,75 @@ async function processCampaignBatches(campaign) {
             if (!check || check.status !== 'running') return;
             
             try {
-                // Personalizar mensagem
-                let personalizedMsg = (message || '')
-                    .replace(/\{\{nome\}\}/gi, contact.name || 'Cliente')
-                    .replace(/\{\{telefone\}\}/gi, contact.phone || '')
-                    .replace(/\{\{cidade\}\}/gi, contact.city || '')
-                    .replace(/\{\{cupom\}\}/gi, couponCode || '');
+                const targetNumber = resolveTargetNumber(contact);
                 
-                // Normalizar telefone para envio
-                let phoneNumber = contact.phone.replace(/\D/g, '');
-                if (!phoneNumber.startsWith('55') && phoneNumber.length <= 11) {
-                    phoneNumber = '55' + phoneNumber;
+                if (!targetNumber) {
+                    campaign.failedCount++;
+                    campaign.history.push({ phone: contact.phone, name: contact.name, sentAt: new Date().toISOString(), status: 'failed', error: 'Número inválido' });
+                    continue;
                 }
                 
-                let response;
+                let lastResponse = null;
+                let blockSuccess = true;
                 
-                // ===== TIPO DE ENVIO =====
-                switch (campaignType || 'text') {
-                    case 'poll': {
-                        // Módulo 3: Enquete
-                        const pollUrl = `${EVOLUTION_URL}/message/sendPoll/${INSTANCE_NAME}`;
-                        response = await fetch(pollUrl, {
-                            method: 'POST',
-                            headers: evolutionHeaders,
-                            body: JSON.stringify({
-                                number: phoneNumber,
-                                name: campaign.pollTitle,
-                                values: campaign.pollOptions,
-                                selectableCount: campaign.pollSelectableCount || 1
-                            })
-                        });
-                        break;
+                // ===== MOTOR DE BLOCOS (SEQUENCE) =====
+                if (campaignType === 'sequence' && blocks && blocks.length > 0) {
+                    for (const block of blocks) {
+                        const result = await sendBlock(block, targetNumber, contact);
+                        if (result === 'delay' || result === 'presence') continue;
+                        if (result && result.ok !== undefined) {
+                            lastResponse = await result.json();
+                            if (lastResponse.error || lastResponse.status === 'error') {
+                                blockSuccess = false;
+                                break;
+                            }
+                        } else if (result === null && block.type !== 'delay' && block.type !== 'presence') {
+                            // Bloco sem dados (ex: imagem sem URL) - pular
+                            console.log(`[CAMPAIGN] ⚠️ Bloco ${block.type} sem dados, pulando`);
+                        }
+                        // Pequeno delay entre blocos
+                        await new Promise(r => setTimeout(r, 1000 + Math.random() * 1000));
                     }
-                    
-                    case 'audio': {
-                        // Módulo 4: Áudio PTT (gravado agora) da biblioteca
-                        let audioData = null;
-                        if (campaign.mediaLibraryId && supabase) {
-                            const { data: media } = await supabase.from('media_library')
-                                .select('base64, url, mimetype')
-                                .eq('id', campaign.mediaLibraryId).single();
-                            audioData = media;
-                            // Incrementar uso
-                            await supabase.from('media_library').update({ uso_count: supabase.raw('uso_count + 1'), usado_em: new Date().toISOString() }).eq('id', campaign.mediaLibraryId);
+                } else {
+                    // ===== ENVIO SIMPLES (compatibilidade) =====
+                    const simpleBlock = {
+                        type: campaignType || 'text',
+                        config: {
+                            text: message,
+                            url: imageUrl,
+                            caption: message,
+                            title: campaign.pollTitle,
+                            options: campaign.pollOptions,
+                            selectableCount: campaign.pollSelectableCount
                         }
-                        
-                        if (audioData) {
-                            const audioUrl = `${EVOLUTION_URL}/message/sendWhatsAppAudio/${INSTANCE_NAME}`;
-                            response = await fetch(audioUrl, {
-                                method: 'POST',
-                                headers: evolutionHeaders,
-                                body: JSON.stringify({
-                                    number: phoneNumber,
-                                    audio: audioData.base64 || audioData.url,
-                                    encoding: true // Converter para ogg/opus PTT
-                                })
-                            });
-                        } else {
-                            // Fallback: enviar como texto
-                            response = await fetch(`${EVOLUTION_URL}/message/sendText/${INSTANCE_NAME}`, {
-                                method: 'POST',
-                                headers: evolutionHeaders,
-                                body: JSON.stringify({ number: phoneNumber, text: personalizedMsg })
-                            });
-                        }
-                        break;
-                    }
-                    
-                    case 'sticker': {
-                        // Módulo 4: Figurinha da biblioteca
-                        let stickerData = null;
-                        if (campaign.mediaLibraryId && supabase) {
-                            const { data: media } = await supabase.from('media_library')
-                                .select('base64, url').eq('id', campaign.mediaLibraryId).single();
-                            stickerData = media;
-                        }
-                        
-                        if (stickerData) {
-                            const stickerUrl = `${EVOLUTION_URL}/message/sendSticker/${INSTANCE_NAME}`;
-                            response = await fetch(stickerUrl, {
-                                method: 'POST',
-                                headers: evolutionHeaders,
-                                body: JSON.stringify({
-                                    number: phoneNumber,
-                                    sticker: stickerData.base64 || stickerData.url
-                                })
-                            });
-                        }
-                        // Se tem mensagem, enviar texto depois do sticker
-                        if (personalizedMsg) {
-                            await new Promise(r => setTimeout(r, 1500));
-                            response = await fetch(`${EVOLUTION_URL}/message/sendText/${INSTANCE_NAME}`, {
-                                method: 'POST',
-                                headers: evolutionHeaders,
-                                body: JSON.stringify({ number: phoneNumber, text: personalizedMsg })
-                            });
-                        }
-                        break;
-                    }
-                    
-                    case 'image': {
-                        // Imagem + legenda
-                        const mediaUrl = `${EVOLUTION_URL}/message/sendMedia/${INSTANCE_NAME}`;
-                        response = await fetch(mediaUrl, {
-                            method: 'POST',
-                            headers: evolutionHeaders,
-                            body: JSON.stringify({
-                                number: phoneNumber,
-                                mediatype: 'image',
-                                media: imageUrl,
-                                caption: personalizedMsg
-                            })
-                        });
-                        break;
-                    }
-                    
-                    default: {
-                        // Texto puro
-                        const textUrl = `${EVOLUTION_URL}/message/sendText/${INSTANCE_NAME}`;
-                        response = await fetch(textUrl, {
-                            method: 'POST',
-                            headers: evolutionHeaders,
-                            body: JSON.stringify({
-                                number: phoneNumber,
-                                text: personalizedMsg
-                            })
-                        });
+                    };
+                    const result = await sendBlock(simpleBlock, targetNumber, contact);
+                    if (result && result !== 'delay' && result !== 'presence') {
+                        lastResponse = await result.json();
+                        if (lastResponse.error || lastResponse.status === 'error') blockSuccess = false;
                     }
                 }
-                
-                const data = response ? await response.json() : { error: 'Sem resposta' };
-                const success = !data.error && data.status !== 'error';
                 
                 // Registrar no histórico
                 campaign.history.push({
-                    phone: phoneNumber,
+                    phone: targetNumber,
                     name: contact.name,
+                    groupName: contact.groupName || null,
                     sentAt: new Date().toISOString(),
-                    status: success ? 'sent' : 'failed',
-                    error: success ? null : (data.message || data.error)
+                    status: blockSuccess ? 'sent' : 'failed',
+                    error: blockSuccess ? null : (lastResponse?.message || lastResponse?.error || 'Falha no envio')
                 });
                 
-                if (success) {
+                if (blockSuccess) {
                     campaign.sentCount++;
                     consecutiveSent++;
                 } else {
                     campaign.failedCount++;
                 }
                 
-                console.log(`[CAMPAIGN] ${success ? '✅' : '❌'} ${contact.name} (${phoneNumber})`);
+                console.log(`[CAMPAIGN] ${blockSuccess ? '✅' : '❌'} ${contact.name} (${targetNumber})${contact.isGroup ? ' [GRUPO]' : ''}`);
                 
-                // ===== ANTI-BAN INTELIGENTE (Fix #7) =====
-                // Delay base + variação aleatória + cooldown progressivo
+                // ===== ANTI-BAN INTELIGENTE =====
                 let delay = baseDelayMs * (1 - delayVariation + Math.random() * delayVariation * 2);
                 
                 // Cooldown progressivo: a cada 15 msgs, pausar 30-60s extra
@@ -4629,10 +4654,10 @@ async function processCampaignBatches(campaign) {
                 }
                 
                 // Após muitas mensagens, aumentar delay progressivamente
-                if (consecutiveSent > 50) {
-                    delay *= 1.3; // +30% após 50 msgs
-                } else if (consecutiveSent > 100) {
-                    delay *= 1.6; // +60% após 100 msgs
+                if (consecutiveSent > 100) {
+                    delay *= 1.6;
+                } else if (consecutiveSent > 50) {
+                    delay *= 1.3;
                 }
                 
                 await new Promise(r => setTimeout(r, Math.round(delay)));
