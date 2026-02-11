@@ -5059,19 +5059,23 @@ async function registerEvolutionWebhook() {
         
         console.log(`[WEBHOOK] Registrando webhook na Evolution API: ${webhookUrl}`);
         
+        // Evolution API v2: formato com propriedade "webhook" envolvendo tudo
         const response = await fetch(`${EVOLUTION_URL}/webhook/set/${INSTANCE_NAME}`, {
             method: 'POST',
             headers: { 'apikey': EVOLUTION_API_KEY, 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                url: webhookUrl,
-                webhook_by_events: false,
-                webhook_base64: false,
-                events: [
-                    'MESSAGES_UPSERT',
-                    'MESSAGES_UPDATE',
-                    'CONNECTION_UPDATE',
-                    'SEND_MESSAGE'
-                ]
+                webhook: {
+                    enabled: true,
+                    url: webhookUrl,
+                    webhookByEvents: false,
+                    webhookBase64: false,
+                    events: [
+                        'MESSAGES_UPSERT',
+                        'MESSAGES_UPDATE',
+                        'CONNECTION_UPDATE',
+                        'SEND_MESSAGE'
+                    ]
+                }
             })
         });
         
