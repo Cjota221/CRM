@@ -286,6 +286,28 @@
                             <p class="font-medium text-slate-700">Grupo WhatsApp</p>
                             <p class="text-xs text-slate-400">Selecionar grupo</p>
                         </button>
+                        <button onclick="selectAudience('manual')" class="audience-btn p-4 rounded-xl border-2 border-slate-200 text-left hover:border-primary-500 transition-colors" data-audience="manual">
+                            <i data-lucide="user-plus" class="w-5 h-5 text-indigo-500 mb-2"></i>
+                            <p class="font-medium text-slate-700">Seleção Manual</p>
+                            <p class="text-xs text-slate-400">Buscar e escolher clientes</p>
+                        </button>
+                    </div>
+                    
+                    <!-- Seleção Manual de Clientes -->
+                    <div id="manualSelector" class="hidden mt-3">
+                        <div class="flex gap-2 mb-2">
+                            <input type="text" id="manualSearchInput" placeholder="Buscar por nome ou telefone..." class="input text-sm flex-1" oninput="searchClientsManual(this.value)">
+                            <button onclick="clearManualSelection()" class="btn btn-secondary text-xs px-3" title="Limpar seleção">
+                                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                            </button>
+                        </div>
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-xs font-medium text-slate-500">Clientes (<span id="manualSelectedCount">0</span> selecionados)</span>
+                            <button type="button" onclick="toggleAllManual()" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium">Marcar/Desmarcar visíveis</button>
+                        </div>
+                        <div id="manualClientsList" class="max-h-64 overflow-y-auto border border-slate-200 rounded-lg p-2 space-y-1 bg-white">
+                            <p class="text-xs text-slate-400 p-2">Digite para buscar clientes...</p>
+                        </div>
                     </div>
                     
                     <!-- Filtro por Cidade -->
@@ -572,6 +594,10 @@
         let mediaLibraryItems = [];
         let selectedMediaId = null;
         let uploadedAudioBase64 = null;
+        
+        // Seleção Manual de Clientes
+        let allClientsCache = [];
+        let manualSelectedClients = {}; // { phone: { id, name, phone } }
 
         // ============================
         // INICIALIZAÇÃO
@@ -666,8 +692,24 @@
                 selBtn.classList.remove('border-slate-200');
             }
             
-            // Mostrar seletor de grupo se necessário
+            // Mostrar/esconder seletores
             document.getElementById('groupSelector').classList.toggle('hidden', type !== 'group');
+            document.getElementById('manualSelector').classList.toggle('hidden', type !== 'manual');
+
+            // Seleção Manual — não buscar segmento, usar lista interativa
+            if (type === 'manual') {
+                segmentedContacts = [];
+                manualSelectedClients = {};
+                document.getElementById('manualSelectedCount').textContent = '0';
+                document.getElementById('manualClientsList').innerHTML = '<p class="text-xs text-slate-400 p-2">Digite para buscar clientes...</p>';
+                document.getElementById('segmentPreview').classList.add('hidden');
+                // Carregar todos os clientes se ainda não carregou
+                if (!allClientsCache || allClientsCache.length === 0) {
+                    loadAllClientsForManual();
+                }
+                updateCampaignSummary();
+                return;
+            }
 
             // Se for segmento RFM, buscar contatos do backend
             if (type !== 'group') {
@@ -697,6 +739,144 @@
                 }
             }
             
+            updateCampaignSummary();
+        }
+
+        // ============================
+        // SELEÇÃO MANUAL DE CLIENTES
+        // ============================
+        async function loadAllClientsForManual() {
+            try {
+                document.getElementById('manualClientsList').innerHTML = '<p class="text-xs text-slate-400 p-2 animate-pulse">Carregando clientes...</p>';
+                const res = await fetch(`${API_BASE}/campaigns/segment`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ segment: 'todos' })
+                });
+                const data = await res.json();
+                allClientsCache = (data.clients || []).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                document.getElementById('manualClientsList').innerHTML = '<p class="text-xs text-slate-400 p-2">✅ ' + allClientsCache.length + ' clientes carregados. Digite para buscar...</p>';
+            } catch (e) {
+                console.error('Erro ao carregar clientes:', e);
+                document.getElementById('manualClientsList').innerHTML = '<p class="text-xs text-red-400 p-2">Erro ao carregar clientes</p>';
+            }
+        }
+
+        function searchClientsManual(query) {
+            const container = document.getElementById('manualClientsList');
+            if (!query || query.length < 2) {
+                const count = Object.keys(manualSelectedClients).length;
+                if (count > 0) {
+                    renderManualSelected(container);
+                } else {
+                    container.innerHTML = '<p class="text-xs text-slate-400 p-2">Digite pelo menos 2 caracteres...</p>';
+                }
+                return;
+            }
+            
+            const q = query.toLowerCase();
+            const matches = allClientsCache.filter(c => 
+                (c.name || '').toLowerCase().includes(q) || 
+                (c.phone || '').includes(q)
+            ).slice(0, 50);
+            
+            if (matches.length === 0) {
+                container.innerHTML = '<p class="text-xs text-slate-400 p-2">Nenhum cliente encontrado</p>';
+                return;
+            }
+            
+            container.innerHTML = matches.map(c => {
+                const checked = manualSelectedClients[c.phone] ? 'checked' : '';
+                const name = c.name || 'Sem nome';
+                const phone = formatPhoneDisplay(c.phone);
+                const info = c.orderCount ? `${c.orderCount} ped · R$ ${c.totalSpent || 0}` : '';
+                return `<label class="flex items-center gap-2 p-1.5 rounded hover:bg-slate-50 cursor-pointer">
+                    <input type="checkbox" ${checked} onchange="toggleManualClient(this, '${c.id}', '${name.replace(/'/g, "\\'")}', '${c.phone}')" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                    <span class="text-sm flex-1 truncate">${name}</span>
+                    <span class="text-xs text-slate-400">${phone}</span>
+                    ${info ? `<span class="text-xs text-slate-300">${info}</span>` : ''}
+                </label>`;
+            }).join('');
+        }
+
+        function toggleManualClient(checkbox, id, name, phone) {
+            if (checkbox.checked) {
+                manualSelectedClients[phone] = { id, name, phone };
+            } else {
+                delete manualSelectedClients[phone];
+            }
+            
+            // Atualizar segmentedContacts com seleção manual
+            segmentedContacts = Object.values(manualSelectedClients);
+            document.getElementById('manualSelectedCount').textContent = segmentedContacts.length;
+            
+            // Atualizar preview
+            const preview = document.getElementById('segmentPreview');
+            const countEl = document.getElementById('segmentCount');
+            const listEl = document.getElementById('segmentList');
+            if (segmentedContacts.length > 0) {
+                preview.classList.remove('hidden');
+                countEl.textContent = segmentedContacts.length;
+                listEl.innerHTML = segmentedContacts.map(c => 
+                    `<div class="flex justify-between"><span>${c.name}</span><span class="text-slate-400">${formatPhoneDisplay(c.phone)}</span></div>`
+                ).join('');
+            } else {
+                preview.classList.add('hidden');
+            }
+            updateCampaignSummary();
+        }
+
+        function toggleAllManual() {
+            const checkboxes = document.querySelectorAll('#manualClientsList input[type="checkbox"]');
+            const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+            checkboxes.forEach(cb => {
+                cb.checked = !allChecked;
+                cb.dispatchEvent(new Event('change'));
+            });
+        }
+
+        function clearManualSelection() {
+            manualSelectedClients = {};
+            segmentedContacts = [];
+            document.getElementById('manualSelectedCount').textContent = '0';
+            document.getElementById('segmentPreview').classList.add('hidden');
+            document.getElementById('manualSearchInput').value = '';
+            document.getElementById('manualClientsList').innerHTML = '<p class="text-xs text-slate-400 p-2">Digite para buscar clientes...</p>';
+            updateCampaignSummary();
+        }
+
+        function renderManualSelected(container) {
+            const selected = Object.values(manualSelectedClients);
+            if (selected.length === 0) {
+                container.innerHTML = '<p class="text-xs text-slate-400 p-2">Nenhum cliente selecionado</p>';
+                return;
+            }
+            container.innerHTML = '<p class="text-xs text-indigo-500 font-medium px-1 mb-1">Selecionados:</p>' + selected.map(c => 
+                `<div class="flex items-center gap-2 p-1.5 rounded bg-indigo-50">
+                    <span class="text-sm flex-1 truncate">${c.name}</span>
+                    <span class="text-xs text-slate-400">${formatPhoneDisplay(c.phone)}</span>
+                    <button onclick="removeManualClient('${c.phone}')" class="text-red-400 hover:text-red-600"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+                </div>`
+            ).join('');
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+
+        function removeManualClient(phone) {
+            delete manualSelectedClients[phone];
+            segmentedContacts = Object.values(manualSelectedClients);
+            document.getElementById('manualSelectedCount').textContent = segmentedContacts.length;
+            const container = document.getElementById('manualClientsList');
+            const searchVal = document.getElementById('manualSearchInput').value;
+            if (searchVal && searchVal.length >= 2) {
+                searchClientsManual(searchVal);
+            } else {
+                renderManualSelected(container);
+            }
+            if (segmentedContacts.length > 0) {
+                document.getElementById('segmentCount').textContent = segmentedContacts.length;
+            } else {
+                document.getElementById('segmentPreview').classList.add('hidden');
+            }
             updateCampaignSummary();
         }
 
