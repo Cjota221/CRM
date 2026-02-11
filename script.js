@@ -1422,13 +1422,43 @@ function initDOMReferences() {
 }
 
 // ============================================================================
-// NAVEGAÇÃO
+// NAVEGAÇÃO COM HASH ROUTING
 // ============================================================================
 
 function setupNavigation() {
     const navLinks = document.querySelectorAll('.nav-item');
     const pages = document.querySelectorAll('.page-content');
 
+    // Função para navegar para uma página específica
+    function navigateToPage(pageName) {
+        // Remover active de todos os nav-items
+        navLinks.forEach(l => l.classList.remove('active'));
+        
+        // Adicionar active no nav-item correspondente
+        const navLink = document.getElementById(`nav-${pageName}`);
+        if (navLink) {
+            navLink.classList.add('active');
+        }
+        
+        // Esconder todas as páginas
+        pages.forEach(p => {
+            p.classList.add('hidden');
+            p.classList.remove('flex');
+        });
+        
+        // Mostrar página correspondente
+        const pageId = pageName + '-page';
+        const page = document.getElementById(pageId);
+        if (page) {
+            page.classList.remove('hidden');
+            page.classList.add('flex');
+            
+            // Atualizar URL com hash (sem scroll)
+            history.replaceState(null, '', `#${pageName}`);
+        }
+    }
+
+    // Event listeners nos links de navegação
     navLinks.forEach(link => {
         link.addEventListener('click', (e) => {
             // Ignorar botões que não são de navegação
@@ -1438,25 +1468,29 @@ function setupNavigation() {
             
             e.preventDefault();
             
-            // Remover active de todos os nav-items
-            navLinks.forEach(l => l.classList.remove('active'));
-            link.classList.add('active');
-            
-            // Esconder todas as páginas
-            pages.forEach(p => {
-                p.classList.add('hidden');
-                p.classList.remove('flex');
-            });
-            
-            // Mostrar página correspondente
-            const pageId = link.id.replace('nav-', '') + '-page';
-            const page = document.getElementById(pageId);
-            if (page) {
-                page.classList.remove('hidden');
-                page.classList.add('flex');
-            }
+            // Extrair nome da página do ID
+            const pageName = link.id.replace('nav-', '');
+            navigateToPage(pageName);
         });
     });
+
+    // Listener para mudanças no hash da URL (botão voltar/avançar do navegador)
+    window.addEventListener('hashchange', () => {
+        const hash = window.location.hash.slice(1); // Remove o #
+        if (hash) {
+            navigateToPage(hash);
+        } else {
+            navigateToPage('dashboard'); // Página padrão
+        }
+    });
+
+    // Carregar página inicial baseada no hash da URL
+    const initialHash = window.location.hash.slice(1);
+    if (initialHash) {
+        navigateToPage(initialHash);
+    } else {
+        navigateToPage('dashboard'); // Página padrão
+    }
 }
 
 // ============================================================================
