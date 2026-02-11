@@ -5270,126 +5270,10 @@ const CampaignManager = {
         showToast(`${selected.length} exportados!`, 'success');
     },
     
+    // Disparo em massa agora é feito exclusivamente na página campanhas.html
     openBulkWhatsApp() {
-        const selected = this.getSelectedClients();
-        if (selected.length === 0) { showToast('Selecione clientes', 'error'); return; }
-        document.getElementById('bulk-client-count').textContent = selected.length;
-        document.getElementById('ai-variations-container').classList.add('hidden');
-        document.getElementById('ai-variations-loading').classList.add('hidden');
-        document.getElementById('bulk-whatsapp-modal').classList.remove('hidden');
-        
-        // Popular select de cupons
-        const coupons = Storage.load('crm_coupons', []).filter(c => c.isActive);
-        const select = document.getElementById('bulk-coupon-select');
-        select.innerHTML = '<option value="">Nenhum cupom</option>' + 
-            coupons.map(c => `<option value="${c.code}">${c.code} (-${c.discount}${c.type === 'percent' ? '%' : 'R$'})</option>`).join('');
-    },
-    
-    async generateAIVariations() {
-        const selected = this.getSelectedClients();
-        const baseMsg = document.getElementById('bulk-message-text').value;
-        const settings = Storage.getSettings();
-        
-        if (!settings.openaiApiKey) {
-            showToast('Configure a API Key do ChatGPT em Configurações', 'error');
-            return;
-        }
-        
-        document.getElementById('ai-variations-loading').classList.remove('hidden');
-        document.getElementById('ai-variations-container').classList.add('hidden');
-        
-        // Resumo dos clientes selecionados
-        const avgTicket = selected.reduce((sum, c) => sum + (c.stats?.averageTicket || 0), 0) / selected.length;
-        const avgDays = selected.reduce((sum, c) => sum + (c.stats?.daysSinceLastPurchase || 0), 0) / selected.length;
-        const statuses = [...new Set(selected.map(c => c.status))].join(', ');
-        
-        const prompt = `Você é um copywriter especialista em WhatsApp Marketing para e-commerce.
-
-Contexto dos clientes selecionados:
-- Total: ${selected.length} clientes
-- Ticket médio: R$${avgTicket.toFixed(2)}
-- Dias sem comprar (média): ${avgDays.toFixed(0)} dias
-- Status: ${statuses}
-
-Mensagem base atual:
-"${baseMsg}"
-
-Crie EXATAMENTE 3 variações criativas e persuasivas da mensagem acima.
-- Use emojis de forma profissional
-- Mantenha {nome} e {cupom} como placeholders
-- Cada variação deve ter um tom diferente: 1) Urgente/Escassez, 2) Amigável/Emotivo, 3) Benefício/Valor
-- Máximo 300 caracteres cada
-- Formato de resposta: Retorne APENAS um JSON array com 3 strings, sem explicações.
-
-Exemplo de resposta:
-["Mensagem 1...", "Mensagem 2...", "Mensagem 3..."]`;
-
-        try {
-            const data = await callAI(settings.openaiApiKey, prompt);
-            const content = (data.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
-            
-            // Tentar parsear JSON da resposta
-            let parsed = [];
-            try {
-                // Extrair JSON da resposta
-                const match = content.match(/\[[\s\S]*\]/);
-                if (match) {
-                    parsed = JSON.parse(match[0]);
-                }
-            } catch (e) {
-                // Se não conseguir parsear, dividir por linhas
-                parsed = content.split('\n').filter(l => l.trim().length > 20).slice(0, 3);
-            }
-            
-            if (parsed.length === 0) {
-                throw new Error('Resposta inválida da IA');
-            }
-            
-            // Renderizar variações
-            const container = document.getElementById('ai-variations-list');
-            container.innerHTML = parsed.map((v, i) => `
-                <div class="p-3 bg-white border border-purple-200 rounded cursor-pointer hover:bg-purple-100 transition ai-variation" data-variation="${encodeURIComponent(v)}">
-                    <span class="text-xs font-bold text-purple-600">${i === 0 ? '🔥 Urgente' : i === 1 ? '💚 Emotivo' : '💎 Valor'}</span>
-                    <p class="text-sm text-gray-700 mt-1">${v.substring(0, 150)}${v.length > 150 ? '...' : ''}</p>
-                </div>
-            `).join('');
-            
-            // Adicionar listeners
-            container.querySelectorAll('.ai-variation').forEach(el => {
-                el.addEventListener('click', () => {
-                    document.getElementById('bulk-message-text').value = decodeURIComponent(el.dataset.variation);
-                    showToast('Variação aplicada!', 'success');
-                });
-            });
-            
-            document.getElementById('ai-variations-loading').classList.add('hidden');
-            document.getElementById('ai-variations-container').classList.remove('hidden');
-            
-        } catch (error) {
-            console.error('Erro ao gerar variações:', error);
-            document.getElementById('ai-variations-loading').classList.add('hidden');
-            showToast('Erro ao gerar variações. Verifique a API.', 'error');
-        }
-    },
-    
-    async startBulkDispatch() {
-        const selected = this.getSelectedClients();
-        const msg = document.getElementById('bulk-message-text').value;
-        const coupon = document.getElementById('bulk-coupon-select').value;
-        if (!msg) { showToast('Preencha a mensagem', 'error'); return; }
-        let sent = 0, failed = 0;
-        showToast(`📤 Disparando para ${selected.length} clientes...`, 'info');
-        for (const client of selected) {
-            if (!client.phone) { failed++; continue; }
-            let m = msg.replace(/{nome}/g, client.name?.split(' ')[0] || '').replace(/{cupom}/g, coupon);
-            if (coupon) CouponManager.assignCoupon(client.id, coupon, client.name);
-            const result = await sendViaEvolution(client.phone, m, { source: 'campaign', silent: true });
-            if (result.success) sent++; else failed++;
-            // Delay de 1.5s entre mensagens para não sobrecarregar a API
-            await new Promise(r => setTimeout(r, 1500));
-        }
-        showToast(`✅ ${sent} enviadas${failed > 0 ? `, ${failed} falharam` : ''}`, sent > 0 ? 'success' : 'error');
-        document.getElementById('bulk-whatsapp-modal').classList.add('hidden');
+        showToast('Redirecionando para a página de Campanhas...', 'info');
+        window.location.href = 'campanhas.html';
     }
 };
 window.CampaignManager = CampaignManager;
@@ -5856,22 +5740,22 @@ const AIVigilante = {
     actionAllUTI() {
         const clientes = this.segments.uti.filter(c => c.phone);
         if (clientes.length === 0) { showToast('Nenhum cliente com telefone na UTI', 'info'); return; }
-        CampaignManager.filteredClients = clientes;
-        CampaignManager.openBulkWhatsApp();
+        showToast(`${clientes.length} clientes na UTI. Redirecionando para Campanhas...`, 'info');
+        window.location.href = 'campanhas.html';
     },
     
     sendReposicaoReminder() {
         const clientes = this.segments.hot.filter(c => c.phone);
         if (clientes.length === 0) { showToast('Nenhum cliente com telefone', 'info'); return; }
-        CampaignManager.filteredClients = clientes;
-        CampaignManager.openBulkWhatsApp();
+        showToast(`${clientes.length} clientes para reposição. Redirecionando para Campanhas...`, 'info');
+        window.location.href = 'campanhas.html';
     },
     
     contactC4Inactive() {
         const clientes = this.segments.c4.filter(c => c.phone);
         if (clientes.length === 0) { showToast('Nenhum cliente C4 com telefone', 'info'); return; }
-        CampaignManager.filteredClients = clientes;
-        CampaignManager.openBulkWhatsApp();
+        showToast(`${clientes.length} clientes C4. Redirecionando para Campanhas...`, 'info');
+        window.location.href = 'campanhas.html';
     },
     
     sendCoupon(clientId, couponCode) {
