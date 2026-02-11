@@ -2431,37 +2431,37 @@ app.post('/api/whatsapp/send-media', async (req, res) => {
         let endpoint;
         let body = { number: phoneNum };
         
+        // CRÍTICO: Evolution API requer base64 PURO (sem data:image/png;base64,)
+        let cleanMedia = media;
+        if (cleanMedia && cleanMedia.includes(',')) {
+            cleanMedia = cleanMedia.split(',')[1]; // Remove prefixo data:type;base64,
+        }
+        
         switch (mediaType) {
             case 'image':
                 endpoint = 'sendMedia';
                 body.mediatype = 'image';
-                body.media = media;
+                body.media = cleanMedia;
                 body.caption = caption || '';
                 break;
             case 'video':
                 endpoint = 'sendMedia';
                 body.mediatype = 'video';
-                body.media = media;
+                body.media = cleanMedia;
                 body.caption = caption || '';
                 break;
             case 'audio':
                 endpoint = 'sendWhatsAppAudio';
                 // Evolution API v2 - enviar áudio como base64 com encoding
-                let audioBase64 = media;
-                if (audioBase64.includes(',')) {
-                    audioBase64 = audioBase64.split(',')[1]; // Pegar só o base64
-                }
-                
-                // Enviar base64 puro + encoding:true para conversão automática para ogg/opus
-                body.audio = audioBase64;
+                body.audio = cleanMedia;
                 body.encoding = true; // CRÍTICO: Evolution API converte para ogg/opus (formato PTT)
                 
-                console.log('[WhatsApp] Áudio base64 length:', audioBase64.length);
+                console.log('[WhatsApp] Áudio base64 length:', cleanMedia.length);
                 break;
             case 'document':
                 endpoint = 'sendMedia';
                 body.mediatype = 'document';
-                body.media = media;
+                body.media = cleanMedia;
                 body.caption = caption || '';
                 body.fileName = fileName || 'documento';
                 break;
@@ -4930,9 +4930,15 @@ app.post('/api/coupons/create', async (req, res) => {
         };
         
         // Salvar no Supabase se disponível
-        if (supabase) {
-            const { error } = await supabase.from('coupons').upsert([coupon], { onConflict: 'id' });
-            if (error) console.error('[COUPON] Erro Supabase:', error);
+        if (SUPABASE_SERVICE_KEY) {
+            try {
+                const { createClient } = require('@supabase/supabase-js');
+                const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+                const { error } = await supabase.from('coupons').upsert([coupon], { onConflict: 'id' });
+                if (error) console.error('[COUPON] Erro Supabase:', error);
+            } catch (supaErr) {
+                console.warn('[COUPON] Supabase não disponível:', supaErr.message);
+            }
         }
         
         // Salvar no cache

@@ -95,9 +95,10 @@
                     }
                 }
                 
-                // Ainda inválido?
+                // Ainda inválido? Retornar vazio em vez de erro
                 if (phone.length !== 13) {
-                    throw new Error(`Comprimento inválido: ${phone.length} (esperado 13)`);
+                    console.warn(`[PhoneNormalizer] ⚠️ Comprimento inválido ignorado: ${phone.length} (esperado 13) - ${raw}`);
+                    return ''; // Retornar vazio em vez de lançar erro
                 }
             }
 
@@ -117,8 +118,8 @@
             return phone;
 
         } catch (error) {
-            console.error('[PhoneNormalizer] ❌ Erro ao normalizar:', raw, error.message);
-            throw error;
+            console.warn('[PhoneNormalizer] ⚠️ Erro ao normalizar (retornando vazio):', raw, error.message);
+            return ''; // Retornar vazio em vez de lançar erro
         }
     }
 
