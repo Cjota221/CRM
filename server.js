@@ -13,19 +13,77 @@ const PhoneNormalizer = require('./core/phone-normalizer');
 
 const app = express();
 const server = http.createServer(app);
+
+// ============================================================================
+// SOCKET.IO - CORREÇÃO #7 (Otimização)
+// ============================================================================
 const io = new SocketIO(server, {
     cors: { origin: '*' },
-    pingInterval: 25000,
-    pingTimeout: 60000,
-    transports: ['websocket', 'polling']
+    
+    // Otimizações de ping/pong (reduzido para detecção mais rápida)
+    pingInterval: 15000,  // 15s (reduzido de 25s)
+    pingTimeout: 30000,   // 30s (reduzido de 60s)
+    
+    // Transports
+    transports: ['websocket', 'polling'],
+    
+    // Compressão (economiza largura de banda)
+    perMessageDeflate: {
+        threshold: 1024 // Comprimir mensagens > 1KB
+    },
+    
+    // Configurações de conexão
+    maxHttpBufferSize: 1e6, // 1MB (limitar tamanho de mensagens)
+    allowUpgrades: true,
+    upgradeTimeout: 10000
 });
+
 const PORT = 3000;
 
 // ============================================================================
-// SISTEMA DE AUTENTICAÇÃO
+// SISTEMA DE AUTENTICAÇÃO - CORREÇÃO #6 (Sessões Seguras)
 // ============================================================================
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
-const SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 dias
+const SESSION_MAX_AGE = 30 * 24 * 60 * 60 * 1000; // 30 dias (aumentado de 7 dias)
+
+// CSRF Protection
+const csrfTokens = new Map(); // token → { userId, createdAt }
+const CSRF_TOKEN_MAX_AGE = 24 * 60 * 60 * 1000; // 24 horas
+
+function generateCsrfToken(userId) {
+    const token = crypto.randomBytes(32).toString('hex');
+    csrfTokens.set(token, {
+        userId,
+        createdAt: Date.now()
+    });
+    return token;
+}
+
+function validateCsrfToken(token, userId) {
+    const data = csrfTokens.get(token);
+    if (!data) return false;
+    if (data.userId !== userId) return false;
+    if (Date.now() - data.createdAt > CSRF_TOKEN_MAX_AGE) {
+        csrfTokens.delete(token);
+        return false;
+    }
+    return true;
+}
+
+// Limpar tokens CSRF expirados a cada hora
+setInterval(() => {
+    const now = Date.now();
+    let cleaned = 0;
+    for (const [token, data] of csrfTokens) {
+        if (now - data.createdAt > CSRF_TOKEN_MAX_AGE) {
+            csrfTokens.delete(token);
+            cleaned++;
+        }
+    }
+    if (cleaned > 0) {
+        console.log(`[CSRF] ${cleaned} tokens expirados removidos`);
+    }
+}, 60 * 60 * 1000);
 
 // ============================================================================
 // PERSISTÊNCIA EM ARQUIVO (Sessões + ChatModes sobrevivem ao restart)
@@ -484,10 +542,36 @@ app.post('/api/auth/login', async (req, res) => {
         
         if (localMatch) {
             const token = generateSessionToken();
-            activeSessions.set(token, { user: localMatch.email, name: localMatch.name, createdAt: Date.now() });
+            const userId = localMatch.email;
+            activeSessions.set(token, { 
+                user: userId, 
+                name: localMatch.name, 
+                createdAt: Date.now() 
+            });
             persistSessions();
-            res.setHeader('Set-Cookie', `crm_session=${token}; HttpOnly; Path=/; Max-Age=${SESSION_MAX_AGE / 1000}; SameSite=Lax`);
-            return res.json({ success: true, message: 'Login realizado com sucesso', user: { name: localMatch.name, email: localMatch.email } });
+            
+            // Gerar CSRF token
+            const csrfToken = generateCsrfToken(userId);
+            
+            // Cookie httpOnly + secure (em produção com HTTPS)
+            const isSecure = process.env.NODE_ENV === 'production';
+            const cookieOptions = [
+                `crm_session=${token}`,
+                'HttpOnly',
+                'Path=/',
+                `Max-Age=${SESSION_MAX_AGE / 1000}`,
+                'SameSite=Strict',  // Strict ao invés de Lax para melhor segurança
+                isSecure ? 'Secure' : ''
+            ].filter(Boolean).join('; ');
+            
+            res.setHeader('Set-Cookie', cookieOptions);
+            
+            return res.json({ 
+                success: true, 
+                message: 'Login realizado com sucesso', 
+                user: { name: localMatch.name, email: localMatch.email },
+                csrfToken: csrfToken  // Retornar CSRF token para o frontend
+            });
         }
         
         // FASE 2: Tentar Supabase (tabela crm_users)
@@ -512,10 +596,36 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(401).json({ success: false, message: 'E-mail ou senha inválidos' });
         }
         const token = generateSessionToken();
-        activeSessions.set(token, { user: user.email, name: user.name, createdAt: Date.now() });
+        const userId = user.email;
+        activeSessions.set(token, { 
+            user: userId, 
+            name: user.name, 
+            createdAt: Date.now() 
+        });
         persistSessions();
-        res.setHeader('Set-Cookie', `crm_session=${token}; HttpOnly; Path=/; Max-Age=${SESSION_MAX_AGE / 1000}; SameSite=Lax`);
-        return res.json({ success: true, message: 'Login realizado com sucesso', user: { name: user.name, email: user.email } });
+        
+        // Gerar CSRF token
+        const csrfToken = generateCsrfToken(userId);
+        
+        // Cookie httpOnly + secure
+        const isSecure = process.env.NODE_ENV === 'production';
+        const cookieOptions = [
+            `crm_session=${token}`,
+            'HttpOnly',
+            'Path=/',
+            `Max-Age=${SESSION_MAX_AGE / 1000}`,
+            'SameSite=Strict',
+            isSecure ? 'Secure' : ''
+        ].filter(Boolean).join('; ');
+        
+        res.setHeader('Set-Cookie', cookieOptions);
+        
+        return res.json({ 
+            success: true, 
+            message: 'Login realizado com sucesso', 
+            user: { name: user.name, email: user.email },
+            csrfToken: csrfToken
+        });
     } catch (err) {
         console.error('[Auth] Erro no login:', err.message);
         return res.status(500).json({ success: false, message: 'Erro interno no servidor' });
@@ -3874,6 +3984,65 @@ app.get('/api/whatsapp/profile-picture/:jid', async (req, res) => {
 });
 
 /**
+ * GET /api/whatsapp/profile-pic/:jid
+ * Rota OTIMIZADA para ProfilePicLoader (Correção #5)
+ * - Sem cache server-side (ProfilePicLoader tem cache próprio)
+ * - Resposta mais leve (apenas profilePictureUrl)
+ * - Timeout mais curto (8s)
+ */
+app.get('/api/whatsapp/profile-pic/:jid', async (req, res) => {
+    try {
+        const jid = decodeURIComponent(req.params.jid);
+        
+        if (!jid) {
+            return res.status(400).json({ error: 'JID obrigatório' });
+        }
+        
+        // Garantir formato correto
+        let formattedJid = jid;
+        if (!jid.includes('@')) {
+            formattedJid = `${jid}@s.whatsapp.net`;
+        }
+        
+        // Timeout de 8 segundos
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        
+        const url = `${EVOLUTION_URL}/chat/fetchProfilePictureUrl/${INSTANCE_NAME}`;
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': EVOLUTION_API_KEY
+            },
+            body: JSON.stringify({ number: formattedJid }),
+            signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+            // 404 = sem foto de perfil ou privacidade ativada
+            return res.status(404).json({ profilePictureUrl: null });
+        }
+        
+        const data = await response.json();
+        res.json({ 
+            profilePictureUrl: data.profilePictureUrl || data.url || null 
+        });
+        
+    } catch (error) {
+        if (error.name === 'AbortError') {
+            console.warn('[profile-pic] Timeout:', req.params.jid);
+            return res.status(408).json({ profilePictureUrl: null });
+        }
+        
+        console.error('[profile-pic] Erro:', error);
+        res.status(500).json({ profilePictureUrl: null });
+    }
+});
+
+/**
  * POST /api/contacts/save
  * Salvar/atualizar contato no sistema
  */
@@ -4769,10 +4938,17 @@ app.post('/api/coupons/create', async (req, res) => {
 });
 
 // ============================================================================
-// SOCKET.IO — CONEXÕES EM TEMPO REAL
+// SOCKET.IO — CONEXÕES EM TEMPO REAL (Correção #7 - Otimizado)
 // ============================================================================
 io.on('connection', (socket) => {
     console.log(`[SOCKET.IO] Cliente conectado: ${socket.id} (total: ${io.engine?.clientsCount || '?'})`);
+    
+    // Armazenar info do cliente para cleanup
+    socket.userData = {
+        connectedAt: Date.now(),
+        rooms: new Set(),
+        lastActivity: Date.now()
+    };
     
     // Enviar estado atual ao connectar (sync imediato)
     socket.emit('sync-state', {
@@ -4784,21 +4960,57 @@ io.on('connection', (socket) => {
     // Cliente se inscreve em um chat específico
     socket.on('join-chat', (jid) => {
         socket.join(`chat:${jid}`);
+        socket.userData.rooms.add(`chat:${jid}`);
+        socket.userData.lastActivity = Date.now();
         console.log(`[SOCKET.IO] ${socket.id} entrou no chat: ${jid}`);
     });
     
     // Cliente sai de um chat
     socket.on('leave-chat', (jid) => {
         socket.leave(`chat:${jid}`);
+        socket.userData.rooms.delete(`chat:${jid}`);
+        socket.userData.lastActivity = Date.now();
     });
     
     // Ping/pong keep-alive customizado
     socket.on('ping-crm', () => {
+        socket.userData.lastActivity = Date.now();
         socket.emit('pong-crm', { ts: Date.now() });
     });
     
+    // Disconnect com cleanup completo
     socket.on('disconnect', (reason) => {
         console.log(`[SOCKET.IO] Cliente desconectado: ${socket.id} (${reason})`);
+        
+        // Cleanup: sair de todas as rooms
+        if (socket.userData?.rooms) {
+            socket.userData.rooms.forEach(room => {
+                socket.leave(room);
+            });
+        }
+        
+        // Limpar referências
+        delete socket.userData;
+        
+        console.log(`[SOCKET.IO] Cleanup concluído para ${socket.id}`);
+    });
+    
+    // Timeout de inatividade (opcional, 10 minutos)
+    const inactivityTimeout = setTimeout(() => {
+        if (socket.connected) {
+            const lastActivity = socket.userData?.lastActivity || 0;
+            const inactive = Date.now() - lastActivity;
+            
+            if (inactive > 10 * 60 * 1000) { // 10 min
+                console.log(`[SOCKET.IO] Desconectando ${socket.id} por inatividade`);
+                socket.disconnect(true);
+            }
+        }
+    }, 10 * 60 * 1000);
+    
+    // Limpar timeout ao desconectar
+    socket.on('disconnect', () => {
+        clearTimeout(inactivityTimeout);
     });
 });
 
