@@ -560,7 +560,7 @@ app.post('/api/auth/login', async (req, res) => {
                 'HttpOnly',
                 'Path=/',
                 `Max-Age=${SESSION_MAX_AGE / 1000}`,
-                'SameSite=Strict',  // Strict ao invés de Lax para melhor segurança
+                'SameSite=Lax',  // Lax para melhor compatibilidade
                 isSecure ? 'Secure' : ''
             ].filter(Boolean).join('; ');
             
@@ -614,7 +614,7 @@ app.post('/api/auth/login', async (req, res) => {
             'HttpOnly',
             'Path=/',
             `Max-Age=${SESSION_MAX_AGE / 1000}`,
-            'SameSite=Strict',
+            'SameSite=Lax',  // Lax para compatibilidade
             isSecure ? 'Secure' : ''
         ].filter(Boolean).join('; ');
         
