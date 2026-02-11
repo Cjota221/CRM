@@ -3,6 +3,16 @@
 // ============================================================================
 
 // ============================================================================
+// DETECÇÃO AUTOMÁTICA DE AMBIENTE
+// ============================================================================
+const CRM_API_BASE = (() => {
+    const host = window.location.hostname;
+    if (host === 'localhost' || host === '127.0.0.1') return '/api';
+    if (host.includes('easypanel.host') || host.includes('cjota-crm')) return '/api';
+    return 'https://cjota-crm.9eo9b2.easypanel.host/api';
+})();
+
+// ============================================================================
 // UTILITÁRIOS
 // ============================================================================
 
@@ -67,7 +77,7 @@ async function sendViaEvolution(phone, message, opts = {}) {
     try {
         if (!silent) showToast('📤 Enviando mensagem...', 'info');
 
-        const res = await fetch('/api/whatsapp/send-message', {
+        const res = await fetch(`${CRM_API_BASE}/whatsapp/send-message`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ number: formatted, text: message, source })
@@ -500,7 +510,7 @@ const Storage = {
 // ============================================================================
 
 const SupabaseSync = {
-    endpoint: '/api/supabase-sync',
+    endpoint: `${CRM_API_BASE}/supabase-sync`,
     
     async call(action, table = null, data = null, id = null) {
         try {
@@ -1751,7 +1761,7 @@ async function syncData() {
 
     try {
         console.log('[SYNC] Iniciando sincronização...');
-        const response = await fetch('/api/facilzap-proxy');
+        const response = await fetch(`${CRM_API_BASE}/facilzap-proxy`);
         console.log('[SYNC] Resposta recebida, status:', response.status);
         const data = await response.json();
         console.log('[SYNC] JSON parseado');
@@ -3626,9 +3636,7 @@ function setupEventListeners() {
 // ============================================================================
 
 const AnnyInsights = {
-    API_URL: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-        ? '/api/anny'
-        : '/.netlify/functions/anny-ai',
+    API_URL: `${CRM_API_BASE}/anny`,
 
     async loadDashboardInsights() {
         try {
@@ -4552,7 +4560,7 @@ const WebhookManager = {
     // Sincronizar com servidor (busca carrinhos e eventos do backend)
     async syncFromServer() {
         try {
-            const response = await fetch('/api/webhook/events');
+            const response = await fetch(`${CRM_API_BASE}/webhook/events`);
             if (response.ok) {
                 const data = await response.json();
                 

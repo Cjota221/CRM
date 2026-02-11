@@ -548,7 +548,14 @@
     </div>
 
     <script>
-        const API_BASE = '/api';
+        // Detecção de ambiente (mesma lógica do atendimentos.js)
+        const _crmBackendUrl = (() => {
+            const h = window.location.hostname;
+            if (h === 'localhost' || h === '127.0.0.1') return '';
+            if (h.includes('easypanel.host') || h.includes('cjota-crm')) return '';
+            return 'https://cjota-crm.9eo9b2.easypanel.host';
+        })();
+        const API_BASE = _crmBackendUrl ? `${_crmBackendUrl}/api` : '/api';
         let allCampaigns = [];
         let segmentedContacts = [];
         let allGroups = [];
@@ -1521,7 +1528,7 @@
             if (!modeIdx) return;
             const mode = modes[parseInt(modeIdx) - 1] || 'professional';
             try {
-                const res = await fetch('/api/anny/improve-text', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, mode }) });
+                const res = await fetch(`${API_BASE}/anny/improve-text`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, mode }) });
                 const data = await res.json();
                 if (data.improved) { block.config[key] = data.improved; renderBlocks(); }
                 else alert('IA não retornou texto melhorado');

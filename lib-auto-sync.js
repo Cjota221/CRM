@@ -6,7 +6,7 @@
 (function() {
     'use strict';
 
-    const SYNC_ENDPOINT = '/api/supabase-sync';
+    const SYNC_ENDPOINT = (window.CRM_API_BASE || '/api') + '/supabase-sync';
     const AUTO_SAVE_INTERVAL = 5 * 60 * 1000; // 5 minutos
     const SYNC_FLAG_KEY = '_crm_last_cloud_load';
 

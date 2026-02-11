@@ -1,47 +1,50 @@
 version: '3.3'
 services:
-  evolution-api:
-    container_name: evolution_api
-    image: evoapicloud/evolution-api:v2.3.7
+  # ============================================================================
+  # CRM BACKEND - Servidor Node.js (server.js)
+  # Deploy no Easypanel como app "crm"
+  # ============================================================================
+  crm-backend:
+    build: .
+    container_name: crm_backend
     restart: always
     ports:
-      - "8080:8080"
+      - "3000:3000"
     environment:
-      - SERVER_URL=http://localhost:8080
-      - API_KEY=B6D6284F-6603-4503-9B45-316279930962
-      - AUTHENTICATION_API_KEY=B6D6284F-6603-4503-9B45-316279930962
-      - DEL_INSTANCE=false
-      # Banco de Dados
-      - DATABASE_PROVIDER=postgresql
-      - DATABASE_CONNECTION_URI=postgresql://evolution:evolution@postgres:5432/evolution?schema=public
-      - DATABASE_CLIENT_NAME=evolution_exchange
-      - DATABASE_SAVE_DATA_INSTANCE=true
-      - DATABASE_SAVE_DATA_NEW_MESSAGE=true
-      - DATABASE_SAVE_MESSAGE_UPDATE=true
-      - DATABASE_SAVE_DATA_CONTACTS=true
-      - DATABASE_SAVE_DATA_CHATS=true
-      - DATABASE_SAVE_DATA_LABELS=true
-      - DATABASE_SAVE_DATA_HISTORIC=true
-      # Cache
-      - CACHE_REDIS_ENABLED=false
-      # Armazenamento de Mensagens (IMPORTANTE!)
-      - STORE_MESSAGES=true
-      - STORE_MESSAGE_UP=true
-      - STORE_CONTACTS=true
-      - STORE_CHATS=true
-    depends_on:
-      - postgres
+      # Servidor
+      - PORT=3000
+      - NODE_ENV=production
+      - PUBLIC_URL=https://cjota-crm.9eo9b2.easypanel.host
 
-  postgres:
-    container_name: evolution_postgres
-    image: postgres:15-alpine
-    restart: always
-    environment:
-      - POSTGRES_USER=evolution
-      - POSTGRES_PASSWORD=evolution
-      - POSTGRES_DB=evolution
+      # FacilZap API
+      - FACILZAP_TOKEN=${FACILZAP_TOKEN}
+      - SITE_BASE_URL=${SITE_BASE_URL:-https://seuloja.com.br}
+
+      # Evolution API (rede interna do Easypanel ou URL pública)
+      - EVOLUTION_URL=${EVOLUTION_URL:-https://evolution-api.cjota.site}
+      - EVOLUTION_API_KEY=${EVOLUTION_API_KEY}
+      - INSTANCE_NAME=${INSTANCE_NAME:-Cjota}
+
+      # N8N
+      - N8N_URL=${N8N_URL:-https://cjota-n8n.9eo9b2.easypanel.host}
+      - N8N_API_KEY=${N8N_API_KEY}
+
+      # Supabase (opcional)
+      - SUPABASE_URL=${SUPABASE_URL:-https://qmyeyiujmcdjzvcqkyoc.supabase.co}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+
+      # Sessão
+      - SESSION_SECRET=${SESSION_SECRET}
+
     volumes:
-      - evolution_postgres_data:/var/lib/postgresql/data
+      - crm_data:/app/.crm-data
+    
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/whatsapp/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
 
 volumes:
-  evolution_postgres_data:
+  crm_data:

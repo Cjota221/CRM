@@ -267,7 +267,7 @@ class ChatLoadingSystem {
      * Buscar chats brutos da API (sem enriquecimento)
      */
     async fetchRawChats() {
-        const response = await fetch('/api/whatsapp/all-chats');
+        const response = await fetch(`${window.CRM_API_BASE || '/api'}/whatsapp/all-chats`);
         if (!response.ok) {
             throw new Error(`Erro ao buscar chats: ${response.status}`);
         }

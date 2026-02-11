@@ -347,7 +347,27 @@ let recordedAudioBlob = null;
 let recordedAudioUrl = null;
 let audioElement = null;
 
-const API_BASE = '/api';
+// ============================================================================
+// DETECÇÃO AUTOMÁTICA DE AMBIENTE (localhost vs produção)
+// ============================================================================
+const CRM_BACKEND_URL = (() => {
+    const host = window.location.hostname;
+    // Localhost: server.js roda na mesma máquina
+    if (host === 'localhost' || host === '127.0.0.1') {
+        return ''; // Mesma origem (relative path)
+    }
+    // Produção no Easypanel: backend na mesma origem
+    if (host.includes('easypanel.host') || host.includes('cjota-crm')) {
+        return ''; // Mesma origem (servido pelo server.js)
+    }
+    // Netlify ou outro domínio externo: apontar para VPS
+    return 'https://cjota-crm.9eo9b2.easypanel.host';
+})();
+
+const API_BASE = CRM_BACKEND_URL ? `${CRM_BACKEND_URL}/api` : '/api';
+// Exportar globalmente para libs (lib-data-layer.js, lib-chat-loader.js, etc.)
+window.CRM_API_BASE = API_BASE;
+console.log(`[CONFIG] Ambiente: ${window.location.hostname} → API_BASE: ${API_BASE}`);
 
 // ============================================================================
 // SOCKET.IO — CONEXÃO EM TEMPO REAL COM O SERVIDOR
@@ -370,7 +390,9 @@ function initSocket() {
         return;
     }
     
-    socket = io({
+    // Socket.IO: conectar ao backend correto
+    const socketTarget = CRM_BACKEND_URL || undefined; // undefined = mesma origem
+    socket = io(socketTarget, {
         transports: ['websocket', 'polling'],
         reconnection: true,
         reconnectionAttempts: Infinity,
@@ -864,7 +886,7 @@ window.fetch = async function(...args) {
     if (response.status === 401 && !_redirectingToLogin) {
         const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
         // Só interceptar chamadas à nossa API, não externas
-        if (url.startsWith('/api/') || url.startsWith(API_BASE)) {
+        if (url.startsWith('/api/') || url.startsWith(API_BASE) || (CRM_BACKEND_URL && url.startsWith(CRM_BACKEND_URL))) {
             _redirectingToLogin = true;
             console.warn('[Auth] Sessão expirada — redirecionando ao login');
             if (typeof showToast === 'function') {

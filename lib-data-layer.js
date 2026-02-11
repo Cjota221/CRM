@@ -201,7 +201,7 @@ class DataLayer {
             this.clientLookupInProgress.add(phone);
             
             // Buscar no Supabase (usar RPC para performance)
-            const response = await fetch('/api/client-lookup', {
+            const response = await fetch(`${window.CRM_API_BASE || '/api'}/client-lookup`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ phone })
@@ -333,7 +333,7 @@ class DataLayer {
      */
     async fetchClientProfile(phone) {
         try {
-            const response = await fetch('/api/client-profile', {
+            const response = await fetch(`${window.CRM_API_BASE || '/api'}/client-profile`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ phone })

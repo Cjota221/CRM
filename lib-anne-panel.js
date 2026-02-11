@@ -29,7 +29,7 @@ class AnnePanel {
         this.showSkeleton();
         
         try {
-            const response = await fetch('/api/client-profile', {
+            const response = await fetch(`${window.CRM_API_BASE || '/api'}/client-profile`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ phone })

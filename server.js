@@ -18,7 +18,18 @@ const server = http.createServer(app);
 // SOCKET.IO - CORREÇÃO #7 (Otimização)
 // ============================================================================
 const io = new SocketIO(server, {
-    cors: { origin: '*' },
+    cors: { 
+        origin: function(origin, callback) {
+            // Permitir todas as origens conhecidas + same-origin
+            if (!origin) return callback(null, true);
+            if (origin.includes('crmcjota') || origin.includes('cjota') || 
+                origin.includes('easypanel') || origin.includes('localhost')) {
+                return callback(null, true);
+            }
+            callback(null, true); // Flexível para WebSocket
+        },
+        credentials: true
+    },
     
     // Otimizações de ping/pong (reduzido para detecção mais rápida)
     pingInterval: 15000,  // 15s (reduzido de 25s)
@@ -38,7 +49,7 @@ const io = new SocketIO(server, {
     upgradeTimeout: 10000
 });
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // ============================================================================
 // SISTEMA DE AUTENTICAÇÃO - CORREÇÃO #6 (Sessões Seguras)
@@ -481,13 +492,18 @@ const ALLOWED_ORIGINS = [
     'https://crmcjota.netlify.app',
     'https://cjota-crm.9eo9b2.easypanel.host',
     'http://localhost:3000',
-    'http://localhost:8080'
-];
+    'http://localhost:8080',
+    // Adicionar domínios dinâmicos via env
+    process.env.PUBLIC_URL,
+    process.env.FRONTEND_URL
+].filter(Boolean);
 app.use(cors({
     origin: function(origin, callback) {
-        // Permitir requests sem origin (mobile apps, curl, server-to-server)
+        // Permitir requests sem origin (mobile apps, curl, server-to-server, same-origin)
         if (!origin) return callback(null, true);
         if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+        // Em produção, ser mais flexível com subdomínios do Easypanel
+        if (origin.includes('easypanel.host') || origin.includes('cjota')) return callback(null, true);
         console.warn(`[CORS] Origem bloqueada: ${origin}`);
         callback(new Error('Não permitido por CORS'));
     },
@@ -5134,11 +5150,13 @@ async function deltaSync(sinceTimestamp) {
 }
 
 server.listen(PORT, () => {
+    const PUBLIC_URL = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
     console.log(`Servidor rodando em http://localhost:${PORT}`);
+    console.log(`URL Pública: ${PUBLIC_URL}`);
     console.log('Central de Atendimento pronta.');
     console.log('Anny AI disponível em /api/anny');
     console.log(`Evolution API: ${EVOLUTION_URL} (instância: ${INSTANCE_NAME})`);
-    console.log(`Webhook Evolution: http://localhost:${PORT}/api/evolution/webhook`);
+    console.log(`Webhook Evolution: ${PUBLIC_URL}/api/evolution/webhook`);
     console.log(`Socket.IO: ws://localhost:${PORT} (real-time ativo)`);
     
     // Iniciar monitoramento de conexão WhatsApp
