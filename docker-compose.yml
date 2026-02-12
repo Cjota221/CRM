@@ -1,20 +1,23 @@
 version: '3.3'
 services:
   # ============================================================================
-  # CRM BACKEND - Servidor Node.js (server.js)
+  # CRM App — Next.js (frontend :3000) + server.js (API :3001 interno)
   # Deploy no Easypanel como app "crm"
+  # Container único com supervisord rodando ambos os processos
   # ============================================================================
-  crm-backend:
+  crm-app:
     build: .
-    container_name: crm_backend
+    container_name: crm_app
     restart: always
     ports:
       - "3000:3000"
     environment:
       # Servidor
-      - PORT=3000
       - NODE_ENV=production
       - PUBLIC_URL=https://cjota-crm.9eo9b2.easypanel.host
+
+      # Next.js aponta para o backend interno
+      - CRM_API_URL=http://localhost:3001
 
       # FacilZap API
       - FACILZAP_TOKEN=${FACILZAP_TOKEN}
@@ -43,11 +46,11 @@ services:
       - crm_data:/app/.crm-data
     
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/whatsapp/status"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 30s
 
 volumes:
   crm_data:
