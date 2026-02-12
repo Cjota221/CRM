@@ -55,9 +55,14 @@
             // Converter para string
             let phone = String(raw).trim();
 
-            // 1. CRÍTICO: @lid são IDs internos do Meta, NÃO contêm telefone real
+            // 1. @lid: Tentar extrair telefone real do formato "lid:ID@lid:PHONE"
             if (phone.includes('@lid')) {
-                throw new Error('JID @lid (Meta Ads) não contém telefone real');
+                const lidMatch = phone.match(/@lid:(\d+)/);
+                if (lidMatch && lidMatch[1].length >= 10) {
+                    phone = lidMatch[1]; // Telefone real extraído do @lid
+                } else {
+                    throw new Error('JID @lid (Meta Ads) não contém telefone real');
+                }
             }
 
             // 2. Remover sufixos de JID do WhatsApp

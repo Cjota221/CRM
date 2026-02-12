@@ -2294,6 +2294,9 @@ async function fetchAndRenderMessages(remoteJid, isUpdate = false) {
         const isGroupRequest = String(remoteJid).includes('@g.us');
         const isLidRequest = String(remoteJid).includes('@lid');
         
+        // Para @lid com telefone embutido, usar o telefone para cross-match
+        const lidPhoneNormalized = isLidRequest ? requestPhoneNormalized : '';
+        
         messages = messages.filter(msg => {
             const msgRemoteJid = msg.key?.remoteJid || msg.remoteJid || '';
             
@@ -2305,12 +2308,28 @@ async function fetchAndRenderMessages(remoteJid, isUpdate = false) {
                 return msgRemoteJid.replace(/@g\.us$/, '') === remoteJid.replace(/@g\.us$/, '');
             }
             
-            // @lid: exigir match exato (já testado acima) — não tentar normalizar como telefone
-            if (isLidRequest) return false;
-            
-            // Para contatos @s.whatsapp.net, usar normalização de telefone
+            // Cross-match @lid ↔ @s.whatsapp.net pelo telefone normalizado
+            // Quando o chat é @lid mas as mensagens vêm como @s.whatsapp.net (ou vice-versa)
             const msgPhoneNormalized = extractPhoneFromJid(msgRemoteJid);
             
+            // Se é um @lid request: aceitar se o telefone extraído do @lid bater com a msg
+            if (isLidRequest) {
+                if (!lidPhoneNormalized) return false; // @lid sem telefone embutido — só match exato
+                if (!msgPhoneNormalized) return false;
+                return lidPhoneNormalized === msgPhoneNormalized ||
+                       (lidPhoneNormalized.length >= 9 && msgPhoneNormalized.length >= 9 &&
+                        lidPhoneNormalized.slice(-9) === msgPhoneNormalized.slice(-9));
+            }
+            
+            // Se a msg é @lid, tentar extrair telefone dela para comparar com o request
+            if (msgRemoteJid.includes('@lid')) {
+                if (!msgPhoneNormalized || !requestPhoneNormalized) return false;
+                return msgPhoneNormalized === requestPhoneNormalized ||
+                       (msgPhoneNormalized.length >= 9 && requestPhoneNormalized.length >= 9 &&
+                        msgPhoneNormalized.slice(-9) === requestPhoneNormalized.slice(-9));
+            }
+            
+            // Para contatos @s.whatsapp.net, usar normalização de telefone
             const matches = msgPhoneNormalized === requestPhoneNormalized ||
                            (msgPhoneNormalized.length >= 9 && requestPhoneNormalized.length >= 9 &&
                             msgPhoneNormalized.slice(-9) === requestPhoneNormalized.slice(-9));

@@ -15,10 +15,17 @@ function normalizePhone(raw) {
     // 1. Converter para string
     let str = String(raw);
     
-    // 2. CRÍTICO: @lid são IDs internos do Meta, NÃO contêm telefone real
+    // 2. @lid: Tentar extrair telefone real do formato "lid:ID@lid:PHONE" ou "PHONE@lid"
     if (str.includes('@lid')) {
-        console.warn('[normalizePhone] ⚠️ JID @lid detectado — não contém telefone real:', str);
-        return '';
+        // Formato "lid:259841293553825@lid:556492501918" → telefone = 556492501918
+        const lidPhoneMatch = str.match(/@lid:(\d+)/);
+        if (lidPhoneMatch && lidPhoneMatch[1].length >= 10) {
+            str = lidPhoneMatch[1]; // Extrair telefone do formato @lid:PHONE
+        } else {
+            // Formato simples "32637724934184@lid" → NÃO contém telefone real
+            console.warn('[normalizePhone] ⚠️ JID @lid sem telefone real:', str);
+            return '';
+        }
     }
     
     // 3. Remover sufixos de JID do WhatsApp
@@ -114,16 +121,13 @@ function isLidJid(jid) {
 /**
  * Extrair número puro de um JID (remoteJid da Evolution API)
  * @param {string} jid - "556299998888@s.whatsapp.net" ou "1234567890@g.us"
- * @returns {string} - "62999998888" ou '' para @lid (que NÃO contém telefone)
+ * @returns {string} - "62999998888" ou '' para @lid sem telefone embutido
  */
 function extractPhoneFromJid(jid) {
     if (!jid) return '';
     
-    // @lid JIDs contêm IDs internos do Meta, NÃO números de telefone
-    // Extrair deles geraria números falsos (ex: 32637724934184@lid → 37724934184)
-    if (isLidJid(jid)) return '';
-    
-    // Usar normalizePhone que já lida com todos os sufixos
+    // normalizePhone agora sabe extrair telefone de @lid quando disponível
+    // (formato "lid:ID@lid:PHONE"). Retorna '' apenas para @lid simples sem phone.
     return normalizePhone(jid);
 }
 

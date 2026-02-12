@@ -1946,11 +1946,20 @@ app.post('/api/whatsapp/messages/fetch', async (req, res) => {
         // Função auxiliar para normalizar telefone (mesmo do frontend)
         const normalizePhone = (raw) => {
             if (!raw) return '';
-            let str = String(raw)
+            let str = String(raw);
+            // @lid: Tentar extrair telefone real do formato "lid:ID@lid:PHONE"
+            if (str.includes('@lid')) {
+                const lidMatch = str.match(/@lid:(\d+)/);
+                if (lidMatch && lidMatch[1].length >= 10) {
+                    str = lidMatch[1];
+                } else {
+                    return ''; // @lid simples sem telefone
+                }
+            }
+            str = str
                 .replace(/@s\.whatsapp\.net/gi, '')
                 .replace(/@c\.us/gi, '')
-                .replace(/@g\.us/gi, '')
-                .replace(/@lid/gi, '');
+                .replace(/@g\.us/gi, '');
             let cleaned = str.replace(/\D/g, '');
             if (cleaned.startsWith('55') && cleaned.length >= 12) {
                 cleaned = cleaned.substring(2);
@@ -2004,8 +2013,26 @@ app.post('/api/whatsapp/messages/fetch', async (req, res) => {
                 const msgJid = msg.key?.remoteJid || msg.remoteJid || '';
                 if (msgJid === remoteJid) return true;
                 if (isGroup) return msgJid.replace(/@g\.us$/, '') === remoteJid.replace(/@g\.us$/, '');
-                if (isLid) return false;
+                
+                // Cross-match @lid ↔ @s.whatsapp.net pelo telefone normalizado
                 const msgPhoneNorm = normalizePhone(msgJid);
+                
+                if (isLid) {
+                    // Request é @lid: aceitar se telefone extraído do @lid bater com msg
+                    if (!reqPhoneNorm || !msgPhoneNorm) return false;
+                    return reqPhoneNorm === msgPhoneNorm ||
+                           (reqPhoneNorm.length >= 9 && msgPhoneNorm.length >= 9 &&
+                            reqPhoneNorm.slice(-9) === msgPhoneNorm.slice(-9));
+                }
+                
+                // Request é @s.whatsapp.net mas msg pode ser @lid
+                if (msgJid.includes('@lid')) {
+                    if (!msgPhoneNorm || !reqPhoneNorm) return false;
+                    return msgPhoneNorm === reqPhoneNorm ||
+                           (msgPhoneNorm.length >= 9 && reqPhoneNorm.length >= 9 &&
+                            msgPhoneNorm.slice(-9) === reqPhoneNorm.slice(-9));
+                }
+                
                 return msgPhoneNorm === reqPhoneNorm ||
                        (msgPhoneNorm.length >= 9 && reqPhoneNorm.length >= 9 &&
                         msgPhoneNorm.slice(-9) === reqPhoneNorm.slice(-9));
