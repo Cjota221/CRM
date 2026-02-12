@@ -758,75 +758,129 @@ async function fetchAllPages(endpoint, token, extraParams = '') {
     return allData;
 }
 
+/**
+ * Busca todos os dados do FacilZap (clientes, pedidos, produtos),
+ * atualiza o crmCache do servidor e dispara sync no Supabase em background.
+ * Retorna o objeto pronto para res.json().
+ */
+async function refreshFacilZapData() {
+    console.log('[REFRESH] Iniciando busca completa FacilZap...');
+    
+    const twoYearsAgo = new Date();
+    twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+    const dataInicial = twoYearsAgo.toISOString().split('T')[0];
+    const dataFinal = new Date().toISOString().split('T')[0];
+
+    const [clients, orders, products] = await Promise.all([
+        fetchAllPages('https://api.facilzap.app.br/clientes', FACILZAP_TOKEN),
+        fetchAllPages('https://api.facilzap.app.br/pedidos', FACILZAP_TOKEN, `&filtros[data_inicial]=${dataInicial}&filtros[data_final]=${dataFinal}&filtros[incluir_produtos]=1`),
+        fetchAllPages('https://api.facilzap.app.br/produtos', FACILZAP_TOKEN)
+    ]);
+
+    // Enriquecer produtos
+    const productsEnriched = enrichProducts(products);
+
+    // Normalizar pedidos
+    const ordersNormalized = orders.map(o => ({
+        ...o,
+        cliente_id: o.cliente_id || o.id_cliente || o.cliente?.id || null,
+        id_cliente: o.id_cliente || o.cliente_id || o.cliente?.id || null,
+        valor_total: o.valor_total || o.total || o.subtotal || 0,
+        itens: o.itens || o.produtos || o.items || []
+    }));
+
+    // Atualizar cache do servidor
+    crmCache = {
+        clients,
+        orders: ordersNormalized,
+        products: productsEnriched,
+        lastUpdate: new Date()
+    };
+
+    console.log(`[REFRESH] ✅ ${clients.length} clientes, ${ordersNormalized.length} pedidos, ${productsEnriched.length} produtos`);
+
+    // Sync Supabase em background (fire-and-forget)
+    if (SUPABASE_SERVICE_KEY) {
+        try {
+            const supa = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+            // Sync produtos
+            if (productsEnriched.length > 0) {
+                const prodRows = productsEnriched.map(p => ({
+                    id: String(p.id || p.slug),
+                    name: p.nome || p.name || '',
+                    price: p.preco || 0,
+                    image: p.imagem || '',
+                    sku: p.referencia || '',
+                    stock: p.estoque != null ? p.estoque : -1,
+                    is_active: p.is_active !== false,
+                    updated_at: new Date().toISOString()
+                }));
+                supa.from('products').upsert(prodRows, { onConflict: 'id' })
+                    .then(({ error }) => { if (error) console.warn('[SUPABASE SYNC] Produtos erro:', error.message); })
+                    .catch(e => console.warn('[SUPABASE SYNC]', e.message));
+            }
+        } catch (syncErr) {
+            console.warn('[SUPABASE SYNC] Erro:', syncErr.message);
+        }
+    }
+
+    return {
+        clients,
+        orders: ordersNormalized,
+        products: productsEnriched,
+        source: 'facilzap-live',
+        lastUpdate: crmCache.lastUpdate
+    };
+}
+
 // ============================================================================
 // ROTAS DO CRM (LEGADO + DADOS)
 // ============================================================================
 app.get('/api/facilzap-proxy', async (req, res) => {
     try {
-        console.log('[INFO] Iniciando sincronização FacilZap...');
+        const forceRefresh = req.query.force === 'true';
         
-        const twoYearsAgo = new Date();
-        twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
-        const dataInicial = twoYearsAgo.toISOString().split('T')[0];
-        const dataFinal = new Date().toISOString().split('T')[0];
-
-        // Busca paralela
-        const [clients, orders, products] = await Promise.all([
-            fetchAllPages('https://api.facilzap.app.br/clientes', FACILZAP_TOKEN),
-            fetchAllPages('https://api.facilzap.app.br/pedidos', FACILZAP_TOKEN, `&filtros[data_inicial]=${dataInicial}&filtros[data_final]=${dataFinal}&filtros[incluir_produtos]=1`),
-            fetchAllPages('https://api.facilzap.app.br/produtos', FACILZAP_TOKEN)
-        ]);
-
-        // Enriquecer produtos com link, preço, imagem e estoque
-        const productsEnriched = enrichProducts(products);
-
-        // Normalizar pedidos: garantir cliente_id e valor_total (FacilZap usa o.cliente.id e o.total)
-        const ordersNormalized = orders.map(o => ({
-            ...o,
-            cliente_id: o.cliente_id || o.id_cliente || o.cliente?.id || null,
-            id_cliente: o.id_cliente || o.cliente_id || o.cliente?.id || null,
-            valor_total: o.valor_total || o.total || o.subtotal || 0,
-            itens: o.itens || o.produtos || o.items || []
-        }));
-
-        res.json({ clients, orders: ordersNormalized, products: productsEnriched });
-        
-        // Salvar em cache para uso em endpoints de lookup
-        crmCache = {
-            clients,
-            orders: ordersNormalized,
-            products: productsEnriched,
-            lastUpdate: new Date()
-        };
-        
-        // Sync fire-and-forget: salvar produtos no Supabase para persistência
-        if (SUPABASE_SERVICE_KEY && productsEnriched.length > 0) {
-            try {
-                const supaSync = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-                const supaProducts = productsEnriched.map(p => ({
-                    id: String(p.id),
-                    codigo: p.codigo || p.referencia || '',
-                    name: p.nome || p.name || 'Produto',
-                    description: p.descricao || p.description || '',
-                    sku: p.referencia || p.sku || '',
-                    price: p.preco || 0,
-                    stock: p.estoque != null ? p.estoque : -1,
-                    is_active: p.ativo !== false && p.estoque !== 0,
-                    manages_stock: (p.estoque != null && p.estoque >= 0),
-                    image: p.imagem || '',
-                    images: p.imagens ? JSON.stringify(p.imagens) : '[]',
-                    updated_at: new Date().toISOString()
-                }));
-                await supaSync.from('products').upsert(supaProducts, { onConflict: 'id' });
-                console.log(`[Supabase] ✅ ${supaProducts.length} produtos sincronizados ao Supabase`);
-            } catch (syncErr) {
-                console.warn('[Supabase] Sync produtos fire-and-forget falhou:', syncErr.message);
+        // Se já temos dados no cache do servidor e não é force, retornar imediatamente
+        if (!forceRefresh && crmCache.clients && crmCache.clients.length > 0) {
+            console.log(`[CACHE HIT] Retornando ${crmCache.clients.length} clientes, ${crmCache.orders?.length || 0} pedidos, ${crmCache.products?.length || 0} produtos do cache (última atualização: ${crmCache.lastUpdate?.toLocaleString('pt-BR') || 'N/A'})`);
+            res.json({ 
+                clients: crmCache.clients, 
+                orders: crmCache.orders || [], 
+                products: crmCache.products || [],
+                source: 'cache',
+                lastUpdate: crmCache.lastUpdate
+            });
+            
+            // Atualizar em background se cache tem mais de 10 minutos
+            const cacheAge = crmCache.lastUpdate ? (Date.now() - crmCache.lastUpdate.getTime()) : Infinity;
+            if (cacheAge > 10 * 60 * 1000) {
+                console.log('[CACHE] Cache tem mais de 10min, atualizando em background...');
+                refreshFacilZapData().catch(e => console.warn('[BG REFRESH] Falha:', e.message));
             }
+            return;
         }
-    } catch (error) {
-        console.error(error);
         
-        // FALLBACK: Se FacilZap falhar, tentar carregar do Supabase
+        console.log('[INFO] Iniciando sincronização FacilZap (sem cache disponível)...');
+        
+        const data = await refreshFacilZapData();
+        res.json(data);
+        
+    } catch (error) {
+        console.error('[facilzap-proxy] Erro:', error.message);
+        
+        // FALLBACK 1: Retornar cache mesmo que antigo
+        if (crmCache.clients && crmCache.clients.length > 0) {
+            console.log('[FALLBACK] Retornando cache antigo após erro');
+            return res.json({ 
+                clients: crmCache.clients, 
+                orders: crmCache.orders || [], 
+                products: crmCache.products || [],
+                source: 'cache-fallback',
+                lastUpdate: crmCache.lastUpdate
+            });
+        }
+        
+        // FALLBACK 2: Se FacilZap falhar, tentar carregar do Supabase
         if (SUPABASE_SERVICE_KEY) {
             try {
                 console.log('[FALLBACK] Tentando carregar produtos do Supabase...');

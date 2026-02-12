@@ -1626,7 +1626,7 @@
                 const res = await fetch(`${API_BASE}/anny/improve-text`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, mode }) });
                 const data = await res.json();
                 if (data.improved) { block.config[key] = data.improved; renderBlocks(); }
-                else alert('IA não retornou texto melhorado');
+                else alert('Erro da IA: ' + (data.error || 'Não retornou texto melhorado. Verifique se OPENAI_API_KEY está configurada.'));
             } catch (e) { alert('Erro IA: ' + e.message); }
         }
 
