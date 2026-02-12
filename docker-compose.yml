@@ -33,6 +33,9 @@ services:
       - SUPABASE_URL=${SUPABASE_URL:-https://qmyeyiujmcdjzvcqkyoc.supabase.co}
       - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
 
+      # OpenAI (Anny IA)
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+
       # Sessão
       - SESSION_SECRET=${SESSION_SECRET}
 
