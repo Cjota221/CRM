@@ -1080,10 +1080,6 @@
             const firstTextBlock = campaignBlocks.find(b => b.type === 'text');
             const message = firstTextBlock?.config?.text || campaignBlocks.map(b => b.config?.text || b.config?.caption || `[${b.type}]`).join(' | ');
             
-            if (segmentedContacts.length === 0) {
-                return alert('Selecione pelo menos um cliente');
-            }
-            
             const scheduled = document.getElementById('scheduleEnabled').checked;
             let scheduledAt = null;
             
@@ -1094,34 +1090,32 @@
                 scheduledAt = new Date(`${date}T${time}`).toISOString();
             }
             
-            // Se grupo, buscar membros
-            let contacts = segmentedContacts.map(c => ({ id: c.id, name: c.name, phone: c.phone }));
+            // Montar lista de contatos conforme o tipo de público
+            let contacts = [];
+            let targetGroupJids = [];
             
             if (selectedAudience === 'group') {
+                // GRUPO: enviar para o JID do grupo diretamente
                 const selectedGroups = getSelectedGroups();
                 if (selectedGroups.length === 0) return alert('Selecione pelo menos um grupo');
-                contacts = [];
+                
+                targetGroupJids = selectedGroups.map(g => g.jid);
+                
                 for (const sg of selectedGroups) {
-                    const group = allGroups.find(g => g.remoteJid === sg.jid);
-                    if (group && group.participants) {
-                        group.participants.forEach(p => {
-                            contacts.push({
-                                id: p.id,
-                                name: p.pushName || p.id.split('@')[0],
-                                phone: p.id.split('@')[0],
-                                groupJid: sg.jid,
-                                groupName: sg.name
-                            });
-                        });
-                    } else {
-                        contacts.push({
-                            id: sg.jid,
-                            name: sg.name,
-                            phone: sg.jid,
-                            isGroup: true
-                        });
-                    }
+                    // Cada grupo vira um "contato" com isGroup=true
+                    contacts.push({
+                        id: sg.jid,
+                        name: sg.name,
+                        phone: sg.jid,
+                        isGroup: true
+                    });
                 }
+            } else {
+                // MANUAL ou SEGMENTO: usar segmentedContacts
+                if (segmentedContacts.length === 0) {
+                    return alert('Selecione pelo menos um cliente');
+                }
+                contacts = segmentedContacts.map(c => ({ id: c.id, name: c.name, phone: c.phone }));
             }
             
             if (contacts.length === 0) {
@@ -1129,6 +1123,8 @@
             }
             
             try {
+                console.log('[CAMPANHA] Enviando:', { name, message: message?.substring(0, 50), contacts: contacts.length, blocks: campaignBlocks.length, type: campaignBlocks.length === 1 ? campaignBlocks[0].type : 'sequence' });
+                
                 // 1. Criar campanha no servidor
                 const res = await fetch(`${API_BASE}/campaigns/create`, {
                     method: 'POST',
@@ -1138,10 +1134,10 @@
                         message,
                         contacts,
                         segment: selectedAudience,
-                        targetGroups: selectedAudience === 'group' ? getSelectedGroups().map(g => g.jid) : [],
-                        batchSize: parseInt(document.getElementById('batchSize').value),
-                        batchInterval: parseInt(document.getElementById('batchInterval').value),
-                        messageDelay: parseInt(document.getElementById('messageDelay').value),
+                        targetGroups: targetGroupJids,
+                        batchSize: parseInt(document.getElementById('batchSize').value) || 10,
+                        batchInterval: parseInt(document.getElementById('batchInterval').value) || 20,
+                        messageDelay: parseInt(document.getElementById('messageDelay').value) || 5,
                         scheduledAt: scheduledAt,
                         couponCode: couponCode,
                         // Motor de Blocos
@@ -1151,6 +1147,7 @@
                 });
                 
                 const data = await res.json();
+                console.log('[CAMPANHA] Resposta:', data);
                 
                 if (!data.success) {
                     return alert('Erro ao criar: ' + (data.error || 'Falha'));
@@ -1161,7 +1158,7 @@
                 // 2. Se não agendada, iniciar disparo imediatamente
                 if (!scheduled) {
                     await fetch(`${API_BASE}/campaigns/${data.campaign.id}/start`, { method: 'POST' });
-                    alert(`Campanha "${name}" iniciada! ${contacts.length} contatos serão contatados.`);
+                    alert(`Campanha "${name}" iniciada! ${contacts.length} ${selectedAudience === 'group' ? 'grupos' : 'contatos'} serão contatados.`);
                 } else {
                     alert(`Campanha "${name}" agendada para ${new Date(scheduledAt).toLocaleString('pt-BR')}`);
                 }

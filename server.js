@@ -4256,7 +4256,10 @@ app.post('/api/campaigns/create', async (req, res) => {
     try {
         const { name, message, imageUrl, contacts, segment, targetGroups, batchSize, batchInterval, messageDelay, scheduledAt, couponCode, campaignType, blocks, pollTitle, pollOptions, pollSelectableCount, mediaLibraryId } = req.body;
         
+        console.log(`[CAMPAIGN CREATE] Recebido: name="${name}", campaignType="${campaignType}", contacts=${contacts?.length || 0}, blocks=${blocks?.length || 0}, message=${message ? 'sim' : 'nao'}, segment="${segment}"`);
+        
         if (!name || !contacts || contacts.length === 0) {
+            console.log(`[CAMPAIGN CREATE] REJEITADO: name=${!!name}, contacts=${contacts?.length || 0}`);
             return res.status(400).json({ error: 'Nome e contatos são obrigatórios' });
         }
         
