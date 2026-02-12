@@ -2,6 +2,7 @@
 
 import Header from '@/components/layout/Header';
 import Link from 'next/link';
+import { useDashboard } from '@/hooks';
 import {
   TrendingDown,
   Target,
@@ -16,7 +17,13 @@ import {
   ShoppingCart,
   Radar,
   Sparkles,
+  Loader2,
+  RefreshCw,
 } from 'lucide-react';
+
+function formatCurrency(value: number): string {
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
 
 // KPI Card Component
 function KPICard({
@@ -113,15 +120,24 @@ function RiskSignal({
 }
 
 export default function DashboardPage() {
+  const { data: metrics, isLoading, error, refetch } = useDashboard();
+
+  const m = metrics || {
+    total_clientes: 0, clientes_ativos: 0, clientes_risco: 0,
+    clientes_inativos: 0, clientes_vip: 0, ltv_medio: 0,
+    ltv_risco: 0, ltv_inativos: 0, ticket_medio: 0,
+    campanhas_total: 0, campanhas_ativas: 0, mensagens_enviadas: 0,
+  };
+
   return (
     <>
       <Header
         title="Centro de Comando"
-        subtitle="Vigilante IA v2.0 • Visão geral comercial"
+        subtitle={`Vigilante IA v2.0 • ${m.total_clientes} clientes`}
         actions={
           <div className="flex gap-2">
-            <button className="btn btn-secondary">
-              <Radar className="w-4 h-4" />
+            <button className="btn btn-secondary" onClick={() => refetch()} disabled={isLoading}>
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Radar className="w-4 h-4" />}
               Escanear
             </button>
             <Link href="/analytics" className="btn btn-primary" style={{ background: '#7C3AED' }}>
@@ -133,6 +149,18 @@ export default function DashboardPage() {
       />
 
       <div className="flex-1 overflow-y-auto p-8 bg-slate-50 dark:bg-slate-900">
+        {error && (
+          <div className="container mx-auto max-w-6xl mb-6">
+            <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-xl p-4 flex items-center gap-3">
+              <AlertTriangle className="w-5 h-5 text-red-500" />
+              <p className="text-sm text-red-700 dark:text-red-300">Erro ao carregar métricas. Verifique a conexão com o servidor.</p>
+              <button onClick={() => refetch()} className="ml-auto btn btn-secondary text-xs">
+                <RefreshCw className="w-3 h-3" /> Tentar novamente
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="container mx-auto max-w-6xl">
           {/* KPIs */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
@@ -141,36 +169,36 @@ export default function DashboardPage() {
               iconBg="bg-red-50"
               iconColor="text-red-500"
               label="LTV em Risco"
-              value="R$ 0"
+              value={formatCurrency(m.ltv_risco)}
               valueColor="text-red-600"
-              sub="0 clientes parados"
+              sub={`${m.clientes_risco} clientes parados`}
             />
             <KPICard
               icon={Target}
               iconBg="bg-amber-50"
               iconColor="text-amber-500"
               label="Oportunidades"
-              value="R$ 0"
+              value={formatCurrency(m.ltv_inativos)}
               valueColor="text-amber-600"
-              sub="0 prontos para reposição"
+              sub={`${m.clientes_inativos} prontos para reposição`}
             />
             <KPICard
               icon={ArrowUpCircle}
               iconBg="bg-emerald-50"
               iconColor="text-emerald-500"
-              label="Recuperados"
-              value="0"
+              label="Ativos"
+              value={String(m.clientes_ativos)}
               valueColor="text-emerald-600"
-              sub="R$ 0 este mês"
+              sub={`Ticket médio ${formatCurrency(m.ticket_medio)}`}
             />
             <KPICard
               icon={Rocket}
               iconBg="bg-purple-50"
               iconColor="text-purple-500"
-              label="Potencial C4"
-              value="0"
+              label="Campanhas Ativas"
+              value={String(m.campanhas_ativas)}
               valueColor="text-purple-600"
-              sub="Candidatas a franqueadas"
+              sub={`${m.mensagens_enviadas} mensagens enviadas`}
             />
           </div>
 
@@ -189,14 +217,14 @@ export default function DashboardPage() {
                     <p className="text-xs text-slate-400 mt-0.5">Clientes em estado crítico</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">0</span>
+                    <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">{m.clientes_risco}</span>
                     <button className="btn btn-primary text-xs py-1.5 px-3" style={{ background: '#7C3AED' }}>
                       <Zap className="w-3 h-3" /> Gerar Estratégia
                     </button>
                   </div>
                 </div>
                 <div className="bg-slate-50 dark:bg-slate-700 rounded-lg p-3 mb-4 border border-slate-100 dark:border-slate-600">
-                  <p className="text-xl font-bold text-red-600">R$ 0</p>
+                  <p className="text-xl font-bold text-red-600">{formatCurrency(m.ltv_risco)}</p>
                   <p className="text-xs text-slate-400">LTV mensal perdido</p>
                 </div>
                 <div className="text-center py-6 text-slate-300 text-sm">
@@ -212,14 +240,14 @@ export default function DashboardPage() {
                     <p className="text-xs text-slate-400 mt-0.5">Prontos para reposição</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">0</span>
+                    <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">{m.clientes_inativos}</span>
                     <button className="btn btn-primary text-xs py-1.5 px-3" style={{ background: '#D97706' }}>
                       <Zap className="w-3 h-3" /> Gerar Mensagens
                     </button>
                   </div>
                 </div>
                 <div className="bg-slate-50 dark:bg-slate-700 rounded-lg p-3 mb-4 border border-slate-100 dark:border-slate-600">
-                  <p className="text-xl font-bold text-amber-600">R$ 0</p>
+                  <p className="text-xl font-bold text-amber-600">{formatCurrency(m.ltv_inativos)}</p>
                   <p className="text-xs text-slate-400">Potencial imediato</p>
                 </div>
                 <div className="text-center py-6 text-slate-300 text-sm">
@@ -280,10 +308,10 @@ export default function DashboardPage() {
             </div>
             <div className="p-6">
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <QuickAction icon={UserX} label="Reativar Inativos" sub="0 clientes" />
-                <QuickAction icon={Cake} label="Aniversariantes" sub="0 este mês" />
-                <QuickAction icon={Crown} label="Mimar VIPs" sub="0 VIPs" />
-                <QuickAction icon={ShoppingCart} label="Carrinhos Abandonados" sub="0 carrinhos" />
+                <QuickAction icon={UserX} label="Reativar Inativos" sub={`${m.clientes_inativos} clientes`} />
+                <QuickAction icon={Cake} label="Aniversariantes" sub="Ver este mês" />
+                <QuickAction icon={Crown} label="Mimar VIPs" sub={`${m.clientes_vip} VIPs`} />
+                <QuickAction icon={ShoppingCart} label="Nova Campanha" sub={`${m.campanhas_total} campanhas`} />
               </div>
             </div>
           </div>

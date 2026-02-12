@@ -16,8 +16,11 @@ export async function POST(request: NextRequest) {
     const data = await res.json();
 
     if (res.ok && data.success) {
-      const response = NextResponse.json({ success: true });
-      // Forward any cookies from the CRM backend
+      const response = NextResponse.json({
+        success: true,
+        user: data.user || null,
+      });
+      // Forward Set-Cookie do CRM backend (crm_session)
       const setCookie = res.headers.get('set-cookie');
       if (setCookie) {
         response.headers.set('set-cookie', setCookie);

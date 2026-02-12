@@ -1,11 +1,15 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, FormEvent, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Mail, Lock } from 'lucide-react';
+import { useAuthStore } from '@/store/auth';
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirect = searchParams.get('redirect') || '/';
+  const { login } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -16,16 +20,11 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: email, password }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        router.push('/');
+      const result = await login(email, password);
+      if (result.success) {
+        router.push(redirect);
       } else {
-        setError(data.message || 'Usuário ou senha inválidos');
+        setError(result.message || 'Usuário ou senha inválidos');
       }
     } catch {
       setError('Erro de conexão. Tente novamente.');
@@ -109,5 +108,19 @@ export default function LoginPage() {
       </div>
       <p className="text-center mt-6 text-xs text-white/50">VEXX CRM &copy; 2025 — Painel de Gestão</p>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="w-full max-w-[420px] px-5 relative z-10">
+        <div className="bg-white/[0.97] rounded-[20px] p-12 px-10 shadow-[0_25px_60px_rgba(0,0,0,0.3)] backdrop-blur-[20px] text-center">
+          <div className="w-5 h-5 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin mx-auto" />
+        </div>
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   );
 }
